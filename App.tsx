@@ -1,52 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, GripVertical, Menu, Layout } from 'lucide-react';
+import { Sparkles, GripVertical, Menu, Layout, Save } from 'lucide-react';
 import { Editor } from './components/Editor';
 import { Preview } from './components/Preview';
 import { Sidebar } from './components/Sidebar';
 import { AIGeneratorModal } from './components/AIGeneratorModal';
 import { Button } from './components/Button';
-import { DEFAULT_DIAGRAM } from './constants';
 import { Diagram, Comment } from './types';
+import { storageService } from './services/storageService';
 
 // Helper to generate unique IDs
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 export default function App() {
   // --- State: Diagrams ---
-  const [diagrams, setDiagrams] = useState<Diagram[]>(() => {
-    const saved = localStorage.getItem('mermaidviz_diagrams');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Migration: Ensure all diagrams have a comments array
-        return parsed.map((d: any) => ({
-          ...d,
-          comments: d.comments || []
-        }));
-      } catch (e) {
-        console.error("Failed to parse saved diagrams", e);
-      }
-    }
-    return [{
-      id: generateId(),
-      name: 'Untitled Diagram',
-      code: DEFAULT_DIAGRAM,
-      comments: [],
-      lastModified: Date.now()
-    }];
-  });
+  // Initialize from storage service
+  const [diagrams, setDiagrams] = useState<Diagram[]>(() => storageService.loadDiagrams());
 
-  const [activeId, setActiveId] = useState<string>(() => {
-    // Try to restore last active diagram, or default to first
-    const savedId = localStorage.getItem('mermaidviz_active_id');
-    const hasSaved = savedId && JSON.parse(localStorage.getItem('mermaidviz_diagrams') || '[]').some((d: any) => d.id === savedId);
-    return hasSaved && savedId ? savedId : (diagrams?.[0]?.id || '');
-  });
+  const [activeId, setActiveId] = useState<string>(() => storageService.loadActiveId(diagrams));
 
   // --- State: UI ---
   const [error, setError] = useState<string | null>(null);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   
   // Split pane state
   const [leftWidthPercent, setLeftWidthPercent] = useState(50);
@@ -60,12 +36,18 @@ export default function App() {
   
   // Persist diagrams to localStorage
   useEffect(() => {
-    localStorage.setItem('mermaidviz_diagrams', JSON.stringify(diagrams));
+    setSaveStatus('saving');
+    const timer = setTimeout(() => {
+      storageService.saveDiagrams(diagrams);
+      setSaveStatus('saved');
+    }, 500); // Debounce save slightly
+
+    return () => clearTimeout(timer);
   }, [diagrams]);
 
   // Persist active ID
   useEffect(() => {
-    localStorage.setItem('mermaidviz_active_id', activeId);
+    storageService.saveActiveId(activeId);
   }, [activeId]);
 
   // Ensure activeId is valid if diagrams change significantly
@@ -82,7 +64,7 @@ export default function App() {
     const newDiagram: Diagram = {
       id: generateId(),
       name: `Untitled ${diagrams.length + 1}`,
-      code: DEFAULT_DIAGRAM,
+      code: `graph TD\n    A[Start] --> B[New Diagram]`,
       comments: [],
       lastModified: Date.now()
     };
@@ -269,9 +251,16 @@ export default function App() {
       </div>
 
       {/* Footer */}
-      <footer className="bg-dark-900 border-t border-gray-800 px-4 py-1 text-xs text-gray-600 flex justify-between shrink-0">
+      <footer className="bg-dark-900 border-t border-gray-800 px-4 py-1 text-xs text-gray-600 flex justify-between items-center shrink-0">
         <span>{diagrams.length} Diagram{diagrams.length !== 1 ? 's' : ''}</span>
-        <span>Mermaid.js v10+ • Gemini 2.0 Flash</span>
+        <div className="flex items-center gap-4">
+          <span className={`flex items-center gap-1.5 transition-colors ${saveStatus === 'saving' ? 'text-brand-400' : 'text-green-500'}`}>
+            <Save className="w-3 h-3" />
+            {saveStatus === 'saving' ? 'Saving to browser...' : 'Saved to browser'}
+          </span>
+          <span className="opacity-50">|</span>
+          <span>Mermaid.js v11 • Gemini 2.0 Flash</span>
+        </div>
       </footer>
 
       {/* Modals */}
