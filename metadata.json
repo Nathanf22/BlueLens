@@ -1,0 +1,5 @@
+{
+  "name": "MermaidViz AI",
+  "description": "A professional Mermaid.js diagram visualizer and editor with Gemini AI generation capabilities.",
+  "requestFramePermissions": []
+}
