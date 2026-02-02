@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Copy, Check, Download, Pencil } from 'lucide-react';
 
 interface EditorProps {
@@ -11,6 +11,8 @@ interface EditorProps {
 
 export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onNameChange, error }) => {
   const [copied, setCopied] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code);
@@ -29,6 +31,17 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
+  // Synchronize scrolling between textarea and line numbers
+  const handleScroll = () => {
+    if (textareaRef.current && lineNumbersRef.current) {
+      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
+
+  // Generate line numbers array
+  const lineCount = code.split('\n').length;
+  const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   return (
     <div className="flex flex-col h-full bg-dark-900 border-r border-gray-700">
@@ -65,12 +78,27 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
         </div>
       </div>
       
-      {/* Editor Area */}
-      <div className="flex-1 relative">
+      {/* Editor Area with Line Numbers */}
+      <div className="flex-1 relative flex overflow-hidden">
+        {/* Line Numbers Column */}
+        <div 
+          ref={lineNumbersRef}
+          className="hidden sm:block flex-shrink-0 w-12 bg-dark-900 border-r border-gray-800 text-right text-gray-600 font-mono text-sm leading-6 py-4 pr-3 select-none overflow-hidden"
+          style={{ fontFamily: "'JetBrains Mono', monospace" }}
+          aria-hidden="true"
+        >
+          {lineNumbers.map((num) => (
+            <div key={num}>{num}</div>
+          ))}
+        </div>
+
+        {/* Code Input */}
         <textarea
+          ref={textareaRef}
           value={code}
           onChange={(e) => onCodeChange(e.target.value)}
-          className="absolute inset-0 w-full h-full p-4 bg-dark-900 text-gray-300 font-mono text-sm leading-6 resize-none outline-none border-none focus:ring-0"
+          onScroll={handleScroll}
+          className="flex-1 w-full h-full py-4 pl-3 pr-4 bg-dark-900 text-gray-300 font-mono text-sm leading-6 resize-none outline-none border-none focus:ring-0 whitespace-pre overflow-auto"
           spellCheck={false}
           style={{ fontFamily: "'JetBrains Mono', monospace" }}
           placeholder="Enter Mermaid code here..."

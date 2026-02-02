@@ -72,21 +72,34 @@ export default function App() {
     setActiveId(newDiagram.id);
   };
 
+  const handleImportDiagrams = (importedDiagrams: Diagram[]) => {
+    setDiagrams(prev => [...prev, ...importedDiagrams]);
+    // Switch to the first imported diagram
+    if (importedDiagrams.length > 0) {
+      setActiveId(importedDiagrams[0].id);
+    }
+  };
+
   const handleDeleteDiagram = (id: string, e: React.MouseEvent) => {
+    // Stop propagation is now handled in Sidebar, but good to keep as backup
     e.stopPropagation();
     
-    // Prevent deleting the last diagram
+    // Safety check, though UI should prevent this
     if (diagrams.length <= 1) {
-      alert("You must have at least one diagram.");
       return;
     }
 
-    if (confirm('Are you sure you want to delete this diagram?')) {
+    if (window.confirm('Are you sure you want to delete this diagram?')) {
       const newDiagrams = diagrams.filter(d => d.id !== id);
       setDiagrams(newDiagrams);
       
+      // If we deleted the active diagram, switch to another one
       if (id === activeId) {
-        setActiveId(newDiagrams[0].id);
+        // Since we filtered out 'id', newDiagrams[0] is the safe fallback
+        // If the list is empty (shouldn't happen due to length check), we handle in useEffect
+        if (newDiagrams.length > 0) {
+          setActiveId(newDiagrams[0].id);
+        }
       }
     }
   };
@@ -193,6 +206,7 @@ export default function App() {
              onSelect={setActiveId}
              onCreate={handleCreateDiagram}
              onDelete={handleDeleteDiagram}
+             onImport={handleImportDiagrams}
            />
         </div>
 
