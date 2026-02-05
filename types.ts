@@ -6,12 +6,27 @@ export interface Comment {
   createdAt: number;
 }
 
+export interface Workspace {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  workspaceId: string;
+}
+
 export interface Diagram {
   id: string;
   name: string;
   code: string;
   comments?: Comment[];
   lastModified: number;
+  folderId: string | null;
+  workspaceId: string;
 }
 
 export interface DiagramState {

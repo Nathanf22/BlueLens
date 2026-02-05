@@ -5,18 +5,23 @@ import { Preview } from './components/Preview';
 import { Sidebar } from './components/Sidebar';
 import { AIGeneratorModal } from './components/AIGeneratorModal';
 import { Button } from './components/Button';
-import { Diagram, Comment } from './types';
+import { Diagram, Comment, Folder, Workspace } from './types';
 import { storageService } from './services/storageService';
 
 // Helper to generate unique IDs
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 export default function App() {
-  // --- State: Diagrams ---
-  // Initialize from storage service
-  const [diagrams, setDiagrams] = useState<Diagram[]>(() => storageService.loadDiagrams());
+  // --- State: Workspaces ---
+  const [initialData] = useState(() => storageService.getInitialState());
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(initialData.workspaces);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(initialData.activeWorkspaceId);
 
-  const [activeId, setActiveId] = useState<string>(() => storageService.loadActiveId(diagrams));
+  // --- State: Diagrams & Folders (Global) ---
+  const [diagrams, setDiagrams] = useState<Diagram[]>(() => storageService.loadAllDiagrams());
+  const [folders, setFolders] = useState<Folder[]>(() => storageService.loadAllFolders());
+
+  const [activeId, setActiveId] = useState<string>(() => storageService.loadActiveId(diagrams.filter(d => d.workspaceId === activeWorkspaceId)));
 
   // --- State: UI ---
   const [error, setError] = useState<string | null>(null);
@@ -30,76 +35,105 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Derived state
-  const activeDiagram = diagrams.find(d => d.id === activeId) || diagrams[0];
+  const workspaceDiagrams = diagrams.filter(d => d.workspaceId === activeWorkspaceId);
+  const workspaceFolders = folders.filter(f => f.workspaceId === activeWorkspaceId);
+  const activeDiagram = diagrams.find(d => d.id === activeId) || workspaceDiagrams[0];
 
   // --- Effects ---
   
-  // Persist diagrams to localStorage
+  // Persist everything to localStorage
   useEffect(() => {
     setSaveStatus('saving');
     const timer = setTimeout(() => {
       storageService.saveDiagrams(diagrams);
+      storageService.saveFolders(folders);
+      storageService.saveWorkspaces(workspaces);
+      storageService.saveActiveWorkspaceId(activeWorkspaceId);
       setSaveStatus('saved');
-    }, 500); // Debounce save slightly
+    }, 500);
 
     return () => clearTimeout(timer);
-  }, [diagrams]);
+  }, [diagrams, folders, workspaces, activeWorkspaceId]);
 
   // Persist active ID
   useEffect(() => {
     storageService.saveActiveId(activeId);
   }, [activeId]);
 
-  // Ensure activeId is valid if diagrams change significantly
+  // Ensure activeId is valid when switching workspaces
   useEffect(() => {
-    if (!diagrams.find(d => d.id === activeId) && diagrams.length > 0) {
-      setActiveId(diagrams[0].id);
+    const currentWorkspaceDiagrams = diagrams.filter(d => d.workspaceId === activeWorkspaceId);
+    if (!currentWorkspaceDiagrams.find(d => d.id === activeId) && currentWorkspaceDiagrams.length > 0) {
+      setActiveId(currentWorkspaceDiagrams[0].id);
     }
-  }, [diagrams, activeId]);
+  }, [activeWorkspaceId, diagrams]);
 
+
+  // --- Handlers: Workspace Management ---
+
+  const handleCreateWorkspace = (name: string) => {
+    const newWorkspace: Workspace = {
+      id: generateId(),
+      name,
+      createdAt: Date.now()
+    };
+    setWorkspaces([...workspaces, newWorkspace]);
+    setActiveWorkspaceId(newWorkspace.id);
+  };
+
+  const handleDeleteWorkspace = (id: string) => {
+    if (workspaces.length <= 1) {
+      alert("Cannot delete the last workspace.");
+      return;
+    }
+    if (window.confirm("Delete this workspace and all its diagrams/folders?")) {
+      setDiagrams(prev => prev.filter(d => d.workspaceId !== id));
+      setFolders(prev => prev.filter(f => f.workspaceId !== id));
+      setWorkspaces(prev => prev.filter(w => w.id !== id));
+      if (activeWorkspaceId === id) {
+        setActiveWorkspaceId(workspaces.find(w => w.id !== id)!.id);
+      }
+    }
+  };
+
+  const handleRenameWorkspace = (id: string, name: string) => {
+    setWorkspaces(prev => prev.map(w => w.id === id ? { ...w, name } : w));
+  };
 
   // --- Handlers: Diagram Management ---
 
-  const handleCreateDiagram = () => {
+  const handleCreateDiagram = (folderId: string | null = null) => {
     const newDiagram: Diagram = {
       id: generateId(),
-      name: `Untitled ${diagrams.length + 1}`,
+      name: `Untitled ${workspaceDiagrams.length + 1}`,
       code: `graph TD\n    A[Start] --> B[New Diagram]`,
       comments: [],
-      lastModified: Date.now()
+      lastModified: Date.now(),
+      folderId: folderId,
+      workspaceId: activeWorkspaceId
     };
     setDiagrams([...diagrams, newDiagram]);
     setActiveId(newDiagram.id);
   };
 
   const handleImportDiagrams = (importedDiagrams: Diagram[]) => {
-    setDiagrams(prev => [...prev, ...importedDiagrams]);
-    // Switch to the first imported diagram
-    if (importedDiagrams.length > 0) {
-      setActiveId(importedDiagrams[0].id);
+    const itemsWithWorkspace = importedDiagrams.map(d => ({ ...d, workspaceId: activeWorkspaceId }));
+    setDiagrams(prev => [...prev, ...itemsWithWorkspace]);
+    if (itemsWithWorkspace.length > 0) {
+      setActiveId(itemsWithWorkspace[0].id);
     }
   };
 
   const handleDeleteDiagram = (id: string, e: React.MouseEvent) => {
-    // Stop propagation is now handled in Sidebar, but good to keep as backup
     e.stopPropagation();
-    
-    // Safety check, though UI should prevent this
-    if (diagrams.length <= 1) {
-      return;
-    }
+    if (workspaceDiagrams.length <= 1) return;
 
     if (window.confirm('Are you sure you want to delete this diagram?')) {
       const newDiagrams = diagrams.filter(d => d.id !== id);
       setDiagrams(newDiagrams);
-      
-      // If we deleted the active diagram, switch to another one
       if (id === activeId) {
-        // Since we filtered out 'id', newDiagrams[0] is the safe fallback
-        // If the list is empty (shouldn't happen due to length check), we handle in useEffect
-        if (newDiagrams.length > 0) {
-          setActiveId(newDiagrams[0].id);
-        }
+        const remaining = newDiagrams.filter(d => d.workspaceId === activeWorkspaceId);
+        if (remaining.length > 0) setActiveId(remaining[0].id);
       }
     }
   };
@@ -110,6 +144,38 @@ export default function App() {
     ));
     // Clear error when modifying code
     if (updates.code && error) setError(null);
+  };
+
+  // --- Handlers: Folder Management ---
+
+  const handleCreateFolder = (name: string, parentId: string | null = null) => {
+    const newFolder: Folder = {
+      id: generateId(),
+      name,
+      parentId,
+      workspaceId: activeWorkspaceId
+    };
+    setFolders([...folders, newFolder]);
+  };
+
+  const handleDeleteFolder = (folderId: string) => {
+    if (window.confirm('Delete this folder? Diagrams inside will be moved to root.')) {
+      setDiagrams(prev => prev.map(d => 
+        (d.folderId === folderId && d.workspaceId === activeWorkspaceId) ? { ...d, folderId: null } : d
+      ));
+      setFolders(prev => prev
+        .filter(f => f.id !== folderId)
+        .map(f => (f.parentId === folderId && f.workspaceId === activeWorkspaceId) ? { ...f, parentId: null } : f)
+      );
+    }
+  };
+
+  const handleRenameFolder = (folderId: string, name: string) => {
+    setFolders(prev => prev.map(f => f.id === folderId ? { ...f, name } : f));
+  };
+
+  const handleMoveDiagram = (diagramId: string, folderId: string | null) => {
+    setDiagrams(prev => prev.map(d => d.id === diagramId ? { ...d, folderId } : d));
   };
 
   // --- Handlers: Comments ---
@@ -201,12 +267,23 @@ export default function App() {
         {/* Sidebar (Responsive) */}
         <div className={`${isSidebarOpen ? 'block' : 'hidden'} lg:block h-full`}>
            <Sidebar 
-             diagrams={diagrams}
+             diagrams={workspaceDiagrams}
+             folders={workspaceFolders}
+             workspaces={workspaces}
+             activeWorkspaceId={activeWorkspaceId}
              activeId={activeId}
              onSelect={setActiveId}
              onCreate={handleCreateDiagram}
              onDelete={handleDeleteDiagram}
              onImport={handleImportDiagrams}
+             onCreateFolder={handleCreateFolder}
+             onDeleteFolder={handleDeleteFolder}
+             onRenameFolder={handleRenameFolder}
+             onMoveDiagram={handleMoveDiagram}
+             onSwitchWorkspace={setActiveWorkspaceId}
+             onCreateWorkspace={handleCreateWorkspace}
+             onDeleteWorkspace={handleDeleteWorkspace}
+             onRenameWorkspace={handleRenameWorkspace}
            />
         </div>
 
