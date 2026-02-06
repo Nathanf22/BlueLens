@@ -25,7 +25,7 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({ path, onNavigate }) => {
       </button>
       
       {path.map((item, index) => (
-        <React.Fragment key={item.id}>
+        <React.Fragment key={`${index}-${item.id}`}>
           <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
           <button
             onClick={() => onNavigate(index)}

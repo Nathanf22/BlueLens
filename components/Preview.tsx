@@ -83,52 +83,38 @@ export const Preview: React.FC<PreviewProps> = ({
 
   // Inject badges and attach handlers when SVG content changes
   useEffect(() => {
-    console.log('[Preview] Badge injection useEffect triggered');
-    
     if (!svgContent || !innerContainerRef.current || !currentDiagram) {
-      console.log('[Preview] Skipping badge injection - missing dependencies');
       return;
     }
 
     const svgContainer = innerContainerRef.current.querySelector('.mermaid-svg-container');
     const svgElement = svgContainer?.querySelector('svg');
     if (!svgElement) {
-      console.log('[Preview] Skipping badge injection - no SVG element found');
       return;
     }
-
-    console.log('[Preview] Injecting badges for diagram:', currentDiagram.name);
 
     // Remove any existing badges first
     svgParserService.removeAllBadges(svgElement as SVGElement);
 
     // Get all node links for this diagram
     const nodeLinks = currentDiagram.nodeLinks || [];
-    console.log('[Preview] Node links count:', nodeLinks.length);
     if (nodeLinks.length === 0) return;
 
     // For each node link, find the node and inject badge + handler
     nodeLinks.forEach(link => {
-      console.log('[Preview] Processing link:', link);
       const nodeElement = svgParserService.findNodeElement(svgElement as SVGElement, link.nodeId);
       if (nodeElement) {
         // First attach double-click handler to the node itself
         svgParserService.attachDoubleClickHandler(nodeElement, () => {
-          console.log('[Preview] Double-click handler called for:', link.nodeId);
           onZoomIn(link.targetDiagramId, link.nodeId, link.label || link.nodeId);
         });
 
         // Then inject badge with click handler (must be after to avoid being removed)
         svgParserService.injectBadge(nodeElement, () => {
-          console.log('[Preview] Badge click handler called for:', link.nodeId);
           onZoomIn(link.targetDiagramId, link.nodeId, link.label || link.nodeId);
         });
-      } else {
-        console.log('[Preview] Node element not found for:', link.nodeId);
       }
     });
-    
-    console.log('[Preview] Badge injection complete');
   }, [svgContent, currentDiagram, onZoomIn]);
 
   // Handlers
@@ -233,7 +219,6 @@ export const Preview: React.FC<PreviewProps> = ({
           // Don't start panning if clicking on a badge or linked node
           const target = e.target as Element;
           if (target.closest('.node-link-badge') || target.closest('[data-has-double-click="true"]')) {
-            console.log('[Preview] Ignoring mousedown on badge/linked node');
             return;
           }
           handleMouseDown(e, isCommentMode);
