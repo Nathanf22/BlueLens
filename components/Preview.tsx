@@ -81,7 +81,7 @@ export const Preview: React.FC<PreviewProps> = ({
     onGoToRoot: breadcrumbPath.length > 0 ? onGoToRoot : undefined
   }, !isCommentMode);
 
-  // Inject badges and attach handlers when SVG content changes
+  // Inject badges and attach handlers when SVG content changes or view settings change
   useEffect(() => {
     if (!svgContent || !innerContainerRef.current || !currentDiagram) {
       return;
@@ -115,7 +115,7 @@ export const Preview: React.FC<PreviewProps> = ({
         });
       }
     });
-  }, [svgContent, currentDiagram, onZoomIn]);
+  }, [svgContent, currentDiagram, onZoomIn, viewSettings]);
 
   // Handlers
   const handleFullscreen = useCallback(() => {

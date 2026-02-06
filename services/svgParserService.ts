@@ -117,33 +117,82 @@ export const svgParserService = {
       existingBadge.remove();
     }
 
-    // Get the bounding box of the node
+    // Get the bounding box of the node (in local coordinates)
     const bbox = nodeElement.getBBox();
     
     // Create badge group
+    // Position badge at top-right corner relative to the node's bounding box
+    // Since badge is appended to nodeElement, coordinates are relative to the node's coordinate system
     const badge = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     badge.setAttribute('class', 'node-link-badge');
     badge.setAttribute('transform', `translate(${bbox.x + bbox.width - 8}, ${bbox.y + 4})`);
     badge.style.cursor = 'pointer';
     
-    // Create blue circle
+    // Create unique ID for this badge's gradient
+    const uniqueId = `badge-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Get or create defs element in the SVG
+    const svg = nodeElement.ownerSVGElement;
+    let defs = svg?.querySelector('defs');
+    if (!defs && svg) {
+      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      svg.insertBefore(defs, svg.firstChild);
+    }
+    
+    if (defs) {
+      // Create radial gradient for 3D effect
+      const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+      gradient.setAttribute('id', `${uniqueId}-gradient`);
+      gradient.setAttribute('cx', '30%');
+      gradient.setAttribute('cy', '30%');
+      
+      const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+      stop1.setAttribute('offset', '0%');
+      stop1.style.stopColor = '#60a5fa'; // Lighter blue
+      
+      const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+      stop2.setAttribute('offset', '100%');
+      stop2.style.stopColor = '#2563eb'; // Darker blue
+      
+      gradient.appendChild(stop1);
+      gradient.appendChild(stop2);
+      defs.appendChild(gradient);
+      
+      // Create SVG filter for drop shadow
+      const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+      filter.setAttribute('id', `${uniqueId}-shadow`);
+      filter.setAttribute('x', '-50%');
+      filter.setAttribute('y', '-50%');
+      filter.setAttribute('width', '200%');
+      filter.setAttribute('height', '200%');
+      
+      const feDropShadow = document.createElementNS('http://www.w3.org/2000/svg', 'feDropShadow');
+      feDropShadow.setAttribute('dx', '0');
+      feDropShadow.setAttribute('dy', '1');
+      feDropShadow.setAttribute('stdDeviation', '1');
+      feDropShadow.setAttribute('flood-opacity', '0.3');
+      
+      filter.appendChild(feDropShadow);
+      defs.appendChild(filter);
+    }
+    
+    // Create blue circle with gradient and shadow
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('r', '6');
-    circle.setAttribute('fill', '#3b82f6');
-    circle.setAttribute('opacity', '0.8');
-    circle.setAttribute('stroke', 'white');
-    circle.setAttribute('stroke-width', '1.5');
+    // CRITICAL: Use style.fill to override Mermaid CSS, not setAttribute('fill')
+    circle.style.fill = `url(#${uniqueId}-gradient)`;
+    circle.setAttribute('filter', `url(#${uniqueId}-shadow)`);
+    circle.style.opacity = '1';
+    circle.style.stroke = 'none';
     circle.style.pointerEvents = 'all'; // Ensure it receives pointer events
     
     // Add hover effect
     badge.addEventListener('mouseenter', () => {
       circle.setAttribute('r', '7');
-      circle.setAttribute('opacity', '1');
     });
     
     badge.addEventListener('mouseleave', () => {
       circle.setAttribute('r', '6');
-      circle.setAttribute('opacity', '0.8');
     });
     
     // Add click handler on badge group - use mouseup for better compatibility
@@ -194,7 +243,16 @@ export const svgParserService = {
    * Remove all badges from an SVG element
    */
   removeAllBadges(svgElement: SVGElement): void {
+    // Remove badge elements
     const badges = svgElement.querySelectorAll('.node-link-badge');
     badges.forEach(badge => badge.remove());
+    
+    // Clean up badge-related definitions (gradients and filters)
+    const defs = svgElement.querySelector('defs');
+    if (defs) {
+      // Remove all elements with IDs starting with 'badge-'
+      const badgeDefs = defs.querySelectorAll('[id^="badge-"]');
+      badgeDefs.forEach(def => def.remove());
+    }
   }
 };
