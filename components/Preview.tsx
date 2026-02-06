@@ -81,23 +81,24 @@ export const Preview: React.FC<PreviewProps> = ({
     onGoToRoot: breadcrumbPath.length > 0 ? onGoToRoot : undefined
   }, !isCommentMode);
 
-  // Inject badges and attach handlers when SVG content changes or view settings change
-  useEffect(() => {
-    if (!svgContent || !innerContainerRef.current || !currentDiagram) {
-      return;
-    }
+  // Function to inject badges into the SVG
+  const injectBadges = useCallback(() => {
+    if (!innerContainerRef.current || !currentDiagram) return;
 
     const svgContainer = innerContainerRef.current.querySelector('.mermaid-svg-container');
     const svgElement = svgContainer?.querySelector('svg');
-    if (!svgElement) {
-      return;
-    }
+    if (!svgElement) return;
+
+    // Check if badges already exist to avoid duplicates
+    const existingBadges = svgElement.querySelectorAll('.node-link-badge');
+    const nodeLinks = currentDiagram.nodeLinks || [];
+    
+    // If badges already exist and count matches, don't re-inject
+    if (existingBadges.length === nodeLinks.length && existingBadges.length > 0) return;
 
     // Remove any existing badges first
     svgParserService.removeAllBadges(svgElement as SVGElement);
 
-    // Get all node links for this diagram
-    const nodeLinks = currentDiagram.nodeLinks || [];
     if (nodeLinks.length === 0) return;
 
     // For each node link, find the node and inject badge + handler
@@ -109,13 +110,44 @@ export const Preview: React.FC<PreviewProps> = ({
           onZoomIn(link.targetDiagramId, link.nodeId, link.label || link.nodeId);
         });
 
-        // Then inject badge with click handler (must be after to avoid being removed)
+        // Then inject badge with click handler
         svgParserService.injectBadge(nodeElement, () => {
           onZoomIn(link.targetDiagramId, link.nodeId, link.label || link.nodeId);
         });
       }
     });
-  }, [svgContent, currentDiagram, onZoomIn, viewSettings]);
+  }, [currentDiagram, onZoomIn]);
+
+  // Inject badges when SVG content changes
+  useEffect(() => {
+    if (!svgContent) return;
+    // Small delay to ensure React has updated the DOM
+    const timeoutId = setTimeout(injectBadges, 0);
+    return () => clearTimeout(timeoutId);
+  }, [svgContent, injectBadges]);
+
+  // Use MutationObserver to re-inject badges if React recreates the SVG container
+  useEffect(() => {
+    if (!innerContainerRef.current || !svgContent) return;
+
+    const observer = new MutationObserver((mutations) => {
+      // Check if the SVG container was modified
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') {
+          // Re-inject badges after DOM update
+          requestAnimationFrame(injectBadges);
+          break;
+        }
+      }
+    });
+
+    const svgContainer = innerContainerRef.current.querySelector('.mermaid-svg-container');
+    if (svgContainer) {
+      observer.observe(svgContainer, { childList: true, subtree: false });
+    }
+
+    return () => observer.disconnect();
+  }, [svgContent, injectBadges]);
 
   // Handlers
   const handleFullscreen = useCallback(() => {
