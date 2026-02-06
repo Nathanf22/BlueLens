@@ -237,6 +237,26 @@ export const svgParserService = {
     
     // Make it visually clear it's clickable
     nodeElement.style.cursor = 'pointer';
+    
+    // Add hover effect to highlight the node
+    // Find the shape element (rect, circle, polygon, etc.) within the node
+    const shapeElement = nodeElement.querySelector('rect, circle, polygon, path, ellipse');
+    
+    if (shapeElement) {
+      // Store original fill color
+      const originalFill = window.getComputedStyle(shapeElement).fill;
+      
+      nodeElement.addEventListener('mouseenter', () => {
+        // Apply a light blue tint on hover
+        (shapeElement as SVGElement).style.fill = '#3b82f620'; // Blue with 12% opacity
+        (shapeElement as SVGElement).style.transition = 'fill 0.2s ease';
+      });
+      
+      nodeElement.addEventListener('mouseleave', () => {
+        // Restore original fill
+        (shapeElement as SVGElement).style.fill = '';
+      });
+    }
   },
 
   /**
