@@ -1,15 +1,18 @@
 import React, { useState, useRef } from 'react';
-import { 
-  Plus, Trash2, FileText, Layout, Download, Loader2, Upload, 
+import {
+  Plus, Trash2, FileText, Layout, Download, Loader2, Upload,
   Folder as FolderIcon, FolderPlus, ChevronDown, ChevronRight, MoreVertical,
-  Edit2, Settings, Link2, Unlink, Layers, ChevronLeft
+  Edit2, Settings, Link2, Unlink, Layers, ChevronLeft, X, Globe, FileDown
 } from 'lucide-react';
 import { Diagram, Folder, Workspace } from '../types';
+import { BlueprintImportResult, exportDiagram, exportWorkspace, exportAll, importBlueprint, downloadJson } from '../services/exportService';
 import JSZip from 'jszip';
 
 interface SidebarProps {
   diagrams: Diagram[];
   folders: Folder[];
+  allDiagrams: Diagram[];
+  allFolders: Folder[];
   workspaces: Workspace[];
   activeWorkspaceId: string;
   activeId: string;
@@ -17,6 +20,7 @@ interface SidebarProps {
   onCreate: (folderId?: string | null) => void;
   onDelete: (id: string, e: React.MouseEvent) => void;
   onImport: (diagrams: Diagram[]) => void;
+  onImportBlueprint: (data: BlueprintImportResult) => void;
   onCreateFolder: (name: string, parentId: string | null) => void;
   onDeleteFolder: (folderId: string) => void;
   onRenameFolder: (folderId: string, name: string) => void;
@@ -32,8 +36,10 @@ interface SidebarProps {
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
-  diagrams, 
+  diagrams,
   folders,
+  allDiagrams,
+  allFolders,
   workspaces,
   activeWorkspaceId,
   activeId, 
@@ -41,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCreate, 
   onDelete,
   onImport,
+  onImportBlueprint,
   onCreateFolder,
   onDeleteFolder,
   onRenameFolder,
@@ -55,45 +62,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
 
+  const handleDownloadDiagram = (diagram: Diagram) => {
+    const json = exportDiagram(diagram, activeWorkspace);
+    const safeName = diagram.name.replace(/[^a-z0-9_\-\s]/gi, '').trim().replace(/\s+/g, '-') || 'diagram';
+    downloadJson(json, `${safeName}.blueprint`);
+    setIsDownloadModalOpen(false);
+  };
+
+  const handleDownloadWorkspace = () => {
+    const json = exportWorkspace(activeWorkspace, diagrams, folders);
+    const safeName = activeWorkspace.name.toLowerCase().replace(/\s+/g, '-');
+    downloadJson(json, `${safeName}.blueprint`);
+    setIsDownloadModalOpen(false);
+  };
+
+  const handleDownloadAllWorkspaces = () => {
+    const json = exportAll(workspaces, allDiagrams, allFolders);
+    downloadJson(json, `blueprint-backup-${new Date().toISOString().split('T')[0]}.blueprint`);
+    setIsDownloadModalOpen(false);
+  };
+
   const toggleFolder = (folderId: string) => {
     setExpandedFolders(prev => ({ ...prev, [folderId]: !prev[folderId] }));
-  };
-  
-  // Existing handleDownloadAll, handleFileSelect, renderDiagram, renderFolder functions remain the same but I'll update the render part below.
-  // Actually I need to include them in the replace block to avoid cutting them off.
-  
-  const handleDownloadAll = async () => {
-    if (diagrams.length === 0) return;
-    setIsProcessing(true);
-    try {
-      const zip = new JSZip();
-      diagrams.forEach((diagram) => {
-        let safeName = diagram.name.replace(/[^a-z0-9_\-\s]/gi, '').trim().replace(/\s+/g, '_');
-        if (!safeName) safeName = `untitled_${diagram.id}`;
-        let path = '';
-        if (diagram.folderId) {
-          const folder = folders.find(f => f.id === diagram.folderId);
-          if (folder) path = `${folder.name}/`;
-        }
-        zip.file(`${path}${safeName}.mmd`, diagram.code);
-      });
-      const content = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(content);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${activeWorkspace.name.toLowerCase().replace(/\s+/g, '-')}-backup-${new Date().toISOString().split('T')[0]}.zip`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to zip files", error);
-      alert("Failed to create backup zip.");
-    } finally { setIsProcessing(false); }
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,6 +99,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        if (file.name.endsWith('.blueprint')) {
+          const text = await file.text();
+          try {
+            const result = importBlueprint(text);
+            onImportBlueprint(result);
+          } catch (e) {
+            console.error("Error importing blueprint", e);
+            alert(`Could not import blueprint file: ${file.name}`);
+          }
+          continue;
+        }
         if (file.name.endsWith('.zip')) {
           try {
             const zip = await JSZip.loadAsync(file);
@@ -181,6 +187,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDownloadDiagram(diagram);
+          }}
+          className="p-1 rounded hover:bg-dark-700 text-gray-500 hover:text-gray-300"
+          title="Download diagram"
+        >
+          <Download className="w-3 h-3" />
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -287,7 +303,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onChange={handleFileSelect}
         className="hidden"
         multiple
-        accept=".mmd,.txt,.mermaid,.zip"
+        accept=".mmd,.txt,.mermaid,.zip,.blueprint"
       />
 
       {/* Collapse Toggle Button */}
@@ -432,11 +448,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Upload className="w-4 h-4" />
           </button>
-          <button 
-            onClick={handleDownloadAll}
+          <button
+            onClick={() => setIsDownloadModalOpen(true)}
             disabled={isProcessing || diagrams.length === 0}
             className="p-1.5 text-gray-500 hover:text-brand-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors rounded hover:bg-dark-800"
-            title="Download all as ZIP"
+            title="Download..."
           >
             {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
           </button>
@@ -464,6 +480,90 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
         </>
+      )}
+
+      {/* Download Modal */}
+      {isDownloadModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setIsDownloadModalOpen(false)}>
+          <div className="bg-dark-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+              <div className="flex items-center gap-2">
+                <Download className="w-5 h-5 text-brand-400" />
+                <h2 className="text-lg font-semibold text-gray-100">Download</h2>
+              </div>
+              <button
+                onClick={() => setIsDownloadModalOpen(false)}
+                className="p-1 rounded hover:bg-dark-700 text-gray-400 hover:text-gray-200 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Options */}
+            <div className="p-6 space-y-3">
+              {/* Current Diagram */}
+              {diagrams.find(d => d.id === activeId) && (
+                <button
+                  onClick={() => {
+                    const diagram = diagrams.find(d => d.id === activeId);
+                    if (diagram) handleDownloadDiagram(diagram);
+                  }}
+                  className="w-full flex items-start gap-4 p-4 bg-dark-800 hover:bg-dark-700 border border-gray-700 hover:border-brand-500/50 rounded-lg transition-all text-left group"
+                >
+                  <div className="p-2 bg-brand-600/20 rounded-lg border border-brand-500/30 group-hover:bg-brand-600/30 transition-colors">
+                    <FileDown className="w-5 h-5 text-brand-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-200 group-hover:text-brand-400 transition-colors">Current Diagram</p>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      {diagrams.find(d => d.id === activeId)?.name}
+                    </p>
+                  </div>
+                </button>
+              )}
+
+              {/* Current Workspace */}
+              <button
+                onClick={handleDownloadWorkspace}
+                className="w-full flex items-start gap-4 p-4 bg-dark-800 hover:bg-dark-700 border border-gray-700 hover:border-brand-500/50 rounded-lg transition-all text-left group"
+              >
+                <div className="p-2 bg-brand-600/20 rounded-lg border border-brand-500/30 group-hover:bg-brand-600/30 transition-colors">
+                  <Layout className="w-5 h-5 text-brand-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-200 group-hover:text-brand-400 transition-colors">Current Workspace</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {activeWorkspace.name} &mdash; {diagrams.length} diagram{diagrams.length !== 1 ? 's' : ''}, {folders.length} folder{folders.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </button>
+
+              {/* All Workspaces */}
+              <button
+                onClick={handleDownloadAllWorkspaces}
+                className="w-full flex items-start gap-4 p-4 bg-dark-800 hover:bg-dark-700 border border-gray-700 hover:border-brand-500/50 rounded-lg transition-all text-left group"
+              >
+                <div className="p-2 bg-brand-600/20 rounded-lg border border-brand-500/30 group-hover:bg-brand-600/30 transition-colors">
+                  <Globe className="w-5 h-5 text-brand-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-200 group-hover:text-brand-400 transition-colors">All Workspaces</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {workspaces.length} workspace{workspaces.length !== 1 ? 's' : ''}, {allDiagrams.length} diagram{allDiagrams.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-700">
+              <p className="text-xs text-gray-600 text-center">
+                Exports as <span className="text-gray-500 font-medium">.blueprint</span> with all metadata preserved
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

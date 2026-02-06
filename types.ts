@@ -68,3 +68,12 @@ export interface NavigationStep {
   nodeId?: string;     // Which node was clicked to get here
   nodeName?: string;   // Display name for breadcrumb
 }
+
+export interface BlueprintExport {
+  version: number;
+  exportType: 'diagram' | 'workspace' | 'all';
+  exportDate: string;
+  workspaces: Workspace[];
+  folders: Folder[];
+  diagrams: Diagram[];
+}

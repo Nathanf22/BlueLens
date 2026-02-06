@@ -4,6 +4,7 @@ import { AppHeader } from './components/AppHeader';
 import { AppFooter } from './components/AppFooter';
 import { WorkspaceView } from './components/WorkspaceView';
 import { ModalManager } from './components/ModalManager';
+import { BlueprintImportResult } from './services/exportService';
 
 
 // Custom Hooks
@@ -99,6 +100,18 @@ export default function App() {
     setIsAIModalOpen(false);
   };
 
+  const handleImportBlueprint = (data: BlueprintImportResult) => {
+    setWorkspaces(prev => [...prev, ...data.workspaces]);
+    setFolders(prev => [...prev, ...data.folders]);
+    setDiagrams(prev => [...prev, ...data.diagrams]);
+    if (data.workspaces.length > 0) {
+      setActiveWorkspaceId(data.workspaces[0].id);
+    }
+    if (data.diagrams.length > 0) {
+      setActiveId(data.diagrams[0].id);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-dark-900 text-gray-200">
       
@@ -114,9 +127,11 @@ export default function App() {
         
         {/* Sidebar */}
         <div className={`${isSidebarOpen ? 'block' : 'hidden'} lg:block h-full`}>
-          <Sidebar 
+          <Sidebar
             diagrams={workspaceDiagrams}
             folders={workspaceFolders}
+            allDiagrams={diagrams}
+            allFolders={folders}
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
             activeId={activeId}
@@ -124,6 +139,7 @@ export default function App() {
             onCreate={handleCreateDiagram}
             onDelete={handleDeleteDiagram}
             onImport={handleImportDiagrams}
+            onImportBlueprint={handleImportBlueprint}
             onCreateFolder={handleCreateFolder}
             onDeleteFolder={handleDeleteFolder}
             onRenameFolder={handleRenameFolder}
