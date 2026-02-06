@@ -333,7 +333,7 @@ export default function App() {
             <Layout className="w-5 h-5 text-white" />
           </div>
           <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-100 to-gray-400 hidden sm:block">
-            MermaidViz
+            Blueprint
           </h1>
         </div>
 

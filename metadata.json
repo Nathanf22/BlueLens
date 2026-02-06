@@ -1,5 +1,5 @@
 {
-  "name": "MermaidViz AI",
-  "description": "A professional Mermaid.js diagram visualizer and editor with Gemini AI generation capabilities.",
+  "name": "Blueprint",
+  "description": "Living Architecture Diagrams That Sync With Reality - Create, visualize, and maintain multi-level architecture diagrams with bidirectional code linking.",
   "requestFramePermissions": []
 }
