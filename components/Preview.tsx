@@ -1,11 +1,20 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { Comment } from '../types';
+import { Comment, Diagram } from '../types';
 import { PreviewToolbar } from './preview/PreviewToolbar';
 import { CommentItem } from './preview/CommentItem';
 import { DraftComment } from './preview/DraftComment';
+import { Breadcrumb } from './Breadcrumb';
+import { SubDiagramBadge } from './SubDiagramBadge';
 import { useNavigation } from '../hooks/useNavigation';
 import { useDiagramRenderer } from '../hooks/useDiagramRenderer';
+import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
+import { svgParserService } from '../services/svgParserService';
+
+interface BreadcrumbItem {
+  id: string;
+  name: string;
+}
 
 interface PreviewProps {
   code: string;
@@ -14,6 +23,15 @@ interface PreviewProps {
   onDeleteComment: (id: string) => void;
   onError: (error: string) => void;
   onSuccess: () => void;
+  
+  // Multi-level navigation props
+  currentDiagram: Diagram | undefined;
+  breadcrumbPath: BreadcrumbItem[];
+  onZoomIn: (targetDiagramId: string, sourceNodeId?: string, sourceNodeName?: string) => void;
+  onZoomOut: () => void;
+  onGoToRoot: () => void;
+  onBreadcrumbNavigate: (index: number) => void;
+  onManageLinks?: () => void;
 }
 
 export const Preview: React.FC<PreviewProps> = ({ 
@@ -22,7 +40,14 @@ export const Preview: React.FC<PreviewProps> = ({
   onAddComment, 
   onDeleteComment, 
   onError, 
-  onSuccess 
+  onSuccess,
+  currentDiagram,
+  breadcrumbPath,
+  onZoomIn,
+  onZoomOut,
+  onGoToRoot,
+  onBreadcrumbNavigate,
+  onManageLinks
 }) => {
   // This ref is for the INNER container (the one being transformed)
   // We need it for click calculations and download
@@ -48,6 +73,63 @@ export const Preview: React.FC<PreviewProps> = ({
     handleMouseMove,
     handleMouseUp
   } = useNavigation(svgContent);
+
+  // Keyboard navigation
+  useKeyboardNavigation({
+    onZoomIn: currentDiagram && currentDiagram.nodeLinks && currentDiagram.nodeLinks.length > 0 ? () => {} : undefined,
+    onZoomOut: breadcrumbPath.length > 0 ? onZoomOut : undefined,
+    onGoToRoot: breadcrumbPath.length > 0 ? onGoToRoot : undefined
+  }, !isCommentMode);
+
+  // Inject badges and attach handlers when SVG content changes
+  useEffect(() => {
+    console.log('[Preview] Badge injection useEffect triggered');
+    
+    if (!svgContent || !innerContainerRef.current || !currentDiagram) {
+      console.log('[Preview] Skipping badge injection - missing dependencies');
+      return;
+    }
+
+    const svgContainer = innerContainerRef.current.querySelector('.mermaid-svg-container');
+    const svgElement = svgContainer?.querySelector('svg');
+    if (!svgElement) {
+      console.log('[Preview] Skipping badge injection - no SVG element found');
+      return;
+    }
+
+    console.log('[Preview] Injecting badges for diagram:', currentDiagram.name);
+
+    // Remove any existing badges first
+    svgParserService.removeAllBadges(svgElement as SVGElement);
+
+    // Get all node links for this diagram
+    const nodeLinks = currentDiagram.nodeLinks || [];
+    console.log('[Preview] Node links count:', nodeLinks.length);
+    if (nodeLinks.length === 0) return;
+
+    // For each node link, find the node and inject badge + handler
+    nodeLinks.forEach(link => {
+      console.log('[Preview] Processing link:', link);
+      const nodeElement = svgParserService.findNodeElement(svgElement as SVGElement, link.nodeId);
+      if (nodeElement) {
+        // First attach double-click handler to the node itself
+        svgParserService.attachDoubleClickHandler(nodeElement, () => {
+          console.log('[Preview] Double-click handler called for:', link.nodeId);
+          onZoomIn(link.targetDiagramId, link.nodeId, link.label || link.nodeId);
+        });
+
+        // Then inject badge with click handler (must be after to avoid being removed)
+        svgParserService.injectBadge(nodeElement, () => {
+          console.log('[Preview] Badge click handler called for:', link.nodeId);
+          onZoomIn(link.targetDiagramId, link.nodeId, link.label || link.nodeId);
+        });
+      } else {
+        console.log('[Preview] Node element not found for:', link.nodeId);
+      }
+    });
+    
+    console.log('[Preview] Badge injection complete');
+  }, [svgContent, currentDiagram, onZoomIn]);
 
   // Handlers
   const handleFullscreen = useCallback(() => {
@@ -114,6 +196,14 @@ export const Preview: React.FC<PreviewProps> = ({
   return (
     <div ref={outerRef} className="relative w-full h-full bg-dark-800 overflow-hidden flex flex-col rounded-lg border border-gray-700 group">
       
+      {/* Breadcrumb Navigation */}
+      {breadcrumbPath.length > 0 && (
+        <Breadcrumb 
+          path={breadcrumbPath}
+          onNavigate={onBreadcrumbNavigate}
+        />
+      )}
+      
       <PreviewToolbar 
         isCommentMode={isCommentMode}
         onToggleCommentMode={() => {
@@ -124,6 +214,7 @@ export const Preview: React.FC<PreviewProps> = ({
         onReset={handleReset}
         onFullscreen={handleFullscreen}
         onDownload={handleDownload}
+        onManageLinks={onManageLinks}
       />
 
       {isCommentMode && (
@@ -138,7 +229,15 @@ export const Preview: React.FC<PreviewProps> = ({
           ${isCommentMode ? 'cursor-crosshair' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
           ${!svgContent ? 'flex items-center justify-center' : ''}
         `}
-        onMouseDown={(e) => handleMouseDown(e, isCommentMode)}
+        onMouseDown={(e) => {
+          // Don't start panning if clicking on a badge or linked node
+          const target = e.target as Element;
+          if (target.closest('.node-link-badge') || target.closest('[data-has-double-click="true"]')) {
+            console.log('[Preview] Ignoring mousedown on badge/linked node');
+            return;
+          }
+          handleMouseDown(e, isCommentMode);
+        }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
@@ -163,6 +262,11 @@ export const Preview: React.FC<PreviewProps> = ({
              }}
              className="relative"
            >
+              {/* Sub-diagram badge */}
+              {currentDiagram?.hasSubDiagram && (
+                <SubDiagramBadge onZoomIn={onZoomIn} />
+              )}
+
               <div 
                  className="mermaid-svg-container"
                  dangerouslySetInnerHTML={{ __html: svgContent }} 

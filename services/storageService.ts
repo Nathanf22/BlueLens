@@ -47,15 +47,30 @@ export const storageService = {
       if (saved) {
         let parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map((d: any) => ({
-            id: d.id || generateId(),
-            name: d.name || 'Untitled',
-            code: d.code || '',
-            comments: Array.isArray(d.comments) ? d.comments : [],
-            lastModified: d.lastModified || Date.now(),
-            folderId: d.folderId || null,
-            workspaceId: d.workspaceId || DEFAULT_WORKSPACE_ID
-          }));
+          return parsed.map((d: any) => {
+            // Migration: Convert old format to new format
+            let nodeLinks = d.nodeLinks || [];
+            
+            // Check if this is old format (has hasSubDiagram field)
+            if ('hasSubDiagram' in d && d.hasSubDiagram && d.subDiagramId) {
+              nodeLinks = [{
+                nodeId: '_diagram_root_', // Special ID for diagram-level link
+                targetDiagramId: d.subDiagramId,
+                label: 'Migrated from diagram-level link'
+              }];
+            }
+            
+            return {
+              id: d.id || generateId(),
+              name: d.name || 'Untitled',
+              code: d.code || '',
+              comments: Array.isArray(d.comments) ? d.comments : [],
+              lastModified: d.lastModified || Date.now(),
+              folderId: d.folderId || null,
+              workspaceId: d.workspaceId || DEFAULT_WORKSPACE_ID,
+              nodeLinks: nodeLinks
+            };
+          });
         }
       }
     } catch (e) {
@@ -69,7 +84,8 @@ export const storageService = {
       comments: [],
       lastModified: Date.now(),
       folderId: null,
-      workspaceId: DEFAULT_WORKSPACE_ID
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      nodeLinks: []
     }];
   },
 

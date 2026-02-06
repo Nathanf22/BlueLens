@@ -4,7 +4,6 @@ import { Editor } from './components/Editor';
 import { Preview } from './components/Preview';
 import { Sidebar } from './components/Sidebar';
 import { AIGeneratorModal } from './components/AIGeneratorModal';
-import { NodeLinkManager } from './components/NodeLinkManager';
 import { Button } from './components/Button';
 import { Diagram, Comment, Folder, Workspace } from './types';
 import { storageService } from './services/storageService';
@@ -27,7 +26,6 @@ export default function App() {
   // --- State: UI ---
   const [error, setError] = useState<string | null>(null);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
-  const [isNodeLinkManagerOpen, setIsNodeLinkManagerOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   
@@ -266,27 +264,6 @@ export default function App() {
     });
   };
 
-  // --- Handlers: Node Links ---
-
-  const handleAddNodeLink = (nodeId: string, targetDiagramId: string, label?: string) => {
-    const currentLinks = activeDiagram.nodeLinks || [];
-    
-    // Remove existing link for this node if any
-    const filteredLinks = currentLinks.filter(link => link.nodeId !== nodeId);
-    
-    // Add new link
-    updateActiveDiagram({
-      nodeLinks: [...filteredLinks, { nodeId, targetDiagramId, label }]
-    });
-  };
-
-  const handleRemoveNodeLink = (nodeId: string) => {
-    const currentLinks = activeDiagram.nodeLinks || [];
-    updateActiveDiagram({
-      nodeLinks: currentLinks.filter(link => link.nodeId !== nodeId)
-    });
-  };
-
   // --- Handlers: Split Pane ---
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -418,7 +395,6 @@ export default function App() {
                   onZoomOut={handleZoomOut}
                   onGoToRoot={handleGoToRoot}
                   onBreadcrumbNavigate={handleBreadcrumbNavigate}
-                  onManageLinks={() => setIsNodeLinkManagerOpen(true)}
                 />
               </div>
             </>
@@ -457,17 +433,5 @@ export default function App() {
           setIsAIModalOpen(false);
         }}
       />
-
-      {/* Node Link Manager Modal */}
-      {isNodeLinkManagerOpen && activeDiagram && (
-        <NodeLinkManager
-          currentDiagram={activeDiagram}
-          allDiagrams={diagrams}
-          onAddLink={handleAddNodeLink}
-          onRemoveLink={handleRemoveNodeLink}
-          onClose={() => setIsNodeLinkManagerOpen(false)}
-        />
-      )}
     </div>
   );
-}

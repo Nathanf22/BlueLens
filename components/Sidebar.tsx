@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { 
   Plus, Trash2, FileText, Layout, Download, Loader2, Upload, 
   Folder as FolderIcon, FolderPlus, ChevronDown, ChevronRight, MoreVertical,
-  Edit2, Settings
+  Edit2, Settings, Link2, Unlink, Layers
 } from 'lucide-react';
 import { Diagram, Folder, Workspace } from '../types';
 import JSZip from 'jszip';
@@ -116,7 +116,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     comments: [],
                     lastModified: Date.now(),
                     folderId: null,
-                    workspaceId: activeWorkspaceId
+                    workspaceId: activeWorkspaceId,
+                    nodeLinks: []
                   });
                 });
                 promises.push(promise);
@@ -136,7 +137,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             comments: [],
             lastModified: Date.now(),
             folderId: null,
-            workspaceId: activeWorkspaceId
+            workspaceId: activeWorkspaceId,
+            nodeLinks: []
           });
         }
       }
@@ -165,6 +167,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex items-center gap-2 min-w-0">
         <FileText className="w-3.5 h-3.5 flex-shrink-0" />
         <span className="truncate text-sm">{diagram.name}</span>
+        {diagram.nodeLinks && diagram.nodeLinks.length > 0 && (
+          <span 
+            className="text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-full font-medium" 
+            title={`${diagram.nodeLinks.length} node link${diagram.nodeLinks.length > 1 ? 's' : ''}`}
+          >
+            {diagram.nodeLinks.length}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button

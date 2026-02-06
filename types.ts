@@ -27,6 +27,15 @@ export interface Diagram {
   lastModified: number;
   folderId: string | null;
   workspaceId: string;
+  
+  // Node-level navigation
+  nodeLinks: NodeLink[];
+}
+
+export interface NodeLink {
+  nodeId: string;           // Mermaid node ID (e.g., "A", "UserService")
+  targetDiagramId: string;  // Diagram to navigate to
+  label?: string;           // Optional label for the link
 }
 
 export interface DiagramState {
@@ -48,4 +57,14 @@ export enum AppMode {
 
 export interface AIRequestParams {
   prompt: string;
+}
+
+export interface NavigationState {
+  stack: NavigationStep[];
+}
+
+export interface NavigationStep {
+  diagramId: string;
+  nodeId?: string;     // Which node was clicked to get here
+  nodeName?: string;   // Display name for breadcrumb
 }

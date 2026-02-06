@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageCircle, ZoomIn, ZoomOut, RotateCcw, Maximize, Download } from 'lucide-react';
+import { MessageCircle, ZoomIn, ZoomOut, RotateCcw, Maximize, Download, Link2 } from 'lucide-react';
 
 interface PreviewToolbarProps {
   isCommentMode: boolean;
@@ -8,6 +8,7 @@ interface PreviewToolbarProps {
   onReset: () => void;
   onFullscreen: () => void;
   onDownload: () => void;
+  onManageLinks?: () => void;
 }
 
 export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
@@ -16,7 +17,8 @@ export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
   onZoom,
   onReset,
   onFullscreen,
-  onDownload
+  onDownload,
+  onManageLinks
 }) => {
   return (
     <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 bg-dark-900/90 p-2 rounded-lg backdrop-blur border border-gray-700 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -44,6 +46,14 @@ export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
       <button onClick={onDownload} className="p-2 hover:bg-brand-600 rounded text-brand-500 hover:text-white" title="Download Image (SVG)">
         <Download className="w-5 h-5" />
       </button>
+      {onManageLinks && (
+        <>
+          <div className="h-px bg-gray-700 my-1" />
+          <button onClick={onManageLinks} className="p-2 hover:bg-brand-600 rounded text-brand-500 hover:text-white" title="Manage Node Links">
+            <Link2 className="w-5 h-5" />
+          </button>
+        </>
+      )}
     </div>
   );
 };
