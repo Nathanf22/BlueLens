@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { 
   Plus, Trash2, FileText, Layout, Download, Loader2, Upload, 
   Folder as FolderIcon, FolderPlus, ChevronDown, ChevronRight, MoreVertical,
-  Edit2, Settings, Link2, Unlink, Layers
+  Edit2, Settings, Link2, Unlink, Layers, ChevronLeft
 } from 'lucide-react';
 import { Diagram, Folder, Workspace } from '../types';
 import JSZip from 'jszip';
@@ -25,6 +25,8 @@ interface SidebarProps {
   onCreateWorkspace: (name: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onRenameWorkspace: (id: string, name: string) => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -46,7 +48,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSwitchWorkspace,
   onCreateWorkspace,
   onDeleteWorkspace,
-  onRenameWorkspace
+  onRenameWorkspace,
+  isCollapsed,
+  onToggleCollapse
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -276,7 +280,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const rootDiagrams = diagrams.filter(d => !d.folderId);
 
   return (
-    <div className="w-64 bg-dark-900 flex flex-col border-r border-gray-800 h-full flex-shrink-0">
+    <div className={`relative bg-dark-900 flex flex-col border-r border-gray-800 h-full flex-shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-12' : 'w-64'}`}>
       <input 
         type="file" 
         ref={fileInputRef}
@@ -286,6 +290,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
         accept=".mmd,.txt,.mermaid,.zip"
       />
 
+      {/* Collapse Toggle Button */}
+      {!isCollapsed && (
+        <div className="px-4 py-3 border-b border-gray-800 flex justify-end">
+          <button
+            onClick={onToggleCollapse}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-400 hover:text-brand-400 bg-dark-800 hover:bg-dark-700 border border-gray-700 hover:border-brand-500/50 rounded transition-all"
+            title="Collapse sidebar"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            <span>Collapse</span>
+          </button>
+        </div>
+      )}
+
+      {isCollapsed ? (
+        // Collapsed view - just icons
+        <div className="flex flex-col items-center py-4 gap-4">
+          <button
+            onClick={onToggleCollapse}
+            className="p-2 text-gray-500 hover:text-brand-400 transition-colors rounded hover:bg-dark-800"
+            title="Expand sidebar"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+          <div className="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center border border-brand-500/30">
+            <Layout className="w-4 h-4 text-brand-400" />
+          </div>
+          <button 
+            onClick={() => onCreate(null)}
+            className="p-2 text-gray-500 hover:text-brand-400 transition-colors rounded hover:bg-dark-800"
+            title="New Diagram"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
+      ) : (
+        // Expanded view - full sidebar
+        <>
       {/* Workspace Selector */}
       <div className="relative">
         <div 
@@ -421,6 +463,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           New Diagram
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 };

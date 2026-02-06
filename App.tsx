@@ -29,13 +29,15 @@ export default function App() {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isNodeLinkManagerOpen, setIsNodeLinkManagerOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isEditorCollapsed, setIsEditorCollapsed] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   
   // --- State: Multi-Level Navigation ---
   const [navigationStack, setNavigationStack] = useState<{ diagramId: string; nodeId?: string; nodeName?: string }[]>([]);
   
   // Split pane state
-  const [leftWidthPercent, setLeftWidthPercent] = useState(50);
+  const [leftWidthPercent, setLeftWidthPercent] = useState(35);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -352,7 +354,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         
         {/* Sidebar (Responsive) */}
-        <div className={`${isSidebarOpen ? 'block' : 'hidden'} lg:block h-full`}>
+         <div className={`${isSidebarOpen ? 'block' : 'hidden'} lg:block h-full`}>
            <Sidebar 
              diagrams={workspaceDiagrams}
              folders={workspaceFolders}
@@ -371,6 +373,8 @@ export default function App() {
              onCreateWorkspace={handleCreateWorkspace}
              onDeleteWorkspace={handleDeleteWorkspace}
              onRenameWorkspace={handleRenameWorkspace}
+             isCollapsed={isSidebarCollapsed}
+             onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
            />
         </div>
 
@@ -383,25 +387,29 @@ export default function App() {
             <>
               {/* Editor Pane */}
               <div 
-                className="flex-1 lg:flex-none min-w-0 h-1/2 lg:h-full"
-                style={{ width: `${leftWidthPercent}%` }}
+                className={`min-w-0 h-1/2 lg:h-full ${isEditorCollapsed ? '' : 'flex-1 lg:flex-none'}`}
+                style={isEditorCollapsed ? {} : { width: `${leftWidthPercent}%` }}
               >
                 <Editor 
                   code={activeDiagram.code} 
                   name={activeDiagram.name}
                   onCodeChange={(code) => updateActiveDiagram({ code })}
                   onNameChange={(name) => updateActiveDiagram({ name })}
-                  error={error} 
+                  error={error}
+                  isCollapsed={isEditorCollapsed}
+                  onToggleCollapse={() => setIsEditorCollapsed(!isEditorCollapsed)}
                 />
               </div>
 
               {/* Resizer Handle */}
+              {!isEditorCollapsed && (
               <div
                 className="hidden lg:flex w-2 bg-dark-900 border-l border-r border-gray-800 hover:bg-brand-600 cursor-col-resize items-center justify-center transition-colors z-10"
                 onMouseDown={handleMouseDown}
               >
                 <GripVertical className="w-3 h-3 text-gray-600 pointer-events-none" />
               </div>
+              )}
 
               {/* Preview Pane */}
               <div className="flex-1 min-w-0 h-1/2 lg:h-full p-4 bg-[#0d0d0d]">

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Copy, Check, Download, Pencil } from 'lucide-react';
+import { Copy, Check, Download, Pencil, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface EditorProps {
   code: string;
@@ -7,9 +7,11 @@ interface EditorProps {
   onCodeChange: (value: string) => void;
   onNameChange: (value: string) => void;
   error: string | null;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
-export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onNameChange, error }) => {
+export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onNameChange, error, isCollapsed, onToggleCollapse }) => {
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -44,7 +46,27 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   return (
-    <div className="flex flex-col h-full bg-dark-900 border-r border-gray-700">
+    <div className={`flex flex-col h-full bg-dark-900 border-r border-gray-700 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-12' : 'flex-1'}`}>
+      {isCollapsed ? (
+        // Collapsed view - vertical tab
+        <div className="flex flex-col items-center justify-center h-full gap-4 py-8">
+          <button
+            onClick={onToggleCollapse}
+            className="p-2 text-gray-500 hover:text-brand-400 transition-colors rounded hover:bg-dark-800"
+            title="Expand editor"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+          <div className="flex items-center justify-center" style={{ writingMode: 'vertical-rl' }}>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              {name || 'Editor'}
+            </span>
+          </div>
+          <Pencil className="w-4 h-4 text-gray-500" />
+        </div>
+      ) : (
+        // Expanded view - full editor
+        <>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-dark-800 border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-2 group flex-1 mr-4">
@@ -59,6 +81,14 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={onToggleCollapse}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-400 hover:text-brand-400 bg-dark-900 hover:bg-dark-700 border border-gray-700 hover:border-brand-500/50 rounded transition-all"
+            title="Collapse editor"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            <span>Collapse</span>
+          </button>
           <button 
             onClick={handleDownload}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-200 transition-colors"
@@ -113,6 +143,8 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
             {error}
           </p>
         </div>
+      )}
+        </>
       )}
     </div>
   );
