@@ -1,9 +1,11 @@
 import React from 'react';
-import { Folder } from '../types';
+import { Folder, Diagram } from '../types';
 
 export const useFolderHandlers = (
   folders: Folder[],
   setFolders: React.Dispatch<React.SetStateAction<Folder[]>>,
+  diagrams: Diagram[],
+  setDiagrams: React.Dispatch<React.SetStateAction<Diagram[]>>,
   activeWorkspaceId: string
 ) => {
   const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -20,7 +22,15 @@ export const useFolderHandlers = (
 
   const handleDeleteFolder = (folderId: string) => {
     if (window.confirm('Delete this folder? Diagrams inside will be moved to root.')) {
-      setFolders(prev => prev.filter(f => f.id !== folderId));
+      // Move diagrams to root
+      setDiagrams(prev => prev.map(d => 
+        (d.folderId === folderId && d.workspaceId === activeWorkspaceId) ? { ...d, folderId: null } : d
+      ));
+      // Delete folder and move child folders to root
+      setFolders(prev => prev
+        .filter(f => f.id !== folderId)
+        .map(f => (f.parentId === folderId && f.workspaceId === activeWorkspaceId) ? { ...f, parentId: null } : f)
+      );
     }
   };
 

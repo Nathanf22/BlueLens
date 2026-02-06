@@ -54,10 +54,17 @@ export const useDiagramHandlers = (
     setDiagrams(prev => prev.map(d => d.id === diagramId ? { ...d, folderId } : d));
   };
 
+  const updateActiveDiagram = (updates: Partial<Diagram>) => {
+    setDiagrams(prev => prev.map(d => 
+      d.id === activeId ? { ...d, ...updates, lastModified: Date.now() } : d
+    ));
+  };
+
   return {
     handleCreateDiagram,
     handleImportDiagrams,
     handleDeleteDiagram,
-    handleMoveDiagram
+    handleMoveDiagram,
+    updateActiveDiagram
   };
 };

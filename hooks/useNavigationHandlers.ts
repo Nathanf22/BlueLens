@@ -1,5 +1,4 @@
 import React from 'react';
-import { useState } from 'react';
 
 interface NavigationStep {
   diagramId: string;
@@ -9,9 +8,10 @@ interface NavigationStep {
 
 export const useNavigationHandlers = (
   activeId: string,
-  setActiveId: React.Dispatch<React.SetStateAction<string>>
+  setActiveId: React.Dispatch<React.SetStateAction<string>>,
+  navigationStack: NavigationStep[],
+  setNavigationStack: React.Dispatch<React.SetStateAction<NavigationStep[]>>
 ) => {
-  const [navigationStack, setNavigationStack] = useState<NavigationStep[]>([]);
 
   const handleZoomIn = (targetDiagramId: string, sourceNodeId?: string, sourceNodeName?: string) => {
     setNavigationStack([
@@ -56,7 +56,6 @@ export const useNavigationHandlers = (
   };
 
   return {
-    navigationStack,
     handleZoomIn,
     handleZoomOut,
     handleGoToRoot,
