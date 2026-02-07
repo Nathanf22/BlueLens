@@ -5,7 +5,8 @@ import { AppFooter } from './components/AppFooter';
 import { WorkspaceView } from './components/WorkspaceView';
 import { ModalManager } from './components/ModalManager';
 import { BlueprintImportResult } from './services/exportService';
-
+import { fileSystemService } from './services/fileSystemService';
+import { CodeFile } from './types';
 
 // Custom Hooks
 import { useAppState } from './hooks/useAppState';
@@ -15,6 +16,8 @@ import { useFolderHandlers } from './hooks/useFolderHandlers';
 import { useNavigationHandlers } from './hooks/useNavigationHandlers';
 import { useCommentHandlers } from './hooks/useCommentHandlers';
 import { useNodeLinkHandlers } from './hooks/useNodeLinkHandlers';
+import { useRepoHandlers } from './hooks/useRepoHandlers';
+import { useCodeLinkHandlers } from './hooks/useCodeLinkHandlers';
 import { useSplitPane } from './hooks/useSplitPane';
 import { useStoragePersistence } from './hooks/useStoragePersistence';
 
@@ -31,12 +34,18 @@ export default function App() {
     setFolders,
     activeId,
     setActiveId,
+    repos,
+    setRepos,
     error,
     setError,
     isAIModalOpen,
     setIsAIModalOpen,
     isNodeLinkManagerOpen,
     setIsNodeLinkManagerOpen,
+    isRepoManagerOpen,
+    setIsRepoManagerOpen,
+    isCodeLinkManagerOpen,
+    setIsCodeLinkManagerOpen,
     isSidebarOpen,
     setIsSidebarOpen,
     isSidebarCollapsed,
@@ -47,35 +56,46 @@ export default function App() {
     setSaveStatus,
     navigationStack,
     setNavigationStack,
+    isCodePanelOpen,
+    setIsCodePanelOpen,
+    activeCodeFile,
+    setActiveCodeFile,
     workspaceDiagrams,
     workspaceFolders,
+    workspaceRepos,
     activeDiagram,
     breadcrumbPath
   } = useAppState();
 
   // --- Handlers ---
-  const { handleCreateWorkspace, handleDeleteWorkspace, handleRenameWorkspace } = 
+  const { handleCreateWorkspace, handleDeleteWorkspace, handleRenameWorkspace } =
     useWorkspaceHandlers(workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspaceId, setDiagrams, setFolders);
 
-  const { 
-    handleCreateDiagram, 
-    handleImportDiagrams, 
-    handleDeleteDiagram, 
+  const {
+    handleCreateDiagram,
+    handleImportDiagrams,
+    handleDeleteDiagram,
     handleMoveDiagram,
-    updateActiveDiagram 
+    updateActiveDiagram
   } = useDiagramHandlers(diagrams, setDiagrams, activeWorkspaceId, activeId, setActiveId);
 
-  const { handleCreateFolder, handleDeleteFolder, handleRenameFolder } = 
+  const { handleCreateFolder, handleDeleteFolder, handleRenameFolder } =
     useFolderHandlers(folders, setFolders, diagrams, setDiagrams, activeWorkspaceId);
 
-  const { handleZoomIn, handleZoomOut, handleGoToRoot, handleBreadcrumbNavigate } = 
+  const { handleZoomIn, handleZoomOut, handleGoToRoot, handleBreadcrumbNavigate } =
     useNavigationHandlers(activeId, setActiveId, navigationStack, setNavigationStack);
 
-  const { handleAddComment, handleDeleteComment } = 
+  const { handleAddComment, handleDeleteComment } =
     useCommentHandlers(activeDiagram, updateActiveDiagram);
 
-  const { handleAddNodeLink, handleRemoveNodeLink } = 
+  const { handleAddNodeLink, handleRemoveNodeLink } =
     useNodeLinkHandlers(activeDiagram, updateActiveDiagram);
+
+  const { handleAddRepo, handleRemoveRepo, handleReopenRepo } =
+    useRepoHandlers(repos, setRepos, activeWorkspaceId);
+
+  const { handleAddCodeLink, handleRemoveCodeLink } =
+    useCodeLinkHandlers(activeDiagram, updateActiveDiagram);
 
   const { leftWidthPercent, isDragging, containerRef, handleMouseDown } = useSplitPane();
 
@@ -84,6 +104,7 @@ export default function App() {
     diagrams,
     folders,
     workspaces,
+    repos,
     activeWorkspaceId,
     activeId,
     setSaveStatus
@@ -112,11 +133,47 @@ export default function App() {
     }
   };
 
+  const handleViewCode = async (nodeId: string) => {
+    if (!activeDiagram) return;
+    const codeLink = (activeDiagram.codeLinks || []).find(cl => cl.nodeId === nodeId);
+    if (!codeLink) return;
+
+    const handle = fileSystemService.getHandle(codeLink.repoId);
+    if (!handle) {
+      alert('Repository is disconnected. Please reopen it from the Repo Manager.');
+      setIsRepoManagerOpen(true);
+      return;
+    }
+
+    try {
+      const content = await fileSystemService.readFile(handle, codeLink.filePath);
+      const language = fileSystemService.getLanguage(codeLink.filePath);
+      const codeFile: CodeFile = {
+        repoId: codeLink.repoId,
+        filePath: codeLink.filePath,
+        content,
+        language,
+        lineStart: codeLink.lineStart,
+        lineEnd: codeLink.lineEnd,
+      };
+      setActiveCodeFile(codeFile);
+      setIsCodePanelOpen(true);
+    } catch (e) {
+      console.error('Failed to read file:', e);
+      alert('Failed to read file. The repository may need to be reopened.');
+    }
+  };
+
+  const handleCloseCodePanel = () => {
+    setIsCodePanelOpen(false);
+    setActiveCodeFile(null);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-dark-900 text-gray-200">
-      
+
       {/* Header */}
-      <AppHeader 
+      <AppHeader
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         onOpenAIModal={() => setIsAIModalOpen(true)}
         isSidebarOpen={isSidebarOpen}
@@ -124,7 +181,7 @@ export default function App() {
 
       {/* Main Layout */}
       <div className="flex flex-1 overflow-hidden">
-        
+
         {/* Sidebar */}
         <div className={`${isSidebarOpen ? 'block' : 'hidden'} lg:block h-full`}>
           <Sidebar
@@ -148,13 +205,14 @@ export default function App() {
             onCreateWorkspace={handleCreateWorkspace}
             onDeleteWorkspace={handleDeleteWorkspace}
             onRenameWorkspace={handleRenameWorkspace}
+            onOpenRepoManager={() => setIsRepoManagerOpen(true)}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
           />
         </div>
 
         {/* Workspace */}
-        <WorkspaceView 
+        <WorkspaceView
           activeDiagram={activeDiagram}
           error={error}
           isEditorCollapsed={isEditorCollapsed}
@@ -171,6 +229,11 @@ export default function App() {
           onGoToRoot={handleGoToRoot}
           onBreadcrumbNavigate={handleBreadcrumbNavigate}
           onManageLinks={() => setIsNodeLinkManagerOpen(true)}
+          onManageCodeLinks={() => setIsCodeLinkManagerOpen(true)}
+          onViewCode={handleViewCode}
+          isCodePanelOpen={isCodePanelOpen}
+          activeCodeFile={activeCodeFile}
+          onCloseCodePanel={handleCloseCodePanel}
           leftWidthPercent={leftWidthPercent}
           isDragging={isDragging}
           containerRef={containerRef}
@@ -179,13 +242,13 @@ export default function App() {
       </div>
 
       {/* Footer */}
-      <AppFooter 
+      <AppFooter
         diagramCount={diagrams.length}
         saveStatus={saveStatus}
       />
 
       {/* Modals */}
-      <ModalManager 
+      <ModalManager
         isAIModalOpen={isAIModalOpen}
         onCloseAIModal={() => setIsAIModalOpen(false)}
         onGenerate={handleAIGenerate}
@@ -195,6 +258,16 @@ export default function App() {
         allDiagrams={diagrams}
         onAddLink={handleAddNodeLink}
         onRemoveLink={handleRemoveNodeLink}
+        isRepoManagerOpen={isRepoManagerOpen}
+        onCloseRepoManager={() => setIsRepoManagerOpen(false)}
+        repos={workspaceRepos}
+        onAddRepo={handleAddRepo}
+        onRemoveRepo={handleRemoveRepo}
+        onReopenRepo={handleReopenRepo}
+        isCodeLinkManagerOpen={isCodeLinkManagerOpen}
+        onCloseCodeLinkManager={() => setIsCodeLinkManagerOpen(false)}
+        onAddCodeLink={handleAddCodeLink}
+        onRemoveCodeLink={handleRemoveCodeLink}
       />
     </div>
   );

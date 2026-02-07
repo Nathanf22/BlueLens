@@ -23,7 +23,7 @@ interface PreviewProps {
   onDeleteComment: (id: string) => void;
   onError: (error: string) => void;
   onSuccess: () => void;
-  
+
   // Multi-level navigation props
   currentDiagram: Diagram | undefined;
   breadcrumbPath: BreadcrumbItem[];
@@ -32,6 +32,8 @@ interface PreviewProps {
   onGoToRoot: () => void;
   onBreadcrumbNavigate: (index: number) => void;
   onManageLinks?: () => void;
+  onManageCodeLinks?: () => void;
+  onViewCode?: (nodeId: string) => void;
 }
 
 export const Preview: React.FC<PreviewProps> = ({ 
@@ -47,7 +49,9 @@ export const Preview: React.FC<PreviewProps> = ({
   onZoomOut,
   onGoToRoot,
   onBreadcrumbNavigate,
-  onManageLinks
+  onManageLinks,
+  onManageCodeLinks,
+  onViewCode
 }) => {
   // This ref is for the INNER container (the one being transformed)
   // We need it for click calculations and download
@@ -89,34 +93,45 @@ export const Preview: React.FC<PreviewProps> = ({
     const svgElement = svgContainer?.querySelector('svg');
     if (!svgElement) return;
 
-    // Check if badges already exist to avoid duplicates
-    const existingBadges = svgElement.querySelectorAll('.node-link-badge');
     const nodeLinks = currentDiagram.nodeLinks || [];
-    
-    // If badges already exist and count matches, don't re-inject
-    if (existingBadges.length === nodeLinks.length && existingBadges.length > 0) return;
+    const codeLinks = currentDiagram.codeLinks || [];
+
+    // Check if badges already exist to avoid duplicates
+    const existingBlueBadges = svgElement.querySelectorAll('.node-link-badge');
+    const existingGreenBadges = svgElement.querySelectorAll('.code-link-badge');
+
+    if (
+      existingBlueBadges.length === nodeLinks.length &&
+      existingGreenBadges.length === codeLinks.length &&
+      (existingBlueBadges.length > 0 || existingGreenBadges.length > 0)
+    ) return;
 
     // Remove any existing badges first
     svgParserService.removeAllBadges(svgElement as SVGElement);
 
-    if (nodeLinks.length === 0) return;
-
-    // For each node link, find the node and inject badge + handler
+    // Inject blue node-link badges
     nodeLinks.forEach(link => {
       const nodeElement = svgParserService.findNodeElement(svgElement as SVGElement, link.nodeId);
       if (nodeElement) {
-        // First attach double-click handler to the node itself
         svgParserService.attachDoubleClickHandler(nodeElement, () => {
           onZoomIn(link.targetDiagramId, link.nodeId, link.label || link.nodeId);
         });
-
-        // Then inject badge with click handler
         svgParserService.injectBadge(nodeElement, () => {
           onZoomIn(link.targetDiagramId, link.nodeId, link.label || link.nodeId);
         });
       }
     });
-  }, [currentDiagram, onZoomIn]);
+
+    // Inject green code-link badges
+    codeLinks.forEach(link => {
+      const nodeElement = svgParserService.findNodeElement(svgElement as SVGElement, link.nodeId);
+      if (nodeElement) {
+        svgParserService.injectCodeBadge(nodeElement, () => {
+          onViewCode?.(link.nodeId);
+        });
+      }
+    });
+  }, [currentDiagram, onZoomIn, onViewCode]);
 
   // Inject badges when SVG content changes
   useEffect(() => {
@@ -233,6 +248,7 @@ export const Preview: React.FC<PreviewProps> = ({
         onFullscreen={handleFullscreen}
         onDownload={handleDownload}
         onManageLinks={onManageLinks}
+        onManageCodeLinks={onManageCodeLinks}
       />
 
       {isCommentMode && (
@@ -250,7 +266,7 @@ export const Preview: React.FC<PreviewProps> = ({
         onMouseDown={(e) => {
           // Don't start panning if clicking on a badge or linked node
           const target = e.target as Element;
-          if (target.closest('.node-link-badge') || target.closest('[data-has-double-click="true"]')) {
+          if (target.closest('.node-link-badge') || target.closest('.code-link-badge') || target.closest('[data-has-double-click="true"]')) {
             return;
           }
           handleMouseDown(e, isCommentMode);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageCircle, ZoomIn, ZoomOut, RotateCcw, Maximize, Download, Link2 } from 'lucide-react';
+import { MessageCircle, ZoomIn, ZoomOut, RotateCcw, Maximize, Download, Link2, Code } from 'lucide-react';
 
 interface PreviewToolbarProps {
   isCommentMode: boolean;
@@ -9,6 +9,7 @@ interface PreviewToolbarProps {
   onFullscreen: () => void;
   onDownload: () => void;
   onManageLinks?: () => void;
+  onManageCodeLinks?: () => void;
 }
 
 export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
@@ -18,7 +19,8 @@ export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
   onReset,
   onFullscreen,
   onDownload,
-  onManageLinks
+  onManageLinks,
+  onManageCodeLinks
 }) => {
   return (
     <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 bg-dark-900/90 p-2 rounded-lg backdrop-blur border border-gray-700 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -53,6 +55,11 @@ export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
             <Link2 className="w-5 h-5" />
           </button>
         </>
+      )}
+      {onManageCodeLinks && (
+        <button onClick={onManageCodeLinks} className="p-2 hover:bg-green-600 rounded text-green-500 hover:text-white" title="Manage Code Links">
+          <Code className="w-5 h-5" />
+        </button>
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Diagram, Folder, Workspace } from '../types';
+import { Diagram, Folder, Workspace, RepoConfig } from '../types';
 import { storageService } from '../services/storageService';
 
 export const useAppState = () => {
@@ -16,10 +16,15 @@ export const useAppState = () => {
     storageService.loadActiveId(diagrams.filter(d => d.workspaceId === activeWorkspaceId))
   );
 
+  // --- State: Repos ---
+  const [repos, setRepos] = useState<RepoConfig[]>(() => storageService.loadAllRepos());
+
   // --- State: UI ---
   const [error, setError] = useState<string | null>(null);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isNodeLinkManagerOpen, setIsNodeLinkManagerOpen] = useState(false);
+  const [isRepoManagerOpen, setIsRepoManagerOpen] = useState(false);
+  const [isCodeLinkManagerOpen, setIsCodeLinkManagerOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isEditorCollapsed, setIsEditorCollapsed] = useState(false);
@@ -28,9 +33,14 @@ export const useAppState = () => {
   // --- State: Multi-Level Navigation ---
   const [navigationStack, setNavigationStack] = useState<{ diagramId: string; nodeId?: string; nodeName?: string }[]>([]);
 
+  // --- State: Code Panel ---
+  const [isCodePanelOpen, setIsCodePanelOpen] = useState(false);
+  const [activeCodeFile, setActiveCodeFile] = useState<import('../types').CodeFile | null>(null);
+
   // Derived state
   const workspaceDiagrams = diagrams.filter(d => d.workspaceId === activeWorkspaceId);
   const workspaceFolders = folders.filter(f => f.workspaceId === activeWorkspaceId);
+  const workspaceRepos = repos.filter(r => r.workspaceId === activeWorkspaceId);
   const activeDiagram = diagrams.find(d => d.id === activeId) || workspaceDiagrams[0];
 
   // Build breadcrumb path from navigation stack
@@ -71,6 +81,10 @@ export const useAppState = () => {
     setFolders,
     activeId,
     setActiveId,
+
+    // Repos
+    repos,
+    setRepos,
     
     // UI State
     error,
@@ -79,6 +93,10 @@ export const useAppState = () => {
     setIsAIModalOpen,
     isNodeLinkManagerOpen,
     setIsNodeLinkManagerOpen,
+    isRepoManagerOpen,
+    setIsRepoManagerOpen,
+    isCodeLinkManagerOpen,
+    setIsCodeLinkManagerOpen,
     isSidebarOpen,
     setIsSidebarOpen,
     isSidebarCollapsed,
@@ -92,9 +110,16 @@ export const useAppState = () => {
     navigationStack,
     setNavigationStack,
     
+    // Code Panel
+    isCodePanelOpen,
+    setIsCodePanelOpen,
+    activeCodeFile,
+    setActiveCodeFile,
+
     // Derived state
     workspaceDiagrams,
     workspaceFolders,
+    workspaceRepos,
     activeDiagram,
     breadcrumbPath
   };

@@ -1,4 +1,4 @@
-import { Diagram, Folder, Workspace } from '../types';
+import { Diagram, Folder, Workspace, RepoConfig } from '../types';
 import { DEFAULT_DIAGRAM } from '../constants';
 
 const KEYS = {
@@ -6,7 +6,8 @@ const KEYS = {
   FOLDERS: 'mermaidviz_folders',
   WORKSPACES: 'mermaidviz_workspaces',
   ACTIVE_WORKSPACE_ID: 'mermaidviz_active_workspace_id',
-  ACTIVE_ID: 'mermaidviz_active_id'
+  ACTIVE_ID: 'mermaidviz_active_id',
+  REPOS: 'mermaidviz_repos'
 };
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -68,7 +69,8 @@ export const storageService = {
               lastModified: d.lastModified || Date.now(),
               folderId: d.folderId || null,
               workspaceId: d.workspaceId || DEFAULT_WORKSPACE_ID,
-              nodeLinks: nodeLinks
+              nodeLinks: nodeLinks,
+              codeLinks: Array.isArray(d.codeLinks) ? d.codeLinks : []
             };
           });
         }
@@ -85,7 +87,8 @@ export const storageService = {
       lastModified: Date.now(),
       folderId: null,
       workspaceId: DEFAULT_WORKSPACE_ID,
-      nodeLinks: []
+      nodeLinks: [],
+      codeLinks: []
     }];
   },
 
@@ -165,5 +168,26 @@ export const storageService = {
 
   saveActiveId: (id: string) => {
     localStorage.setItem(KEYS.ACTIVE_ID, id);
+  },
+
+  loadAllRepos: (): RepoConfig[] => {
+    try {
+      const saved = localStorage.getItem(KEYS.REPOS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error("Failed to load repos from storage:", e);
+    }
+    return [];
+  },
+
+  saveRepos: (repos: RepoConfig[]) => {
+    try {
+      localStorage.setItem(KEYS.REPOS, JSON.stringify(repos));
+    } catch (e) {
+      console.error("Failed to save repos:", e);
+    }
   }
 };

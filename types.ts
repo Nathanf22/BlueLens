@@ -30,6 +30,9 @@ export interface Diagram {
   
   // Node-level navigation
   nodeLinks: NodeLink[];
+
+  // Code integration
+  codeLinks?: CodeLink[];
 }
 
 export interface NodeLink {
@@ -67,6 +70,38 @@ export interface NavigationStep {
   diagramId: string;
   nodeId?: string;     // Which node was clicked to get here
   nodeName?: string;   // Display name for breadcrumb
+}
+
+export interface CodeLink {
+  nodeId: string;           // Mermaid node ID
+  repoId: string;           // Which repo this links to
+  filePath: string;         // Path relative to repo root
+  lineStart?: number;       // Optional line range start
+  lineEnd?: number;         // Optional line range end
+  label?: string;           // Display label
+}
+
+export interface RepoConfig {
+  id: string;
+  name: string;             // Directory name
+  workspaceId: string;      // Scoped to workspace
+  addedAt: number;
+}
+
+export interface CodeFile {
+  repoId: string;
+  filePath: string;
+  content: string;
+  language: string;
+  lineStart?: number;
+  lineEnd?: number;
+}
+
+export interface CodeSymbol {
+  name: string;
+  kind: 'class' | 'function' | 'interface' | 'variable';
+  lineStart: number;
+  lineEnd: number;
 }
 
 export interface BlueprintExport {

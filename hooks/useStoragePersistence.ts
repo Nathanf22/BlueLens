@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
-import { Diagram, Folder, Workspace } from '../types';
+import { Diagram, Folder, Workspace, RepoConfig } from '../types';
 import { storageService } from '../services/storageService';
 
 export const useStoragePersistence = (
   diagrams: Diagram[],
   folders: Folder[],
   workspaces: Workspace[],
+  repos: RepoConfig[],
   activeWorkspaceId: string,
   activeId: string,
   setSaveStatus: (status: 'saved' | 'saving') => void
@@ -17,12 +18,13 @@ export const useStoragePersistence = (
       storageService.saveDiagrams(diagrams);
       storageService.saveFolders(folders);
       storageService.saveWorkspaces(workspaces);
+      storageService.saveRepos(repos);
       storageService.saveActiveWorkspaceId(activeWorkspaceId);
       setSaveStatus('saved');
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [diagrams, folders, workspaces, activeWorkspaceId, setSaveStatus]);
+  }, [diagrams, folders, workspaces, repos, activeWorkspaceId, setSaveStatus]);
 
   // Persist active ID
   useEffect(() => {

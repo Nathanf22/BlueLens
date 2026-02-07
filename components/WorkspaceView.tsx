@@ -2,7 +2,8 @@ import React from 'react';
 import { GripVertical } from 'lucide-react';
 import { Editor } from './Editor';
 import { Preview } from './Preview';
-import { Diagram, Comment } from '../types';
+import { CodePanel } from './CodePanel';
+import { Diagram, Comment, CodeFile } from '../types';
 
 interface WorkspaceViewProps {
   activeDiagram: Diagram | undefined;
@@ -21,6 +22,11 @@ interface WorkspaceViewProps {
   onGoToRoot: () => void;
   onBreadcrumbNavigate: (index: number) => void;
   onManageLinks: () => void;
+  onManageCodeLinks: () => void;
+  onViewCode: (nodeId: string) => void;
+  isCodePanelOpen: boolean;
+  activeCodeFile: CodeFile | null;
+  onCloseCodePanel: () => void;
   leftWidthPercent: number;
   isDragging: boolean;
   containerRef: React.RefObject<HTMLDivElement>;
@@ -44,6 +50,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onGoToRoot,
   onBreadcrumbNavigate,
   onManageLinks,
+  onManageCodeLinks,
+  onViewCode,
+  isCodePanelOpen,
+  activeCodeFile,
+  onCloseCodePanel,
   leftWidthPercent,
   isDragging,
   containerRef,
@@ -83,8 +94,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           )}
 
           {/* Preview Pane */}
-          <div className="flex-1 min-w-0 h-1/2 lg:h-full p-4 bg-[#0d0d0d]">
-            <Preview 
+          <div className={`${isCodePanelOpen ? 'flex-1 min-w-0' : 'flex-1 min-w-0'} h-1/2 lg:h-full p-4 bg-[#0d0d0d]`}>
+            <Preview
               code={activeDiagram.code}
               comments={activeDiagram.comments || []}
               onAddComment={onAddComment}
@@ -98,8 +109,20 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               onGoToRoot={onGoToRoot}
               onBreadcrumbNavigate={onBreadcrumbNavigate}
               onManageLinks={onManageLinks}
+              onManageCodeLinks={onManageCodeLinks}
+              onViewCode={onViewCode}
             />
           </div>
+
+          {/* Code Panel */}
+          {isCodePanelOpen && activeCodeFile && (
+            <div className="w-[400px] min-w-[300px] h-1/2 lg:h-full flex-shrink-0">
+              <CodePanel
+                codeFile={activeCodeFile}
+                onClose={onCloseCodePanel}
+              />
+            </div>
+          )}
         </>
       ) : (
         <div className="flex-1 flex items-center justify-center text-gray-500">

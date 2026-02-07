@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   Plus, Trash2, FileText, Layout, Download, Loader2, Upload,
   Folder as FolderIcon, FolderPlus, ChevronDown, ChevronRight, MoreVertical,
-  Edit2, Settings, Link2, Unlink, Layers, ChevronLeft, X, Globe, FileDown
+  Edit2, Settings, Link2, Unlink, Layers, ChevronLeft, X, Globe, FileDown, FolderOpen
 } from 'lucide-react';
 import { Diagram, Folder, Workspace } from '../types';
 import { BlueprintImportResult, exportDiagram, exportWorkspace, exportAll, importBlueprint, downloadJson } from '../services/exportService';
@@ -29,6 +29,7 @@ interface SidebarProps {
   onCreateWorkspace: (name: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onRenameWorkspace: (id: string, name: string) => void;
+  onOpenRepoManager: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
 }
@@ -56,6 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCreateWorkspace,
   onDeleteWorkspace,
   onRenameWorkspace,
+  onOpenRepoManager,
   isCollapsed,
   onToggleCollapse
 }) => {
@@ -440,7 +442,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <FolderPlus className="w-4 h-4" />
           </button>
-          <button 
+          <button
+            onClick={onOpenRepoManager}
+            className="p-1.5 text-gray-500 hover:text-green-400 transition-colors rounded hover:bg-dark-800"
+            title="Repositories"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
             className="p-1.5 text-gray-500 hover:text-brand-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors rounded hover:bg-dark-800"

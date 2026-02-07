@@ -260,18 +260,128 @@ export const svgParserService = {
   },
 
   /**
+   * Inject a green code-link badge into a node element.
+   * Offset 16px below the blue node-link badge position.
+   */
+  injectCodeBadge(nodeElement: SVGGElement, onClick: () => void): void {
+    // Remove existing code badge if any
+    const existingBadge = nodeElement.querySelector('.code-link-badge');
+    if (existingBadge) {
+      existingBadge.remove();
+    }
+
+    const bbox = nodeElement.getBBox();
+
+    // Check if there is already a node-link badge — offset further down if so
+    const hasNodeLinkBadge = !!nodeElement.querySelector('.node-link-badge');
+    const yOffset = hasNodeLinkBadge ? 20 : 4;
+
+    const badge = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    badge.setAttribute('class', 'code-link-badge');
+    badge.setAttribute('transform', `translate(${bbox.x + bbox.width - 8}, ${bbox.y + yOffset})`);
+    badge.style.cursor = 'pointer';
+
+    const uniqueId = `cbadge-${Math.random().toString(36).substr(2, 9)}`;
+
+    const svg = nodeElement.ownerSVGElement;
+    let defs = svg?.querySelector('defs');
+    if (!defs && svg) {
+      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      svg.insertBefore(defs, svg.firstChild);
+    }
+
+    if (defs) {
+      const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+      gradient.setAttribute('id', `${uniqueId}-gradient`);
+      gradient.setAttribute('cx', '30%');
+      gradient.setAttribute('cy', '30%');
+
+      const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+      stop1.setAttribute('offset', '0%');
+      stop1.style.stopColor = '#4ade80'; // Light green
+
+      const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+      stop2.setAttribute('offset', '100%');
+      stop2.style.stopColor = '#16a34a'; // Dark green
+
+      gradient.appendChild(stop1);
+      gradient.appendChild(stop2);
+      defs.appendChild(gradient);
+
+      const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+      filter.setAttribute('id', `${uniqueId}-shadow`);
+      filter.setAttribute('x', '-50%');
+      filter.setAttribute('y', '-50%');
+      filter.setAttribute('width', '200%');
+      filter.setAttribute('height', '200%');
+
+      const feDropShadow = document.createElementNS('http://www.w3.org/2000/svg', 'feDropShadow');
+      feDropShadow.setAttribute('dx', '0');
+      feDropShadow.setAttribute('dy', '1');
+      feDropShadow.setAttribute('stdDeviation', '1');
+      feDropShadow.setAttribute('flood-opacity', '0.3');
+
+      filter.appendChild(feDropShadow);
+      defs.appendChild(filter);
+    }
+
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('r', '6');
+    circle.style.fill = `url(#${uniqueId}-gradient)`;
+    circle.setAttribute('filter', `url(#${uniqueId}-shadow)`);
+    circle.style.opacity = '1';
+    circle.style.stroke = 'none';
+    circle.style.pointerEvents = 'all';
+
+    badge.addEventListener('mouseenter', () => circle.setAttribute('r', '7'));
+    badge.addEventListener('mouseleave', () => circle.setAttribute('r', '6'));
+
+    badge.addEventListener('mouseup', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      onClick();
+    });
+
+    circle.addEventListener('mouseup', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      onClick();
+    });
+
+    badge.appendChild(circle);
+    nodeElement.appendChild(badge);
+  },
+
+  /**
+   * Remove all code-link badges from an SVG element
+   */
+  removeAllCodeBadges(svgElement: SVGElement): void {
+    const badges = svgElement.querySelectorAll('.code-link-badge');
+    badges.forEach(badge => badge.remove());
+
+    const defs = svgElement.querySelector('defs');
+    if (defs) {
+      const cbadgeDefs = defs.querySelectorAll('[id^="cbadge-"]');
+      cbadgeDefs.forEach(def => def.remove());
+    }
+  },
+
+  /**
    * Remove all badges from an SVG element
    */
   removeAllBadges(svgElement: SVGElement): void {
     // Remove badge elements
     const badges = svgElement.querySelectorAll('.node-link-badge');
     badges.forEach(badge => badge.remove());
-    
+
+    // Also remove code badges
+    this.removeAllCodeBadges(svgElement);
+
     // Clean up badge-related definitions (gradients and filters)
     const defs = svgElement.querySelector('defs');
     if (defs) {
-      // Remove all elements with IDs starting with 'badge-'
-      const badgeDefs = defs.querySelectorAll('[id^="badge-"]');
+      // Remove all elements with IDs starting with 'badge-' or 'cbadge-'
+      const badgeDefs = defs.querySelectorAll('[id^="badge-"], [id^="cbadge-"]');
       badgeDefs.forEach(def => def.remove());
     }
   }
