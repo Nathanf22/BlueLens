@@ -3,12 +3,15 @@ import { AIGeneratorModal } from './AIGeneratorModal';
 import { NodeLinkManager } from './NodeLinkManager';
 import { RepoManager } from './RepoManager';
 import { CodeLinkManager } from './CodeLinkManager';
-import { Diagram, RepoConfig } from '../types';
+import { AISettingsModal } from './AISettingsModal';
+import { ScanResultsPanel } from './ScanResultsPanel';
+import { Diagram, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult } from '../types';
 
 interface ModalManagerProps {
   isAIModalOpen: boolean;
   onCloseAIModal: () => void;
   onGenerate: (newCode: string) => void;
+  llmSettings: LLMSettings;
   isNodeLinkManagerOpen: boolean;
   onCloseNodeLinkManager: () => void;
   currentDiagram: Diagram | undefined;
@@ -27,12 +30,26 @@ interface ModalManagerProps {
   onCloseCodeLinkManager: () => void;
   onAddCodeLink: (nodeId: string, repoId: string, filePath: string, lineStart?: number, lineEnd?: number, label?: string) => void;
   onRemoveCodeLink: (nodeId: string) => void;
+  // AI Settings
+  isAISettingsOpen: boolean;
+  onCloseAISettings: () => void;
+  onUpdateProvider: (provider: LLMProvider, config: LLMProviderConfig | null) => void;
+  onSetActiveProvider: (provider: LLMProvider) => void;
+  // Scan Results
+  isScanResultsOpen: boolean;
+  onCloseScanResults: () => void;
+  scanResult: ScanResult | null;
+  isScanning: boolean;
+  scanError: string | null;
+  onRunScan: (repoId: string) => void;
+  onAddMissing: (entityNames: string[]) => void;
 }
 
 export const ModalManager: React.FC<ModalManagerProps> = ({
   isAIModalOpen,
   onCloseAIModal,
   onGenerate,
+  llmSettings,
   isNodeLinkManagerOpen,
   onCloseNodeLinkManager,
   currentDiagram,
@@ -48,7 +65,18 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   isCodeLinkManagerOpen,
   onCloseCodeLinkManager,
   onAddCodeLink,
-  onRemoveCodeLink
+  onRemoveCodeLink,
+  isAISettingsOpen,
+  onCloseAISettings,
+  onUpdateProvider,
+  onSetActiveProvider,
+  isScanResultsOpen,
+  onCloseScanResults,
+  scanResult,
+  isScanning,
+  scanError,
+  onRunScan,
+  onAddMissing,
 }) => {
   return (
     <>
@@ -57,6 +85,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         isOpen={isAIModalOpen}
         onClose={onCloseAIModal}
         onGenerate={onGenerate}
+        llmSettings={llmSettings}
       />
 
       {/* Node Link Manager Modal */}
@@ -91,6 +120,27 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
           onClose={onCloseCodeLinkManager}
         />
       )}
+
+      {/* AI Settings Modal */}
+      <AISettingsModal
+        isOpen={isAISettingsOpen}
+        onClose={onCloseAISettings}
+        llmSettings={llmSettings}
+        onUpdateProvider={onUpdateProvider}
+        onSetActiveProvider={onSetActiveProvider}
+      />
+
+      {/* Scan Results Panel */}
+      <ScanResultsPanel
+        isOpen={isScanResultsOpen}
+        onClose={onCloseScanResults}
+        repos={repos}
+        scanResult={scanResult}
+        isScanning={isScanning}
+        scanError={scanError}
+        onRunScan={onRunScan}
+        onAddMissing={onAddMissing}
+      />
     </>
   );
 };

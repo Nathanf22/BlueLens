@@ -1,16 +1,18 @@
 import React from 'react';
-import { Sparkles, Menu, Layout } from 'lucide-react';
+import { Sparkles, Menu, Layout, Settings } from 'lucide-react';
 import { Button } from './Button';
 
 interface AppHeaderProps {
   onToggleSidebar: () => void;
   onOpenAIModal: () => void;
+  onOpenAISettings: () => void;
   isSidebarOpen: boolean;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleSidebar,
   onOpenAIModal,
+  onOpenAISettings,
   isSidebarOpen
 }) => {
   return (
@@ -30,8 +32,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         </h1>
       </div>
 
-      <div className="flex items-center gap-4">
-        <Button 
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onOpenAISettings}
+          className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+          title="AI Provider Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
+        <Button
           onClick={onOpenAIModal}
           icon={<Sparkles className="w-4 h-4" />}
           className="bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 border-none h-9"

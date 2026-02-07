@@ -25,6 +25,9 @@ export const useAppState = () => {
   const [isNodeLinkManagerOpen, setIsNodeLinkManagerOpen] = useState(false);
   const [isRepoManagerOpen, setIsRepoManagerOpen] = useState(false);
   const [isCodeLinkManagerOpen, setIsCodeLinkManagerOpen] = useState(false);
+  const [isAISettingsOpen, setIsAISettingsOpen] = useState(false);
+  const [isAIChatOpen, setIsAIChatOpen] = useState(false);
+  const [isScanResultsOpen, setIsScanResultsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isEditorCollapsed, setIsEditorCollapsed] = useState(false);
@@ -97,6 +100,12 @@ export const useAppState = () => {
     setIsRepoManagerOpen,
     isCodeLinkManagerOpen,
     setIsCodeLinkManagerOpen,
+    isAISettingsOpen,
+    setIsAISettingsOpen,
+    isAIChatOpen,
+    setIsAIChatOpen,
+    isScanResultsOpen,
+    setIsScanResultsOpen,
     isSidebarOpen,
     setIsSidebarOpen,
     isSidebarCollapsed,

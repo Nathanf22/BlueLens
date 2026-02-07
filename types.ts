@@ -112,3 +112,68 @@ export interface BlueprintExport {
   folders: Folder[];
   diagrams: Diagram[];
 }
+
+// --- Phase 3: Intelligence Layer ---
+
+export type LLMProvider = 'gemini' | 'openai' | 'anthropic';
+
+export interface LLMProviderConfig {
+  provider: LLMProvider;
+  apiKey: string;
+  model?: string;
+  proxyUrl?: string;       // Anthropic CORS workaround
+}
+
+export interface LLMSettings {
+  activeProvider: LLMProvider;
+  providers: Record<LLMProvider, LLMProviderConfig | null>;
+}
+
+export interface LLMMessage { role: 'user' | 'assistant'; content: string; }
+export interface LLMResponse { content: string; provider: LLMProvider; model: string; }
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  diagramCodeSnapshot?: string;
+  appliedToCode?: boolean;
+}
+
+export interface ChatSession {
+  diagramId: string;
+  messages: ChatMessage[];
+}
+
+export interface ScanResult {
+  repoId: string;
+  repoName: string;
+  scannedAt: number;
+  diagramId: string;
+  entities: ScannedEntity[];
+  matches: ScanMatch[];
+  missingInDiagram: ScannedEntity[];
+  missingInCode: DiagramNodeInfo[];
+}
+
+export interface ScannedEntity {
+  name: string;
+  kind: CodeSymbol['kind'];
+  filePath: string;
+  lineStart: number;
+  lineEnd: number;
+  repoId: string;
+}
+
+export interface DiagramNodeInfo {
+  nodeId: string;
+  label: string;
+}
+
+export interface ScanMatch {
+  nodeId: string;
+  nodeLabel: string;
+  entity: ScannedEntity;
+  confidence: 'exact' | 'fuzzy';
+}

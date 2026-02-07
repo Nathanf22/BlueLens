@@ -20,6 +20,9 @@ import { useRepoHandlers } from './hooks/useRepoHandlers';
 import { useCodeLinkHandlers } from './hooks/useCodeLinkHandlers';
 import { useSplitPane } from './hooks/useSplitPane';
 import { useStoragePersistence } from './hooks/useStoragePersistence';
+import { useLLMSettings } from './hooks/useLLMSettings';
+import { useChatHandlers } from './hooks/useChatHandlers';
+import { useScanHandlers } from './hooks/useScanHandlers';
 
 export default function App() {
   // --- State Management ---
@@ -46,6 +49,12 @@ export default function App() {
     setIsRepoManagerOpen,
     isCodeLinkManagerOpen,
     setIsCodeLinkManagerOpen,
+    isAISettingsOpen,
+    setIsAISettingsOpen,
+    isAIChatOpen,
+    setIsAIChatOpen,
+    isScanResultsOpen,
+    setIsScanResultsOpen,
     isSidebarOpen,
     setIsSidebarOpen,
     isSidebarCollapsed,
@@ -98,6 +107,15 @@ export default function App() {
     useCodeLinkHandlers(activeDiagram, updateActiveDiagram);
 
   const { leftWidthPercent, isDragging, containerRef, handleMouseDown } = useSplitPane();
+
+  // --- LLM / AI ---
+  const { llmSettings, updateProvider, setActiveProvider, hasConfiguredProvider } = useLLMSettings();
+
+  const { chatSession, isAIChatLoading, sendChatMessage, applyCodeFromMessage, clearChat } =
+    useChatHandlers(activeDiagram, updateActiveDiagram, llmSettings);
+
+  const { scanResult, isScanning, scanError, runScan, addMissingToDiagram, clearScanResult } =
+    useScanHandlers(activeDiagram, updateActiveDiagram, llmSettings, workspaceRepos);
 
   // --- Persistence ---
   useStoragePersistence(
@@ -176,6 +194,7 @@ export default function App() {
       <AppHeader
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         onOpenAIModal={() => setIsAIModalOpen(true)}
+        onOpenAISettings={() => setIsAISettingsOpen(true)}
         isSidebarOpen={isSidebarOpen}
       />
 
@@ -234,6 +253,16 @@ export default function App() {
           isCodePanelOpen={isCodePanelOpen}
           activeCodeFile={activeCodeFile}
           onCloseCodePanel={handleCloseCodePanel}
+          isAIChatOpen={isAIChatOpen}
+          onToggleAIChat={() => setIsAIChatOpen(!isAIChatOpen)}
+          onCloseAIChat={() => setIsAIChatOpen(false)}
+          chatSession={chatSession}
+          isAIChatLoading={isAIChatLoading}
+          onSendChatMessage={sendChatMessage}
+          onApplyCode={applyCodeFromMessage}
+          onClearChat={clearChat}
+          activeProvider={llmSettings.activeProvider}
+          onScanCode={() => setIsScanResultsOpen(true)}
           leftWidthPercent={leftWidthPercent}
           isDragging={isDragging}
           containerRef={containerRef}
@@ -252,6 +281,7 @@ export default function App() {
         isAIModalOpen={isAIModalOpen}
         onCloseAIModal={() => setIsAIModalOpen(false)}
         onGenerate={handleAIGenerate}
+        llmSettings={llmSettings}
         isNodeLinkManagerOpen={isNodeLinkManagerOpen}
         onCloseNodeLinkManager={() => setIsNodeLinkManagerOpen(false)}
         currentDiagram={activeDiagram}
@@ -268,6 +298,17 @@ export default function App() {
         onCloseCodeLinkManager={() => setIsCodeLinkManagerOpen(false)}
         onAddCodeLink={handleAddCodeLink}
         onRemoveCodeLink={handleRemoveCodeLink}
+        isAISettingsOpen={isAISettingsOpen}
+        onCloseAISettings={() => setIsAISettingsOpen(false)}
+        onUpdateProvider={updateProvider}
+        onSetActiveProvider={setActiveProvider}
+        isScanResultsOpen={isScanResultsOpen}
+        onCloseScanResults={() => { setIsScanResultsOpen(false); clearScanResult(); }}
+        scanResult={scanResult}
+        isScanning={isScanning}
+        scanError={scanError}
+        onRunScan={runScan}
+        onAddMissing={addMissingToDiagram}
       />
     </div>
   );

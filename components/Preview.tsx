@@ -34,6 +34,9 @@ interface PreviewProps {
   onManageLinks?: () => void;
   onManageCodeLinks?: () => void;
   onViewCode?: (nodeId: string) => void;
+  onToggleAIChat?: () => void;
+  isAIChatOpen?: boolean;
+  onScanCode?: () => void;
 }
 
 export const Preview: React.FC<PreviewProps> = ({ 
@@ -51,7 +54,10 @@ export const Preview: React.FC<PreviewProps> = ({
   onBreadcrumbNavigate,
   onManageLinks,
   onManageCodeLinks,
-  onViewCode
+  onViewCode,
+  onToggleAIChat,
+  isAIChatOpen,
+  onScanCode,
 }) => {
   // This ref is for the INNER container (the one being transformed)
   // We need it for click calculations and download
@@ -249,6 +255,9 @@ export const Preview: React.FC<PreviewProps> = ({
         onDownload={handleDownload}
         onManageLinks={onManageLinks}
         onManageCodeLinks={onManageCodeLinks}
+        onToggleAIChat={onToggleAIChat}
+        isAIChatOpen={isAIChatOpen}
+        onScanCode={onScanCode}
       />
 
       {isCommentMode && (

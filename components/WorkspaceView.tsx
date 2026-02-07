@@ -3,7 +3,8 @@ import { GripVertical } from 'lucide-react';
 import { Editor } from './Editor';
 import { Preview } from './Preview';
 import { CodePanel } from './CodePanel';
-import { Diagram, Comment, CodeFile } from '../types';
+import { AIChatPanel } from './AIChatPanel';
+import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings } from '../types';
 import { useCodePanelResize } from '../hooks/useCodePanelResize';
 
 interface WorkspaceViewProps {
@@ -28,6 +29,18 @@ interface WorkspaceViewProps {
   isCodePanelOpen: boolean;
   activeCodeFile: CodeFile | null;
   onCloseCodePanel: () => void;
+  // AI Chat
+  isAIChatOpen: boolean;
+  onToggleAIChat: () => void;
+  onCloseAIChat: () => void;
+  chatSession: ChatSession | null;
+  isAIChatLoading: boolean;
+  onSendChatMessage: (text: string) => void;
+  onApplyCode: (msg: ChatMessage) => void;
+  onClearChat: () => void;
+  activeProvider: LLMSettings['activeProvider'];
+  // Scan
+  onScanCode: () => void;
   leftWidthPercent: number;
   isDragging: boolean;
   containerRef: React.RefObject<HTMLDivElement>;
@@ -56,6 +69,16 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   isCodePanelOpen,
   activeCodeFile,
   onCloseCodePanel,
+  isAIChatOpen,
+  onToggleAIChat,
+  onCloseAIChat,
+  chatSession,
+  isAIChatLoading,
+  onSendChatMessage,
+  onApplyCode,
+  onClearChat,
+  activeProvider,
+  onScanCode,
   leftWidthPercent,
   isDragging,
   containerRef,
@@ -114,6 +137,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               onManageLinks={onManageLinks}
               onManageCodeLinks={onManageCodeLinks}
               onViewCode={onViewCode}
+              onToggleAIChat={onToggleAIChat}
+              isAIChatOpen={isAIChatOpen}
+              onScanCode={onScanCode}
             />
           </div>
 
@@ -133,6 +159,32 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 <CodePanel
                   codeFile={activeCodeFile}
                   onClose={onCloseCodePanel}
+                />
+              </div>
+            </>
+          )}
+
+          {/* AI Chat Panel */}
+          {isAIChatOpen && (
+            <>
+              <div
+                className="hidden lg:flex w-2 bg-dark-900 border-l border-r border-gray-800 hover:bg-brand-600 cursor-col-resize items-center justify-center transition-colors z-10"
+                onMouseDown={handleCodePanelMouseDown}
+              >
+                <GripVertical className="w-3 h-3 text-gray-600 pointer-events-none" />
+              </div>
+              <div
+                className="h-1/2 lg:h-full flex-shrink-0"
+                style={{ width: `${codePanelWidthPercent}%` }}
+              >
+                <AIChatPanel
+                  chatSession={chatSession}
+                  isLoading={isAIChatLoading}
+                  onSendMessage={onSendChatMessage}
+                  onApplyCode={onApplyCode}
+                  onClearChat={onClearChat}
+                  onClose={onCloseAIChat}
+                  activeProvider={activeProvider}
                 />
               </div>
             </>

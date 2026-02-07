@@ -1,15 +1,25 @@
 import React, { useState } from 'react';
 import { X, Sparkles, Wand2 } from 'lucide-react';
 import { Button } from './Button';
-import { generateMermaidCode } from '../services/geminiService';
+import { LLMSettings } from '../types';
+import { llmService, cleanMermaidResponse } from '../services/llmService';
 
 interface AIGeneratorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onGenerate: (code: string) => void;
+  llmSettings: LLMSettings;
 }
 
-export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({ isOpen, onClose, onGenerate }) => {
+const GENERATOR_SYSTEM_PROMPT = `You are an expert diagram generator using Mermaid.js syntax.
+Your task is to convert the user's natural language description into valid Mermaid.js code.
+RULES:
+1. Return ONLY the Mermaid code inside a \`\`\`mermaid code block.
+2. Do NOT include explanations or preamble.
+3. Ensure syntax is valid and standard.
+4. If the user asks for a specific type (Sequence, Class, ER, etc.), respect it. Default to Flowchart (graph TD) if unsure.`;
+
+export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({ isOpen, onClose, onGenerate, llmSettings }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,15 +28,20 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({ isOpen, onCl
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
-    
+
     setIsGenerating(true);
     setError(null);
     try {
-      const code = await generateMermaidCode(prompt);
+      const response = await llmService.sendMessage(
+        [{ role: 'user', content: prompt }],
+        GENERATOR_SYSTEM_PROMPT,
+        llmSettings
+      );
+      const code = cleanMermaidResponse(response.content);
       onGenerate(code);
       onClose();
-    } catch (err) {
-      setError("Failed to generate diagram. Please try again or check your API configuration.");
+    } catch (err: any) {
+      setError(err.message || "Failed to generate diagram. Please try again or check your API configuration.");
     } finally {
       setIsGenerating(false);
     }
