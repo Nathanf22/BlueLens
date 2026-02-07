@@ -4,6 +4,7 @@ import { Editor } from './Editor';
 import { Preview } from './Preview';
 import { CodePanel } from './CodePanel';
 import { Diagram, Comment, CodeFile } from '../types';
+import { useCodePanelResize } from '../hooks/useCodePanelResize';
 
 interface WorkspaceViewProps {
   activeDiagram: Diagram | undefined;
@@ -60,6 +61,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   containerRef,
   onMouseDown
 }) => {
+  const { codePanelWidthPercent, isDraggingCodePanel, handleCodePanelMouseDown } = useCodePanelResize(containerRef);
+
   return (
     <main 
       ref={containerRef}
@@ -114,14 +117,25 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             />
           </div>
 
-          {/* Code Panel */}
+          {/* Code Panel Resizer + Panel */}
           {isCodePanelOpen && activeCodeFile && (
-            <div className="w-[400px] min-w-[300px] h-1/2 lg:h-full flex-shrink-0">
-              <CodePanel
-                codeFile={activeCodeFile}
-                onClose={onCloseCodePanel}
-              />
-            </div>
+            <>
+              <div
+                className="hidden lg:flex w-2 bg-dark-900 border-l border-r border-gray-800 hover:bg-green-600 cursor-col-resize items-center justify-center transition-colors z-10"
+                onMouseDown={handleCodePanelMouseDown}
+              >
+                <GripVertical className="w-3 h-3 text-gray-600 pointer-events-none" />
+              </div>
+              <div
+                className="h-1/2 lg:h-full flex-shrink-0"
+                style={{ width: `${codePanelWidthPercent}%` }}
+              >
+                <CodePanel
+                  codeFile={activeCodeFile}
+                  onClose={onCloseCodePanel}
+                />
+              </div>
+            </>
           )}
         </>
       ) : (
@@ -131,7 +145,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       )}
       
       {/* Overlay while dragging */}
-      {isDragging && (
+      {(isDragging || isDraggingCodePanel) && (
         <div className="absolute inset-0 z-50 cursor-col-resize" />
       )}
     </main>

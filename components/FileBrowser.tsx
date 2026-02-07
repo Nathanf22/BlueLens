@@ -52,41 +52,17 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ repoId, onSelectFile }
     return () => { cancelled = true; };
   }, [loadEntries]);
 
-  const toggleExpand = async (nodes: TreeNode[], path: string[]): Promise<TreeNode[]> => {
+  // Recursively find and update a node by its full path
+  const updateNodeByPath = (nodes: TreeNode[], targetPath: string, updater: (node: TreeNode) => TreeNode | Promise<TreeNode>): Promise<TreeNode[]> => {
     return Promise.all(
       nodes.map(async (node) => {
-        if (node.entry.path === path[0]) {
-          if (path.length === 1) {
-            // This is the node to toggle
-            if (node.isExpanded) {
-              return { ...node, isExpanded: false };
-            }
-            // Expand — load children if needed
-            if (node.children === null) {
-              try {
-                const entries = await loadEntries(node.entry.path);
-                return {
-                  ...node,
-                  isExpanded: true,
-                  isLoading: false,
-                  children: entries.map(e => ({
-                    entry: e,
-                    children: e.kind === 'directory' ? null : [],
-                    isLoading: false,
-                    isExpanded: false,
-                  })),
-                };
-              } catch {
-                return { ...node, isExpanded: true, children: [], isLoading: false };
-              }
-            }
-            return { ...node, isExpanded: true };
-          }
-          // Recurse deeper
-          if (node.children) {
-            const newChildren = await toggleExpand(node.children, path.slice(1));
-            return { ...node, children: newChildren };
-          }
+        if (node.entry.path === targetPath) {
+          return updater(node);
+        }
+        // If target is deeper inside this node's subtree, recurse into children
+        if (node.children && targetPath.startsWith(node.entry.path + '/')) {
+          const newChildren = await updateNodeByPath(node.children, targetPath, updater);
+          return { ...node, children: newChildren };
         }
         return node;
       })
@@ -94,16 +70,44 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ repoId, onSelectFile }
   };
 
   const handleToggle = async (entryPath: string) => {
-    // entryPath is like "src/components" — split to find node in tree
+    // Mark loading immediately
+    setRoots(prev =>
+      prev.map(n => {
+        if (n.entry.path === entryPath && !n.isExpanded && n.children === null) {
+          return { ...n, isLoading: true };
+        }
+        return n;
+      })
+    );
+
+    // Perform the async toggle
     setRoots(prev => {
-      // Fire-and-forget async update
-      toggleExpand(prev, [entryPath]).then(setRoots);
-      // Mark loading immediately
-      return prev.map(n =>
-        n.entry.path === entryPath && !n.isExpanded && n.children === null
-          ? { ...n, isLoading: true }
-          : n
-      );
+      updateNodeByPath(prev, entryPath, async (node) => {
+        if (node.isExpanded) {
+          return { ...node, isExpanded: false };
+        }
+        // Need to load children
+        if (node.children === null) {
+          try {
+            const entries = await loadEntries(node.entry.path);
+            return {
+              ...node,
+              isExpanded: true,
+              isLoading: false,
+              children: entries.map(e => ({
+                entry: e,
+                children: e.kind === 'directory' ? null : [],
+                isLoading: false,
+                isExpanded: false,
+              })),
+            };
+          } catch {
+            return { ...node, isExpanded: true, children: [], isLoading: false };
+          }
+        }
+        return { ...node, isExpanded: true };
+      }).then(setRoots);
+      return prev;
     });
   };
 
