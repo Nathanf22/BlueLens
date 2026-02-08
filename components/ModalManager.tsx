@@ -5,7 +5,9 @@ import { RepoManager } from './RepoManager';
 import { CodeLinkManager } from './CodeLinkManager';
 import { AISettingsModal } from './AISettingsModal';
 import { ScanResultsPanel } from './ScanResultsPanel';
-import { Diagram, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult } from '../types';
+import { DiffViewModal } from './DiffViewModal';
+import { DiagramAnalysisPanel } from './DiagramAnalysisPanel';
+import { Diagram, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult, SyncSuggestion, SyncMode, ScanConfig, DiagramAnalysis } from '../types';
 
 interface ModalManagerProps {
   isAIModalOpen: boolean;
@@ -43,6 +45,21 @@ interface ModalManagerProps {
   scanError: string | null;
   onRunScan: (repoId: string) => void;
   onAddMissing: (entityNames: string[]) => void;
+  syncMode: SyncMode;
+  onSetSyncMode: (mode: SyncMode) => void;
+  onApplySuggestion: (suggestion: SyncSuggestion) => void;
+  onApplyAllSuggestions: (suggestions: SyncSuggestion[]) => void;
+  onUpdateScanConfig?: (repoId: string, config: ScanConfig) => void;
+  // Diff View
+  isDiffViewOpen: boolean;
+  onCloseDiffView: () => void;
+  diffViewOriginal: string;
+  diffViewModified: string;
+  onApplyDiff: (code: string) => void;
+  // Diagram Analysis
+  isAnalysisPanelOpen: boolean;
+  onCloseAnalysisPanel: () => void;
+  diagramAnalysis: DiagramAnalysis | null;
 }
 
 export const ModalManager: React.FC<ModalManagerProps> = ({
@@ -77,6 +94,19 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   scanError,
   onRunScan,
   onAddMissing,
+  syncMode,
+  onSetSyncMode,
+  onApplySuggestion,
+  onApplyAllSuggestions,
+  onUpdateScanConfig,
+  isDiffViewOpen,
+  onCloseDiffView,
+  diffViewOriginal,
+  diffViewModified,
+  onApplyDiff,
+  isAnalysisPanelOpen,
+  onCloseAnalysisPanel,
+  diagramAnalysis,
 }) => {
   return (
     <>
@@ -140,6 +170,27 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         scanError={scanError}
         onRunScan={onRunScan}
         onAddMissing={onAddMissing}
+        syncMode={syncMode}
+        onSetSyncMode={onSetSyncMode}
+        onApplySuggestion={onApplySuggestion}
+        onApplyAllSuggestions={onApplyAllSuggestions}
+        onUpdateScanConfig={onUpdateScanConfig}
+      />
+
+      {/* Diff View Modal */}
+      <DiffViewModal
+        isOpen={isDiffViewOpen}
+        onClose={onCloseDiffView}
+        originalCode={diffViewOriginal}
+        modifiedCode={diffViewModified}
+        onApply={onApplyDiff}
+      />
+
+      {/* Diagram Analysis Panel */}
+      <DiagramAnalysisPanel
+        analysis={diagramAnalysis}
+        isOpen={isAnalysisPanelOpen}
+        onClose={onCloseAnalysisPanel}
       />
     </>
   );

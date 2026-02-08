@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { AppHeader } from './components/AppHeader';
 import { AppFooter } from './components/AppFooter';
@@ -6,7 +6,9 @@ import { WorkspaceView } from './components/WorkspaceView';
 import { ModalManager } from './components/ModalManager';
 import { BlueprintImportResult } from './services/exportService';
 import { fileSystemService } from './services/fileSystemService';
-import { CodeFile } from './types';
+import { diagramAnalyzerService } from './services/diagramAnalyzerService';
+import { scaffoldService } from './services/scaffoldService';
+import { CodeFile, DiagramAnalysis, ScanConfig } from './types';
 
 // Custom Hooks
 import { useAppState } from './hooks/useAppState';
@@ -69,6 +71,12 @@ export default function App() {
     setIsCodePanelOpen,
     activeCodeFile,
     setActiveCodeFile,
+    isDiffViewOpen,
+    setIsDiffViewOpen,
+    isAnalysisPanelOpen,
+    setIsAnalysisPanelOpen,
+    diffViewData,
+    setDiffViewData,
     workspaceDiagrams,
     workspaceFolders,
     workspaceRepos,
@@ -114,8 +122,43 @@ export default function App() {
   const { chatSession, isAIChatLoading, sendChatMessage, applyCodeFromMessage, clearChat } =
     useChatHandlers(activeDiagram, updateActiveDiagram, llmSettings);
 
-  const { scanResult, isScanning, scanError, runScan, addMissingToDiagram, clearScanResult } =
-    useScanHandlers(activeDiagram, updateActiveDiagram, llmSettings, workspaceRepos);
+  const {
+    scanResult, isScanning, scanError, runScan, addMissingToDiagram, clearScanResult,
+    syncMode, setSyncMode, syncStatus, applySuggestion, applyAllSuggestions
+  } = useScanHandlers(activeDiagram, updateActiveDiagram, llmSettings, workspaceRepos);
+
+  // --- Diagram Analysis ---
+  const [diagramAnalysis, setDiagramAnalysis] = useState<DiagramAnalysis | null>(null);
+
+  const handleAnalyzeDiagram = useCallback(() => {
+    if (!activeDiagram) return;
+    const analysis = diagramAnalyzerService.analyze(activeDiagram.code);
+    setDiagramAnalysis(analysis);
+    setIsAnalysisPanelOpen(true);
+  }, [activeDiagram, setIsAnalysisPanelOpen]);
+
+  // --- Scaffold Generation ---
+  const handleGenerateScaffold = useCallback(async (language: string) => {
+    if (!activeDiagram) return;
+    try {
+      const scaffold = await scaffoldService.generateScaffold(
+        activeDiagram.code,
+        language,
+        llmSettings
+      );
+      // Show scaffold in chat as an AI message
+      sendChatMessage(`Generate ${language} code scaffolding from this diagram`);
+    } catch (err: any) {
+      setError(err.message || 'Scaffold generation failed');
+    }
+  }, [activeDiagram, llmSettings, sendChatMessage, setError]);
+
+  // --- Scan Config Update ---
+  const handleUpdateScanConfig = useCallback((repoId: string, config: ScanConfig) => {
+    setRepos(prev => prev.map(r =>
+      r.id === repoId ? { ...r, scanConfig: config } : r
+    ));
+  }, [setRepos]);
 
   // --- Persistence ---
   useStoragePersistence(
@@ -176,6 +219,7 @@ export default function App() {
       };
       setActiveCodeFile(codeFile);
       setIsCodePanelOpen(true);
+      setIsAIChatOpen(false); // Mutually exclusive with chat panel
     } catch (e) {
       console.error('Failed to read file:', e);
       alert('Failed to read file. The repository may need to be reopened.');
@@ -185,6 +229,10 @@ export default function App() {
   const handleCloseCodePanel = () => {
     setIsCodePanelOpen(false);
     setActiveCodeFile(null);
+  };
+
+  const handleApplyDiff = (code: string) => {
+    updateActiveDiagram({ code });
   };
 
   return (
@@ -254,7 +302,11 @@ export default function App() {
           activeCodeFile={activeCodeFile}
           onCloseCodePanel={handleCloseCodePanel}
           isAIChatOpen={isAIChatOpen}
-          onToggleAIChat={() => setIsAIChatOpen(!isAIChatOpen)}
+          onToggleAIChat={() => {
+            const opening = !isAIChatOpen;
+            setIsAIChatOpen(opening);
+            if (opening) { setIsCodePanelOpen(false); setActiveCodeFile(null); }
+          }}
           onCloseAIChat={() => setIsAIChatOpen(false)}
           chatSession={chatSession}
           isAIChatLoading={isAIChatLoading}
@@ -263,6 +315,9 @@ export default function App() {
           onClearChat={clearChat}
           activeProvider={llmSettings.activeProvider}
           onScanCode={() => setIsScanResultsOpen(true)}
+          syncStatus={syncStatus}
+          onAnalyze={handleAnalyzeDiagram}
+          onGenerateScaffold={handleGenerateScaffold}
           leftWidthPercent={leftWidthPercent}
           isDragging={isDragging}
           containerRef={containerRef}
@@ -309,6 +364,19 @@ export default function App() {
         scanError={scanError}
         onRunScan={runScan}
         onAddMissing={addMissingToDiagram}
+        syncMode={syncMode}
+        onSetSyncMode={setSyncMode}
+        onApplySuggestion={applySuggestion}
+        onApplyAllSuggestions={applyAllSuggestions}
+        onUpdateScanConfig={handleUpdateScanConfig}
+        isDiffViewOpen={isDiffViewOpen}
+        onCloseDiffView={() => { setIsDiffViewOpen(false); setDiffViewData(null); }}
+        diffViewOriginal={diffViewData?.original || ''}
+        diffViewModified={diffViewData?.modified || ''}
+        onApplyDiff={handleApplyDiff}
+        isAnalysisPanelOpen={isAnalysisPanelOpen}
+        onCloseAnalysisPanel={() => setIsAnalysisPanelOpen(false)}
+        diagramAnalysis={diagramAnalysis}
       />
     </div>
   );

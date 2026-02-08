@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, MessageSquare, Trash2, Check, Loader2 } from 'lucide-react';
+import { X, Send, MessageSquare, Trash2, Check, Loader2, ArrowRightLeft, Code2 } from 'lucide-react';
 import { ChatMessage, ChatSession, LLMSettings } from '../types';
-import { aiChatService } from '../services/aiChatService';
 
 interface AIChatPanelProps {
   chatSession: ChatSession | null;
@@ -11,13 +10,28 @@ interface AIChatPanelProps {
   onClearChat: () => void;
   onClose: () => void;
   activeProvider: LLMSettings['activeProvider'];
+  selectedNodeId?: string | null;
+  selectedNodeLabel?: string | null;
+  onGenerateScaffold?: (language: string) => void;
 }
 
 const SUGGESTION_CHIPS = [
   'Add a caching layer',
-  'Convert to sequence diagram',
   'Add error handling flow',
   'Add a database node',
+  'Simplify this diagram',
+];
+
+const CONVERSION_CHIPS = [
+  { label: 'To sequence diagram', prompt: 'Convert this to a sequenceDiagram' },
+  { label: 'To class diagram', prompt: 'Convert this to a classDiagram' },
+  { label: 'To ER diagram', prompt: 'Convert this to an erDiagram' },
+];
+
+const NODE_CONTEXT_CHIPS = [
+  { label: 'Decompose this node', prompt: (nodeLabel: string) => `Decompose the "${nodeLabel}" node into sub-components with proper relationships` },
+  { label: 'Analyze dependencies', prompt: (nodeLabel: string) => `Analyze all dependencies of "${nodeLabel}" and suggest improvements` },
+  { label: 'Add related entities', prompt: (nodeLabel: string) => `Add entities that would typically relate to "${nodeLabel}" in a real architecture` },
 ];
 
 export const AIChatPanel: React.FC<AIChatPanelProps> = ({
@@ -28,6 +42,9 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
   onClearChat,
   onClose,
   activeProvider,
+  selectedNodeId,
+  selectedNodeLabel,
+  onGenerateScaffold,
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -91,6 +108,8 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     );
   };
 
+  const hasSelectedNode = selectedNodeId && selectedNodeLabel;
+
   return (
     <div className="flex flex-col h-full border-l border-gray-700 bg-dark-900">
       {/* Header */}
@@ -130,7 +149,9 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             <p className="text-sm text-gray-500 mb-4">
               Ask the AI to modify your diagram using natural language.
             </p>
-            <div className="flex flex-wrap gap-2 justify-center">
+
+            {/* Suggestion chips */}
+            <div className="flex flex-wrap gap-2 justify-center mb-4">
               {SUGGESTION_CHIPS.map(chip => (
                 <button
                   key={chip}
@@ -141,6 +162,69 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 </button>
               ))}
             </div>
+
+            {/* Conversion chips */}
+            <div className="w-full mb-3">
+              <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2 flex items-center gap-1 justify-center">
+                <ArrowRightLeft className="w-3 h-3" />
+                Convert diagram
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {CONVERSION_CHIPS.map(chip => (
+                  <button
+                    key={chip.label}
+                    onClick={() => onSendMessage(chip.prompt)}
+                    className="text-xs px-3 py-1.5 rounded-full border border-purple-900/50 text-purple-400 hover:border-purple-500 hover:text-purple-300 transition-colors"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Scaffold chip */}
+            {onGenerateScaffold && (
+              <div className="w-full mb-3">
+                <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2 flex items-center gap-1 justify-center">
+                  <Code2 className="w-3 h-3" />
+                  Generate code
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <button
+                    onClick={() => onGenerateScaffold('typescript')}
+                    className="text-xs px-3 py-1.5 rounded-full border border-green-900/50 text-green-400 hover:border-green-500 hover:text-green-300 transition-colors"
+                  >
+                    TypeScript scaffold
+                  </button>
+                  <button
+                    onClick={() => onGenerateScaffold('python')}
+                    className="text-xs px-3 py-1.5 rounded-full border border-green-900/50 text-green-400 hover:border-green-500 hover:text-green-300 transition-colors"
+                  >
+                    Python scaffold
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Node context chips */}
+            {hasSelectedNode && (
+              <div className="w-full">
+                <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">
+                  Node: {selectedNodeLabel}
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {NODE_CONTEXT_CHIPS.map(chip => (
+                    <button
+                      key={chip.label}
+                      onClick={() => onSendMessage(chip.prompt(selectedNodeLabel!))}
+                      className="text-xs px-3 py-1.5 rounded-full border border-yellow-900/50 text-yellow-400 hover:border-yellow-500 hover:text-yellow-300 transition-colors"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           messages.map(renderMessage)

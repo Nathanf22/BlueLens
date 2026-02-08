@@ -81,11 +81,18 @@ export interface CodeLink {
   label?: string;           // Display label
 }
 
+export interface ScanConfig {
+  includePaths: string[];   // glob patterns, e.g. ["src/**"]
+  excludePaths: string[];   // e.g. ["**/*.test.ts", "**/node_modules/**"]
+  ignorePatterns: string[]; // symbol name patterns to skip, e.g. ["use*", "handle*"]
+}
+
 export interface RepoConfig {
   id: string;
   name: string;             // Directory name
   workspaceId: string;      // Scoped to workspace
   addedAt: number;
+  scanConfig?: ScanConfig;
 }
 
 export interface CodeFile {
@@ -146,6 +153,25 @@ export interface ChatSession {
   messages: ChatMessage[];
 }
 
+// Sync modes (FR3.3)
+export type SyncMode = 'manual' | 'semi-auto' | 'auto';
+
+// Sync status (FR3.2)
+export type SyncStatus = 'unknown' | 'synced' | 'suggestions' | 'conflicts';
+
+// Typed suggestions (FR3.7)
+export type SuggestionType = 'add_component' | 'remove_component' | 'add_relationship'
+  | 'update_relationship' | 'mark_obsolete';
+
+export interface SyncSuggestion {
+  type: SuggestionType;
+  label: string;
+  description: string;
+  entity?: ScannedEntity;
+  nodeInfo?: DiagramNodeInfo;
+  confidence: 'exact' | 'fuzzy' | 'heuristic';
+}
+
 export interface ScanResult {
   repoId: string;
   repoName: string;
@@ -155,6 +181,7 @@ export interface ScanResult {
   matches: ScanMatch[];
   missingInDiagram: ScannedEntity[];
   missingInCode: DiagramNodeInfo[];
+  suggestions: SyncSuggestion[];
 }
 
 export interface ScannedEntity {
@@ -177,3 +204,30 @@ export interface ScanMatch {
   entity: ScannedEntity;
   confidence: 'exact' | 'fuzzy';
 }
+
+// --- Diagram Analysis / Anti-pattern Detection ---
+
+export type AnalysisRuleSeverity = 'info' | 'warning' | 'error';
+
+export interface AnalysisRule {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface AnalysisFinding {
+  ruleId: string;
+  severity: AnalysisRuleSeverity;
+  message: string;
+  nodeIds?: string[];
+}
+
+export interface DiagramAnalysis {
+  findings: AnalysisFinding[];
+  stats: { nodeCount: number; edgeCount: number; subgraphCount: number };
+}
+
+// Parsed diagram structure (for heuristic rules)
+export interface MermaidNode { id: string; label: string; }
+export interface MermaidEdge { from: string; to: string; label?: string; }
+export interface MermaidGraph { type: string; nodes: MermaidNode[]; edges: MermaidEdge[]; subgraphs: string[]; }

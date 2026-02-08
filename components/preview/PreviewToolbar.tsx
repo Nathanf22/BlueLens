@@ -1,5 +1,20 @@
 import React from 'react';
-import { MessageCircle, ZoomIn, ZoomOut, RotateCcw, Maximize, Download, Link2, Code, MessageSquare, Search } from 'lucide-react';
+import { MessageCircle, ZoomIn, ZoomOut, RotateCcw, Maximize, Download, Link2, Code, MessageSquare, Search, Brain } from 'lucide-react';
+import { SyncStatus } from '../../types';
+
+const SYNC_STATUS_COLORS: Record<SyncStatus, string> = {
+  unknown: 'bg-gray-500',
+  synced: 'bg-green-500',
+  suggestions: 'bg-yellow-500',
+  conflicts: 'bg-red-500',
+};
+
+const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
+  unknown: 'Not scanned',
+  synced: 'In sync',
+  suggestions: 'Suggestions available',
+  conflicts: 'Conflicts detected',
+};
 
 interface PreviewToolbarProps {
   isCommentMode: boolean;
@@ -13,6 +28,8 @@ interface PreviewToolbarProps {
   onToggleAIChat?: () => void;
   isAIChatOpen?: boolean;
   onScanCode?: () => void;
+  syncStatus?: SyncStatus;
+  onAnalyze?: () => void;
 }
 
 export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
@@ -27,12 +44,14 @@ export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
   onToggleAIChat,
   isAIChatOpen,
   onScanCode,
+  syncStatus = 'unknown',
+  onAnalyze,
 }) => {
   return (
     <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 bg-dark-900/90 p-2 rounded-lg backdrop-blur border border-gray-700 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-      <button 
+      <button
         onClick={onToggleCommentMode}
-        className={`p-2 rounded hover:text-white transition-colors ${isCommentMode ? 'bg-brand-600 text-white' : 'hover:bg-gray-700 text-gray-300'}`} 
+        className={`p-2 rounded hover:text-white transition-colors ${isCommentMode ? 'bg-brand-600 text-white' : 'hover:bg-gray-700 text-gray-300'}`}
         title="Toggle Comment Mode"
       >
         <MessageCircle className="w-5 h-5" />
@@ -68,8 +87,14 @@ export const PreviewToolbar: React.FC<PreviewToolbarProps> = ({
         </button>
       )}
       {onScanCode && (
-        <button onClick={onScanCode} className="p-2 hover:bg-yellow-600 rounded text-yellow-500 hover:text-white" title="Scan Code">
+        <button onClick={onScanCode} className="p-2 hover:bg-yellow-600 rounded text-yellow-500 hover:text-white relative" title={`Scan Code (${SYNC_STATUS_LABELS[syncStatus]})`}>
           <Search className="w-5 h-5" />
+          <span className={`absolute top-1 right-1 w-2.5 h-2.5 rounded-full ${SYNC_STATUS_COLORS[syncStatus]} border border-dark-900`} />
+        </button>
+      )}
+      {onAnalyze && (
+        <button onClick={onAnalyze} className="p-2 hover:bg-purple-600 rounded text-purple-400 hover:text-white" title="Analyze Diagram">
+          <Brain className="w-5 h-5" />
         </button>
       )}
       {onToggleAIChat && (

@@ -4,7 +4,7 @@ import { Editor } from './Editor';
 import { Preview } from './Preview';
 import { CodePanel } from './CodePanel';
 import { AIChatPanel } from './AIChatPanel';
-import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings } from '../types';
+import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings, SyncStatus } from '../types';
 import { useCodePanelResize } from '../hooks/useCodePanelResize';
 
 interface WorkspaceViewProps {
@@ -41,6 +41,9 @@ interface WorkspaceViewProps {
   activeProvider: LLMSettings['activeProvider'];
   // Scan
   onScanCode: () => void;
+  syncStatus?: SyncStatus;
+  onAnalyze?: () => void;
+  onGenerateScaffold?: (language: string) => void;
   leftWidthPercent: number;
   isDragging: boolean;
   containerRef: React.RefObject<HTMLDivElement>;
@@ -79,6 +82,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onClearChat,
   activeProvider,
   onScanCode,
+  syncStatus,
+  onAnalyze,
+  onGenerateScaffold,
   leftWidthPercent,
   isDragging,
   containerRef,
@@ -140,6 +146,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               onToggleAIChat={onToggleAIChat}
               isAIChatOpen={isAIChatOpen}
               onScanCode={onScanCode}
+              syncStatus={syncStatus}
+              onAnalyze={onAnalyze}
             />
           </div>
 
@@ -185,6 +193,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   onClearChat={onClearChat}
                   onClose={onCloseAIChat}
                   activeProvider={activeProvider}
+                  onGenerateScaffold={onGenerateScaffold}
                 />
               </div>
             </>

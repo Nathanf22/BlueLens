@@ -40,6 +40,11 @@ export const useAppState = () => {
   const [isCodePanelOpen, setIsCodePanelOpen] = useState(false);
   const [activeCodeFile, setActiveCodeFile] = useState<import('../types').CodeFile | null>(null);
 
+  // --- State: Diff View & Analysis ---
+  const [isDiffViewOpen, setIsDiffViewOpen] = useState(false);
+  const [isAnalysisPanelOpen, setIsAnalysisPanelOpen] = useState(false);
+  const [diffViewData, setDiffViewData] = useState<{ original: string; modified: string } | null>(null);
+
   // Derived state
   const workspaceDiagrams = diagrams.filter(d => d.workspaceId === activeWorkspaceId);
   const workspaceFolders = folders.filter(f => f.workspaceId === activeWorkspaceId);
@@ -124,6 +129,14 @@ export const useAppState = () => {
     setIsCodePanelOpen,
     activeCodeFile,
     setActiveCodeFile,
+
+    // Diff View & Analysis
+    isDiffViewOpen,
+    setIsDiffViewOpen,
+    isAnalysisPanelOpen,
+    setIsAnalysisPanelOpen,
+    diffViewData,
+    setDiffViewData,
 
     // Derived state
     workspaceDiagrams,

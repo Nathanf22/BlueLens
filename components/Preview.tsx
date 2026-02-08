@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { Comment, Diagram } from '../types';
+import { Comment, Diagram, SyncStatus } from '../types';
 import { PreviewToolbar } from './preview/PreviewToolbar';
 import { CommentItem } from './preview/CommentItem';
 import { DraftComment } from './preview/DraftComment';
@@ -37,6 +37,8 @@ interface PreviewProps {
   onToggleAIChat?: () => void;
   isAIChatOpen?: boolean;
   onScanCode?: () => void;
+  syncStatus?: SyncStatus;
+  onAnalyze?: () => void;
 }
 
 export const Preview: React.FC<PreviewProps> = ({ 
@@ -58,6 +60,8 @@ export const Preview: React.FC<PreviewProps> = ({
   onToggleAIChat,
   isAIChatOpen,
   onScanCode,
+  syncStatus,
+  onAnalyze,
 }) => {
   // This ref is for the INNER container (the one being transformed)
   // We need it for click calculations and download
@@ -258,6 +262,8 @@ export const Preview: React.FC<PreviewProps> = ({
         onToggleAIChat={onToggleAIChat}
         isAIChatOpen={isAIChatOpen}
         onScanCode={onScanCode}
+        syncStatus={syncStatus}
+        onAnalyze={onAnalyze}
       />
 
       {isCommentMode && (

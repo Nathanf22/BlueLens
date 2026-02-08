@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { ScanResult, DiagramNodeInfo, Diagram, LLMSettings, RepoConfig } from '../types';
+import { ScanResult, DiagramNodeInfo, Diagram, LLMSettings, RepoConfig, SyncMode, SyncStatus, SyncSuggestion } from '../types';
 import { codeScannerService } from '../services/codeScannerService';
 import { llmService } from '../services/llmService';
 import { cleanMermaidResponse } from '../services/llmService';
@@ -13,10 +13,11 @@ export const useScanHandlers = (
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [syncMode, setSyncMode] = useState<SyncMode>('manual');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('unknown');
 
   const getDiagramNodes = useCallback((): DiagramNodeInfo[] => {
-    // Parse nodes from the rendered SVG in the DOM
-    const svgElement = document.querySelector('#mermaid-preview svg') as SVGElement | null;
+    const svgElement = document.querySelector('.mermaid-svg-container svg') as SVGElement | null;
     if (!svgElement) return [];
 
     const nodeElements = svgElement.querySelectorAll<SVGGElement>('.node');
@@ -24,7 +25,6 @@ export const useScanHandlers = (
 
     nodeElements.forEach(el => {
       const svgId = el.id || '';
-      // Extract mermaid node ID
       let nodeId = svgId;
       const match1 = svgId.match(/flowchart-([^-]+)-/);
       if (match1) nodeId = match1[1];
@@ -33,7 +33,6 @@ export const useScanHandlers = (
         if (match2) nodeId = match2[1];
       }
 
-      // Get label
       let label = '';
       const nodeLabel = el.querySelector('.nodeLabel');
       if (nodeLabel) label = nodeLabel.textContent?.trim() || '';
@@ -50,34 +49,15 @@ export const useScanHandlers = (
     return nodes;
   }, []);
 
-  const runScan = useCallback(async (repoId: string) => {
-    if (!activeDiagram) return;
-
-    const repo = workspaceRepos.find(r => r.id === repoId);
-    if (!repo) {
-      setScanError('Repository not found');
-      return;
+  const computeSyncStatus = useCallback((result: ScanResult): SyncStatus => {
+    if (result.missingInDiagram.length === 0 && result.missingInCode.length === 0) {
+      return 'synced';
     }
-
-    setIsScanning(true);
-    setScanError(null);
-    setScanResult(null);
-
-    try {
-      const diagramNodes = getDiagramNodes();
-      const result = await codeScannerService.fullScan(
-        repoId,
-        repo.name,
-        activeDiagram.id,
-        diagramNodes
-      );
-      setScanResult(result);
-    } catch (err: any) {
-      setScanError(err.message || 'Scan failed');
-    } finally {
-      setIsScanning(false);
+    if (result.missingInDiagram.length > 0 && result.missingInCode.length > 0) {
+      return 'conflicts';
     }
-  }, [activeDiagram, workspaceRepos, getDiagramNodes]);
+    return 'suggestions';
+  }, []);
 
   const addMissingToDiagram = useCallback(async (entityNames: string[]) => {
     if (!activeDiagram || entityNames.length === 0) return;
@@ -104,13 +84,112 @@ export const useScanHandlers = (
     }
 
     // Fallback: append nodes manually
-    const newNodes = entityNames.map((name, i) => {
+    const newNodes = entityNames.map(name => {
       const id = name.replace(/[^a-zA-Z0-9]/g, '');
       return `    ${id}[${name}]`;
     }).join('\n');
 
     updateActiveDiagram({ code: currentCode + '\n' + newNodes });
   }, [activeDiagram, updateActiveDiagram, llmSettings]);
+
+  const applySuggestion = useCallback(async (suggestion: SyncSuggestion) => {
+    if (!activeDiagram) return;
+
+    switch (suggestion.type) {
+      case 'add_component':
+        if (suggestion.entity) {
+          await addMissingToDiagram([suggestion.entity.name]);
+        }
+        break;
+      case 'mark_obsolete':
+        // Add a style/comment to mark the node as potentially obsolete
+        if (suggestion.nodeInfo) {
+          const code = activeDiagram.code;
+          const obsoleteComment = `\n    %% OBSOLETE? ${suggestion.nodeInfo.label} - not found in code`;
+          updateActiveDiagram({ code: code + obsoleteComment });
+        }
+        break;
+      case 'update_relationship':
+        // Rename node label in diagram code
+        if (suggestion.nodeInfo && suggestion.entity) {
+          const code = activeDiagram.code;
+          const oldLabel = suggestion.nodeInfo.label;
+          const newLabel = suggestion.entity.name;
+          const updated = code.replace(
+            new RegExp(`\\[${oldLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`),
+            `[${newLabel}]`
+          );
+          if (updated !== code) {
+            updateActiveDiagram({ code: updated });
+          }
+        }
+        break;
+    }
+  }, [activeDiagram, updateActiveDiagram, addMissingToDiagram]);
+
+  const applyAllSuggestions = useCallback(async (suggestions: SyncSuggestion[]) => {
+    // Apply add_component suggestions in batch
+    const additions = suggestions.filter(s => s.type === 'add_component' && s.entity);
+    if (additions.length > 0) {
+      await addMissingToDiagram(additions.map(s => s.entity!.name));
+    }
+
+    // Apply other suggestions sequentially
+    for (const s of suggestions) {
+      if (s.type !== 'add_component') {
+        await applySuggestion(s);
+      }
+    }
+  }, [addMissingToDiagram, applySuggestion]);
+
+  const runScan = useCallback(async (repoId: string) => {
+    if (!activeDiagram) return;
+
+    const repo = workspaceRepos.find(r => r.id === repoId);
+    if (!repo) {
+      setScanError('Repository not found');
+      return;
+    }
+
+    setIsScanning(true);
+    setScanError(null);
+    setScanResult(null);
+
+    try {
+      const diagramNodes = getDiagramNodes();
+      const result = await codeScannerService.fullScan(
+        repoId,
+        repo.name,
+        activeDiagram.id,
+        diagramNodes,
+        repo.scanConfig
+      );
+      setScanResult(result);
+
+      const status = computeSyncStatus(result);
+      setSyncStatus(status);
+
+      // Auto-apply in semi-auto mode: apply add_component suggestions only
+      if (syncMode === 'semi-auto' && result.suggestions.length > 0) {
+        const addSuggestions = result.suggestions.filter(s => s.type === 'add_component');
+        if (addSuggestions.length > 0) {
+          await addMissingToDiagram(addSuggestions.map(s => s.entity!.name));
+        }
+      }
+
+      // Auto mode: apply all additions, mark obsolete for review
+      if (syncMode === 'auto' && result.suggestions.length > 0) {
+        const addSuggestions = result.suggestions.filter(s => s.type === 'add_component');
+        if (addSuggestions.length > 0) {
+          await addMissingToDiagram(addSuggestions.map(s => s.entity!.name));
+        }
+      }
+    } catch (err: any) {
+      setScanError(err.message || 'Scan failed');
+    } finally {
+      setIsScanning(false);
+    }
+  }, [activeDiagram, workspaceRepos, getDiagramNodes, syncMode, computeSyncStatus, addMissingToDiagram]);
 
   const clearScanResult = useCallback(() => {
     setScanResult(null);
@@ -124,5 +203,10 @@ export const useScanHandlers = (
     runScan,
     addMissingToDiagram,
     clearScanResult,
+    syncMode,
+    setSyncMode,
+    syncStatus,
+    applySuggestion,
+    applyAllSuggestions,
   };
 };
