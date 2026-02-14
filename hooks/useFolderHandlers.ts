@@ -20,6 +20,14 @@ export const useFolderHandlers = (
     setFolders([...folders, newFolder]);
   };
 
+  /** Programmatic variant that returns the new folder ID */
+  const createFolderProgrammatic = (name: string, parentId: string | null = null): string => {
+    const id = generateId();
+    const newFolder: Folder = { id, name, parentId, workspaceId: activeWorkspaceId };
+    setFolders(prev => [...prev, newFolder]);
+    return id;
+  };
+
   const handleDeleteFolder = (folderId: string) => {
     if (window.confirm('Delete this folder? Diagrams inside will be moved to root.')) {
       // Move diagrams to root
@@ -40,6 +48,7 @@ export const useFolderHandlers = (
 
   return {
     handleCreateFolder,
+    createFolderProgrammatic,
     handleDeleteFolder,
     handleRenameFolder
   };

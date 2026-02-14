@@ -7,7 +7,8 @@ import { AISettingsModal } from './AISettingsModal';
 import { ScanResultsPanel } from './ScanResultsPanel';
 import { DiffViewModal } from './DiffViewModal';
 import { DiagramAnalysisPanel } from './DiagramAnalysisPanel';
-import { Diagram, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult, SyncSuggestion, SyncMode, ScanConfig, DiagramAnalysis } from '../types';
+import { CodebaseImportModal } from './CodebaseImportModal';
+import { Diagram, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult, SyncSuggestion, SyncMode, ScanConfig, DiagramAnalysis, CodebaseImportProgress } from '../types';
 
 interface ModalManagerProps {
   isAIModalOpen: boolean;
@@ -60,6 +61,15 @@ interface ModalManagerProps {
   isAnalysisPanelOpen: boolean;
   onCloseAnalysisPanel: () => void;
   diagramAnalysis: DiagramAnalysis | null;
+  // Codebase Import
+  isCodebaseImportOpen: boolean;
+  onCloseCodebaseImport: () => void;
+  onStartCodebaseImport: (repoId: string) => void;
+  codebaseImportProgress: CodebaseImportProgress | null;
+  isCodebaseImporting: boolean;
+  onResetCodebaseImport: () => void;
+  // Generate Diagrams trigger from RepoManager
+  onOpenCodebaseImport: () => void;
 }
 
 export const ModalManager: React.FC<ModalManagerProps> = ({
@@ -107,6 +117,13 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   isAnalysisPanelOpen,
   onCloseAnalysisPanel,
   diagramAnalysis,
+  isCodebaseImportOpen,
+  onCloseCodebaseImport,
+  onStartCodebaseImport,
+  codebaseImportProgress,
+  isCodebaseImporting,
+  onResetCodebaseImport,
+  onOpenCodebaseImport,
 }) => {
   return (
     <>
@@ -137,6 +154,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
           onRemoveRepo={onRemoveRepo}
           onReopenRepo={onReopenRepo}
           onClose={onCloseRepoManager}
+          onGenerateDiagrams={onOpenCodebaseImport}
         />
       )}
 
@@ -191,6 +209,17 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         analysis={diagramAnalysis}
         isOpen={isAnalysisPanelOpen}
         onClose={onCloseAnalysisPanel}
+      />
+
+      {/* Codebase Import Modal */}
+      <CodebaseImportModal
+        isOpen={isCodebaseImportOpen}
+        onClose={onCloseCodebaseImport}
+        repos={repos}
+        onStartImport={onStartCodebaseImport}
+        progress={codebaseImportProgress}
+        isImporting={isCodebaseImporting}
+        onReset={onResetCodebaseImport}
       />
     </>
   );

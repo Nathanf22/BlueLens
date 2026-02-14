@@ -231,3 +231,65 @@ export interface DiagramAnalysis {
 export interface MermaidNode { id: string; label: string; }
 export interface MermaidEdge { from: string; to: string; label?: string; }
 export interface MermaidGraph { type: string; nodes: MermaidNode[]; edges: MermaidEdge[]; subgraphs: string[]; }
+
+// --- Codebase-to-Diagrams ---
+
+export interface FileImport {
+  name: string;
+  source: string;
+  isDefault: boolean;
+  isExternal: boolean;
+}
+
+export interface AnalyzedFile {
+  filePath: string;
+  language: string;
+  symbols: ScannedEntity[];
+  imports: FileImport[];
+  exportedSymbols: string[];
+  size: number;
+}
+
+export interface CodebaseModule {
+  name: string;
+  path: string;
+  files: AnalyzedFile[];
+  dependencies: string[];
+}
+
+export interface CodebaseAnalysis {
+  modules: CodebaseModule[];
+  externalDeps: string[];
+  entryPoints: string[];
+  totalFiles: number;
+  totalSymbols: number;
+}
+
+export interface DiagramGenerationResult {
+  diagrams: Array<{
+    id: string;
+    name: string;
+    code: string;
+    level: 1 | 2 | 3;
+    moduleRef?: string;
+    fileRef?: string;
+  }>;
+  nodeLinks: Array<{
+    sourceDiagramId: string;
+    nodeId: string;
+    targetDiagramId: string;
+    label: string;
+  }>;
+  folderId?: string;
+}
+
+export type CodebaseImportStep = 'scanning' | 'analyzing' | 'generating' | 'creating' | 'linking' | 'done' | 'error';
+
+export interface CodebaseImportProgress {
+  step: CodebaseImportStep;
+  message: string;
+  percent: number;
+  filesScanned?: number;
+  totalFiles?: number;
+  diagramsCreated?: number;
+}

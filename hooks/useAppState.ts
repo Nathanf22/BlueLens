@@ -45,6 +45,9 @@ export const useAppState = () => {
   const [isAnalysisPanelOpen, setIsAnalysisPanelOpen] = useState(false);
   const [diffViewData, setDiffViewData] = useState<{ original: string; modified: string } | null>(null);
 
+  // --- State: Codebase Import ---
+  const [isCodebaseImportOpen, setIsCodebaseImportOpen] = useState(false);
+
   // Derived state
   const workspaceDiagrams = diagrams.filter(d => d.workspaceId === activeWorkspaceId);
   const workspaceFolders = folders.filter(f => f.workspaceId === activeWorkspaceId);
@@ -137,6 +140,10 @@ export const useAppState = () => {
     setIsAnalysisPanelOpen,
     diffViewData,
     setDiffViewData,
+
+    // Codebase Import
+    isCodebaseImportOpen,
+    setIsCodebaseImportOpen,
 
     // Derived state
     workspaceDiagrams,

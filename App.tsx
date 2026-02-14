@@ -25,6 +25,7 @@ import { useStoragePersistence } from './hooks/useStoragePersistence';
 import { useLLMSettings } from './hooks/useLLMSettings';
 import { useChatHandlers } from './hooks/useChatHandlers';
 import { useScanHandlers } from './hooks/useScanHandlers';
+import { useCodebaseImport } from './hooks/useCodebaseImport';
 
 export default function App() {
   // --- State Management ---
@@ -77,6 +78,8 @@ export default function App() {
     setIsAnalysisPanelOpen,
     diffViewData,
     setDiffViewData,
+    isCodebaseImportOpen,
+    setIsCodebaseImportOpen,
     workspaceDiagrams,
     workspaceFolders,
     workspaceRepos,
@@ -96,7 +99,7 @@ export default function App() {
     updateActiveDiagram
   } = useDiagramHandlers(diagrams, setDiagrams, activeWorkspaceId, activeId, setActiveId);
 
-  const { handleCreateFolder, handleDeleteFolder, handleRenameFolder } =
+  const { handleCreateFolder, createFolderProgrammatic, handleDeleteFolder, handleRenameFolder } =
     useFolderHandlers(folders, setFolders, diagrams, setDiagrams, activeWorkspaceId);
 
   const { handleZoomIn, handleZoomOut, handleGoToRoot, handleBreadcrumbNavigate } =
@@ -126,6 +129,17 @@ export default function App() {
     scanResult, isScanning, scanError, runScan, addMissingToDiagram, clearScanResult,
     syncMode, setSyncMode, syncStatus, applySuggestion, applyAllSuggestions
   } = useScanHandlers(activeDiagram, updateActiveDiagram, llmSettings, workspaceRepos);
+
+  // --- Codebase Import ---
+  const { progress: codebaseImportProgress, isImporting: isCodebaseImporting, startImport: startCodebaseImport, resetProgress: resetCodebaseImport } =
+    useCodebaseImport({
+      diagrams,
+      setDiagrams,
+      repos: workspaceRepos,
+      activeWorkspaceId,
+      createFolderProgrammatic,
+      setActiveId,
+    });
 
   // --- Diagram Analysis ---
   const [diagramAnalysis, setDiagramAnalysis] = useState<DiagramAnalysis | null>(null);
@@ -377,6 +391,13 @@ export default function App() {
         isAnalysisPanelOpen={isAnalysisPanelOpen}
         onCloseAnalysisPanel={() => setIsAnalysisPanelOpen(false)}
         diagramAnalysis={diagramAnalysis}
+        isCodebaseImportOpen={isCodebaseImportOpen}
+        onCloseCodebaseImport={() => setIsCodebaseImportOpen(false)}
+        onStartCodebaseImport={startCodebaseImport}
+        codebaseImportProgress={codebaseImportProgress}
+        isCodebaseImporting={isCodebaseImporting}
+        onResetCodebaseImport={resetCodebaseImport}
+        onOpenCodebaseImport={() => setIsCodebaseImportOpen(true)}
       />
     </div>
   );
