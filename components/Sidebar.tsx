@@ -2,10 +2,12 @@ import React, { useState, useRef } from 'react';
 import {
   Plus, Trash2, FileText, Layout, Download, Loader2, Upload,
   Folder as FolderIcon, FolderPlus, ChevronDown, ChevronRight, MoreVertical,
-  Edit2, Settings, Link2, Unlink, Layers, ChevronLeft, X, Globe, FileDown, FolderOpen
+  Edit2, Settings, Link2, Unlink, Layers, ChevronLeft, X, Globe, FileDown, FolderOpen,
+  GitBranch
 } from 'lucide-react';
-import { Diagram, Folder, Workspace } from '../types';
+import { Diagram, Folder, Workspace, CodeGraph, RepoConfig } from '../types';
 import { BlueprintImportResult, exportDiagram, exportWorkspace, exportAll, importBlueprint, downloadJson } from '../services/exportService';
+import { fileSystemService } from '../services/fileSystemService';
 import JSZip from 'jszip';
 
 interface SidebarProps {
@@ -32,6 +34,13 @@ interface SidebarProps {
   onOpenRepoManager: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  // CodeGraph
+  repos?: RepoConfig[];
+  codeGraphs?: CodeGraph[];
+  activeGraphId?: string | null;
+  onSelectGraph?: (graphId: string | null) => void;
+  onCreateGraph?: (repoId: string) => Promise<CodeGraph | null>;
+  onDeleteGraph?: (graphId: string) => void;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -59,13 +68,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRenameWorkspace,
   onOpenRepoManager,
   isCollapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  repos = [],
+  codeGraphs = [],
+  activeGraphId,
+  onSelectGraph,
+  onCreateGraph,
+  onDeleteGraph,
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [isCreatingGraph, setIsCreatingGraph] = useState(false);
+  const [isRepoPickerOpen, setIsRepoPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const connectedRepos = repos.filter(r => fileSystemService.hasHandle(r.id));
+
+  const handleCreateGraph = async (repoId: string) => {
+    if (!onCreateGraph || isCreatingGraph) return;
+    setIsCreatingGraph(true);
+    setIsRepoPickerOpen(false);
+    try {
+      await onCreateGraph(repoId);
+    } finally {
+      setIsCreatingGraph(false);
+    }
+  };
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
 
@@ -469,6 +499,101 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
+        {/* Code Graphs Section */}
+        <div className="mb-3">
+          <div className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider flex justify-between items-center">
+            <span>Code Graphs</span>
+            <div className="flex items-center gap-1">
+              {codeGraphs.length > 0 && (
+                <span className="bg-dark-800 px-1.5 py-0.5 rounded text-[10px]">{codeGraphs.length}</span>
+              )}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isCreatingGraph) return;
+                    if (connectedRepos.length === 0) return;
+                    if (connectedRepos.length === 1) {
+                      handleCreateGraph(connectedRepos[0].id);
+                    } else {
+                      setIsRepoPickerOpen(!isRepoPickerOpen);
+                    }
+                  }}
+                  disabled={connectedRepos.length === 0 || isCreatingGraph}
+                  className="p-1 rounded hover:bg-dark-700 text-gray-500 hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  title={connectedRepos.length === 0 ? 'Connect a repository first' : 'New Code Graph'}
+                >
+                  {isCreatingGraph
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin text-green-400" />
+                    : <Plus className="w-3.5 h-3.5" />}
+                </button>
+                {/* Repo Picker Dropdown */}
+                {isRepoPickerOpen && connectedRepos.length > 1 && (
+                  <div className="absolute right-0 top-full mt-1 bg-dark-800 border border-gray-700 rounded-lg shadow-xl z-40 min-w-[180px] py-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <p className="px-3 py-1.5 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Select repository</p>
+                    {connectedRepos.map(repo => (
+                      <button
+                        key={repo.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCreateGraph(repo.id);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-dark-700 hover:text-green-400 transition-colors text-left"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+                        <span className="truncate">{repo.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          {codeGraphs.length > 0 && (
+            <div className="space-y-0.5 px-2">
+              {codeGraphs.map(graph => (
+                <div
+                  key={graph.id}
+                  onClick={() => onSelectGraph?.(activeGraphId === graph.id ? null : graph.id)}
+                  className={`
+                    group flex items-center justify-between px-3 py-1.5 rounded-md cursor-pointer transition-colors
+                    ${activeGraphId === graph.id
+                      ? 'bg-green-900/30 text-green-400'
+                      : 'text-gray-400 hover:bg-dark-800 hover:text-gray-200'}
+                  `}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <GitBranch className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate text-sm">{graph.name}</span>
+                    <span className="text-[10px] bg-green-800/50 text-green-300 px-1.5 py-0.5 rounded-full font-medium">
+                      {Object.keys(graph.nodes).length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteGraph?.(graph.id);
+                      }}
+                      className="p-1 rounded hover:bg-red-900/50 hover:text-red-400 text-gray-500 transition-colors"
+                      title="Delete graph"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {codeGraphs.length === 0 && (
+            <p className="px-3 text-xs text-gray-600 italic">
+              {connectedRepos.length === 0
+                ? 'Connect a repository to create a graph'
+                : 'Click + to create a Code Graph'}
+            </p>
+          )}
+        </div>
+
         <div className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider flex justify-between items-center">
           <span>Diagrams</span>
           <span className="bg-dark-800 px-1.5 py-0.5 rounded text-[10px]">{diagrams.length}</span>

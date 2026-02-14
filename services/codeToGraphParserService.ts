@@ -1,0 +1,263 @@
+/**
+ * Transforms a CodebaseAnalysis (from codebaseAnalyzerService) into a CodeGraph.
+ *
+ * Depth hierarchy:
+ *   D0: system root (repo)
+ *   D1: package/module (top-level directory)
+ *   D2: module/file
+ *   D3: class/function/interface/variable
+ */
+
+import {
+  CodeGraph, GraphNode, GraphDepth, GraphNodeKind,
+  CodebaseAnalysis, CodebaseModule, AnalyzedFile, ScannedEntity,
+  SyncLockEntry, SourceReference, CodeGraphConfig, ScanConfig,
+} from '../types';
+import { codeGraphModelService } from './codeGraphModelService';
+import { codeParserService } from './codeParserService';
+import { fileSystemService } from './fileSystemService';
+
+const generateId = () => Math.random().toString(36).substr(2, 9);
+
+function symbolKindToNodeKind(kind: ScannedEntity['kind']): GraphNodeKind {
+  switch (kind) {
+    case 'class': return 'class';
+    case 'function': return 'function';
+    case 'interface': return 'interface';
+    case 'variable': return 'variable';
+    default: return 'function';
+  }
+}
+
+export async function parseCodebaseToGraph(
+  analysis: CodebaseAnalysis,
+  repoId: string,
+  repoName: string,
+  workspaceId: string,
+  handle?: FileSystemDirectoryHandle,
+  config?: CodeGraphConfig
+): Promise<CodeGraph> {
+  let graph = codeGraphModelService.createEmptyGraph(workspaceId, repoId, repoName);
+  const rootId = graph.rootNodeId;
+
+  // Maps for cross-referencing
+  const moduleIdMap = new Map<string, string>();   // moduleName → nodeId
+  const fileIdMap = new Map<string, string>();      // filePath → nodeId
+  const symbolIdMap = new Map<string, string>();    // "filePath:symbolName" → nodeId
+
+  // D1: Modules/packages
+  for (const mod of analysis.modules) {
+    const nodeId = generateId();
+    moduleIdMap.set(mod.name, nodeId);
+
+    const node: GraphNode = {
+      id: nodeId,
+      name: mod.name,
+      kind: 'package',
+      depth: 1,
+      parentId: rootId,
+      children: [],
+      sourceRef: null,
+      tags: [],
+      lensConfig: {},
+      domainProjections: [],
+    };
+
+    const result = codeGraphModelService.addNode(graph, node);
+    graph = result.graph;
+
+    // D1 → D0 containment
+    const containResult = codeGraphModelService.addRelation(graph, rootId, nodeId, 'contains');
+    graph = containResult.graph;
+  }
+
+  // D2: Files
+  for (const mod of analysis.modules) {
+    const moduleNodeId = moduleIdMap.get(mod.name)!;
+
+    for (const file of mod.files) {
+      const fileNodeId = generateId();
+      fileIdMap.set(file.filePath, fileNodeId);
+
+      // Compute hash if handle available
+      let contentHash = '';
+      if (handle) {
+        try {
+          const content = await fileSystemService.readFile(handle, file.filePath);
+          contentHash = await codeParserService.computeContentHash(content);
+        } catch { /* skip */ }
+      }
+
+      const sourceRef: SourceReference | null = contentHash ? {
+        filePath: file.filePath,
+        lineStart: 1,
+        lineEnd: file.size > 0 ? 9999 : 1, // Approximate; not critical for file-level nodes
+        contentHash,
+      } : null;
+
+      const node: GraphNode = {
+        id: fileNodeId,
+        name: file.filePath.split('/').pop() || file.filePath,
+        kind: 'module',
+        depth: 2,
+        parentId: moduleNodeId,
+        children: [],
+        sourceRef,
+        tags: [file.language],
+        lensConfig: {},
+        domainProjections: [],
+      };
+
+      const result = codeGraphModelService.addNode(graph, node);
+      graph = result.graph;
+
+      // D2 → D1 containment
+      const containResult = codeGraphModelService.addRelation(graph, moduleNodeId, fileNodeId, 'contains');
+      graph = containResult.graph;
+
+      // SyncLock for file node
+      if (sourceRef) {
+        graph.syncLock[fileNodeId] = {
+          nodeId: fileNodeId,
+          sourceRef,
+          status: 'locked',
+          lastChecked: Date.now(),
+        };
+      }
+
+      // D3: Symbols
+      for (const sym of file.symbols) {
+        const symNodeId = generateId();
+        const symKey = `${file.filePath}:${sym.name}`;
+        symbolIdMap.set(symKey, symNodeId);
+
+        const symSourceRef: SourceReference | null = contentHash ? {
+          filePath: file.filePath,
+          lineStart: sym.lineStart,
+          lineEnd: sym.lineEnd,
+          contentHash: '', // Symbol-level hash computed only during sync
+        } : null;
+
+        const symNode: GraphNode = {
+          id: symNodeId,
+          name: sym.name,
+          kind: symbolKindToNodeKind(sym.kind),
+          depth: 3,
+          parentId: fileNodeId,
+          children: [],
+          sourceRef: symSourceRef,
+          tags: [sym.kind],
+          lensConfig: {},
+          domainProjections: [],
+        };
+
+        const symResult = codeGraphModelService.addNode(graph, symNode);
+        graph = symResult.graph;
+
+        // D3 → D2 containment
+        const symContainResult = codeGraphModelService.addRelation(graph, fileNodeId, symNodeId, 'contains');
+        graph = symContainResult.graph;
+      }
+    }
+  }
+
+  // Relations from imports: file-level depends_on
+  for (const mod of analysis.modules) {
+    for (const file of mod.files) {
+      const fileNodeId = fileIdMap.get(file.filePath);
+      if (!fileNodeId) continue;
+
+      for (const imp of file.imports) {
+        if (imp.isExternal) continue;
+
+        // Try to resolve the import to a known file
+        for (const [filePath, targetNodeId] of fileIdMap) {
+          // Simple heuristic: import source matches file name (without extension)
+          const targetBaseName = filePath.split('/').pop()?.replace(/\.\w+$/, '') || '';
+          const importBaseName = imp.source.split('/').pop() || '';
+          if (targetBaseName === importBaseName && targetNodeId !== fileNodeId) {
+            const depResult = codeGraphModelService.addRelation(graph, fileNodeId, targetNodeId, 'depends_on', imp.name);
+            graph = depResult.graph;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Relations from class hierarchy
+  if (handle) {
+    for (const mod of analysis.modules) {
+      for (const file of mod.files) {
+        try {
+          const content = await fileSystemService.readFile(handle, file.filePath);
+          const language = fileSystemService.getLanguage(file.filePath);
+          const hierarchy = codeParserService.extractClassHierarchy(content, language);
+
+          for (const entry of hierarchy) {
+            const sourceKey = `${file.filePath}:${entry.name}`;
+            const sourceId = symbolIdMap.get(sourceKey);
+            if (!sourceId) continue;
+
+            if (entry.extends) {
+              // Find target across all files
+              for (const [key, targetId] of symbolIdMap) {
+                if (key.endsWith(`:${entry.extends}`)) {
+                  const inhResult = codeGraphModelService.addRelation(graph, sourceId, targetId, 'inherits');
+                  graph = inhResult.graph;
+                  break;
+                }
+              }
+            }
+
+            for (const impl of entry.implements) {
+              for (const [key, targetId] of symbolIdMap) {
+                if (key.endsWith(`:${impl}`)) {
+                  const implResult = codeGraphModelService.addRelation(graph, sourceId, targetId, 'implements');
+                  graph = implResult.graph;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Call references
+          const allSymbolNames = file.symbols.map(s => s.name);
+          const calls = codeParserService.extractCallReferences(content, language, allSymbolNames);
+          for (const call of calls) {
+            const callerKey = `${file.filePath}:${call.caller}`;
+            const callerId = symbolIdMap.get(callerKey);
+            // Look for callee across all files
+            for (const [key, calleeId] of symbolIdMap) {
+              if (key.endsWith(`:${call.callee}`) && calleeId !== callerId) {
+                const callResult = codeGraphModelService.addRelation(graph, callerId!, calleeId, 'calls');
+                graph = callResult.graph;
+                break;
+              }
+            }
+          }
+        } catch { /* skip unreadable files */ }
+      }
+    }
+  }
+
+  // Module-level depends_on from CodebaseModule.dependencies
+  for (const mod of analysis.modules) {
+    const sourceModId = moduleIdMap.get(mod.name);
+    if (!sourceModId) continue;
+
+    for (const depName of mod.dependencies) {
+      const targetModId = moduleIdMap.get(depName);
+      if (targetModId) {
+        const depResult = codeGraphModelService.addRelation(graph, sourceModId, targetModId, 'depends_on');
+        graph = depResult.graph;
+      }
+    }
+  }
+
+  return graph;
+}
+
+export const codeToGraphParserService = {
+  parseCodebaseToGraph,
+};

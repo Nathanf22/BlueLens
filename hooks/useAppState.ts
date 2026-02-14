@@ -48,6 +48,10 @@ export const useAppState = () => {
   // --- State: Codebase Import ---
   const [isCodebaseImportOpen, setIsCodebaseImportOpen] = useState(false);
 
+  // --- State: CodeGraph ---
+  const [activeGraphId, setActiveGraphId] = useState<string | null>(null);
+  const [isCodeGraphConfigOpen, setIsCodeGraphConfigOpen] = useState(false);
+
   // Derived state
   const workspaceDiagrams = diagrams.filter(d => d.workspaceId === activeWorkspaceId);
   const workspaceFolders = folders.filter(f => f.workspaceId === activeWorkspaceId);
@@ -144,6 +148,12 @@ export const useAppState = () => {
     // Codebase Import
     isCodebaseImportOpen,
     setIsCodebaseImportOpen,
+
+    // CodeGraph
+    activeGraphId,
+    setActiveGraphId,
+    isCodeGraphConfigOpen,
+    setIsCodeGraphConfigOpen,
 
     // Derived state
     workspaceDiagrams,

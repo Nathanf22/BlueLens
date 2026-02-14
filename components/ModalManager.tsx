@@ -8,7 +8,8 @@ import { ScanResultsPanel } from './ScanResultsPanel';
 import { DiffViewModal } from './DiffViewModal';
 import { DiagramAnalysisPanel } from './DiagramAnalysisPanel';
 import { CodebaseImportModal } from './CodebaseImportModal';
-import { Diagram, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult, SyncSuggestion, SyncMode, ScanConfig, DiagramAnalysis, CodebaseImportProgress } from '../types';
+import { CodeGraphConfigModal } from './CodeGraphConfigModal';
+import { Diagram, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult, SyncSuggestion, SyncMode, ScanConfig, DiagramAnalysis, CodebaseImportProgress, CodeGraphConfig } from '../types';
 
 interface ModalManagerProps {
   isAIModalOpen: boolean;
@@ -70,6 +71,15 @@ interface ModalManagerProps {
   onResetCodebaseImport: () => void;
   // Generate Diagrams trigger from RepoManager
   onOpenCodebaseImport: () => void;
+  // Create Code Graph trigger from RepoManager
+  onCreateGraph?: (repoId: string) => Promise<any>;
+  // CodeGraph Config
+  isCodeGraphConfigOpen: boolean;
+  onCloseCodeGraphConfig: () => void;
+  codeGraphConfig: CodeGraphConfig | null;
+  onSaveCodeGraphConfig: (config: CodeGraphConfig) => void;
+  codeGraphRepoId: string;
+  codeGraphId: string;
 }
 
 export const ModalManager: React.FC<ModalManagerProps> = ({
@@ -124,6 +134,13 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   isCodebaseImporting,
   onResetCodebaseImport,
   onOpenCodebaseImport,
+  onCreateGraph,
+  isCodeGraphConfigOpen,
+  onCloseCodeGraphConfig,
+  codeGraphConfig,
+  onSaveCodeGraphConfig,
+  codeGraphRepoId,
+  codeGraphId,
 }) => {
   return (
     <>
@@ -155,6 +172,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
           onReopenRepo={onReopenRepo}
           onClose={onCloseRepoManager}
           onGenerateDiagrams={onOpenCodebaseImport}
+          onCreateGraph={onCreateGraph}
         />
       )}
 
@@ -220,6 +238,16 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         progress={codebaseImportProgress}
         isImporting={isCodebaseImporting}
         onReset={onResetCodebaseImport}
+      />
+
+      {/* CodeGraph Config Modal */}
+      <CodeGraphConfigModal
+        isOpen={isCodeGraphConfigOpen}
+        onClose={onCloseCodeGraphConfig}
+        config={codeGraphConfig}
+        onSave={onSaveCodeGraphConfig}
+        repoId={codeGraphRepoId}
+        graphId={codeGraphId}
       />
     </>
   );

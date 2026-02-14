@@ -4,7 +4,8 @@ import { Editor } from './Editor';
 import { Preview } from './Preview';
 import { CodePanel } from './CodePanel';
 import { AIChatPanel } from './AIChatPanel';
-import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings, SyncStatus } from '../types';
+import { CodeGraphPanel } from './CodeGraphPanel';
+import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings, SyncStatus, CodeGraph, ViewLens, CodeGraphAnomaly } from '../types';
 import { useCodePanelResize } from '../hooks/useCodePanelResize';
 
 interface WorkspaceViewProps {
@@ -48,6 +49,22 @@ interface WorkspaceViewProps {
   isDragging: boolean;
   containerRef: React.RefObject<HTMLDivElement>;
   onMouseDown: (e: React.MouseEvent) => void;
+  // CodeGraph
+  codeGraph?: CodeGraph | null;
+  codeGraphLens?: ViewLens | null;
+  codeGraphMermaidCode?: string | null;
+  codeGraphFocusNodeId?: string | null;
+  codeGraphBreadcrumbStack?: Array<{ nodeId: string; name: string }>;
+  codeGraphIsSyncing?: boolean;
+  onCodeGraphSwitchLens?: (lensId: string) => void;
+  onCodeGraphFocusNode?: (nodeId: string) => void;
+  onCodeGraphFocusUp?: () => void;
+  onCodeGraphFocusRoot?: () => void;
+  onCodeGraphNavigateBreadcrumb?: (index: number) => void;
+  onCodeGraphSync?: () => void;
+  onCodeGraphGetAnomalies?: () => CodeGraphAnomaly[];
+  onCodeGraphDelete?: () => void;
+  onCodeGraphRename?: (name: string) => void;
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
@@ -88,35 +105,74 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   leftWidthPercent,
   isDragging,
   containerRef,
-  onMouseDown
+  onMouseDown,
+  codeGraph,
+  codeGraphLens,
+  codeGraphMermaidCode,
+  codeGraphFocusNodeId,
+  codeGraphBreadcrumbStack = [],
+  codeGraphIsSyncing = false,
+  onCodeGraphSwitchLens,
+  onCodeGraphFocusNode,
+  onCodeGraphFocusUp,
+  onCodeGraphFocusRoot,
+  onCodeGraphNavigateBreadcrumb,
+  onCodeGraphSync,
+  onCodeGraphGetAnomalies,
+  onCodeGraphDelete,
+  onCodeGraphRename,
 }) => {
   const { codePanelWidthPercent, isDraggingCodePanel, handleCodePanelMouseDown } = useCodePanelResize(containerRef);
 
+  const isCodeGraphMode = !!codeGraph;
+  const previewCode = isCodeGraphMode ? (codeGraphMermaidCode || '') : (activeDiagram?.code || '');
+
   return (
-    <main 
+    <main
       ref={containerRef}
       className="flex-1 overflow-hidden flex flex-col lg:flex-row relative bg-[#0d0d0d]"
     >
-      {activeDiagram ? (
+      {activeDiagram || isCodeGraphMode ? (
         <>
-          {/* Editor Pane */}
-          <div 
-            className={`min-w-0 h-1/2 lg:h-full ${isEditorCollapsed ? '' : 'flex-1 lg:flex-none'}`}
-            style={isEditorCollapsed ? {} : { width: `${leftWidthPercent}%` }}
-          >
-            <Editor 
-              code={activeDiagram.code} 
-              name={activeDiagram.name}
-              onCodeChange={onCodeChange}
-              onNameChange={onNameChange}
-              error={error}
-              isCollapsed={isEditorCollapsed}
-              onToggleCollapse={onToggleEditorCollapse}
-            />
-          </div>
+          {/* Left Pane: Editor or CodeGraphPanel */}
+          {isCodeGraphMode && codeGraph ? (
+            <div className="w-72 flex-shrink-0 h-1/2 lg:h-full overflow-hidden">
+              <CodeGraphPanel
+                graph={codeGraph}
+                activeLens={codeGraphLens || null}
+                focusNodeId={codeGraphFocusNodeId || null}
+                breadcrumbStack={codeGraphBreadcrumbStack}
+                isSyncing={codeGraphIsSyncing}
+                onSwitchLens={onCodeGraphSwitchLens || (() => {})}
+                onFocusNode={onCodeGraphFocusNode || (() => {})}
+                onFocusUp={onCodeGraphFocusUp || (() => {})}
+                onFocusRoot={onCodeGraphFocusRoot || (() => {})}
+                onNavigateBreadcrumb={onCodeGraphNavigateBreadcrumb || (() => {})}
+                onSyncGraph={onCodeGraphSync || (() => {})}
+                onGetAnomalies={onCodeGraphGetAnomalies || (() => [])}
+                onDeleteGraph={onCodeGraphDelete || (() => {})}
+                onRenameGraph={onCodeGraphRename || (() => {})}
+              />
+            </div>
+          ) : (
+            <div
+              className={`min-w-0 h-1/2 lg:h-full ${isEditorCollapsed ? '' : 'flex-1 lg:flex-none'}`}
+              style={isEditorCollapsed ? {} : { width: `${leftWidthPercent}%` }}
+            >
+              <Editor
+                code={activeDiagram!.code}
+                name={activeDiagram!.name}
+                onCodeChange={onCodeChange}
+                onNameChange={onNameChange}
+                error={error}
+                isCollapsed={isEditorCollapsed}
+                onToggleCollapse={onToggleEditorCollapse}
+              />
+            </div>
+          )}
 
           {/* Resizer Handle */}
-          {!isEditorCollapsed && (
+          {!isCodeGraphMode && !isEditorCollapsed && (
           <div
             className="hidden lg:flex w-2 bg-dark-900 border-l border-r border-gray-800 hover:bg-brand-600 cursor-col-resize items-center justify-center transition-colors z-10"
             onMouseDown={onMouseDown}
@@ -128,8 +184,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           {/* Preview Pane */}
           <div className={`${isCodePanelOpen ? 'flex-1 min-w-0' : 'flex-1 min-w-0'} h-1/2 lg:h-full p-4 bg-[#0d0d0d]`}>
             <Preview
-              code={activeDiagram.code}
-              comments={activeDiagram.comments || []}
+              code={previewCode}
+              comments={activeDiagram?.comments || []}
               onAddComment={onAddComment}
               onDeleteComment={onDeleteComment}
               onError={onError}

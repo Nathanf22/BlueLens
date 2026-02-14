@@ -293,3 +293,178 @@ export interface CodebaseImportProgress {
   totalFiles?: number;
   diagramsCreated?: number;
 }
+
+// --- CodeGraph (RFC-0001) ---
+
+export type GraphDepth = 0 | 1 | 2 | 3 | 4;
+
+export type GraphNodeKind =
+  | 'system'      // D0: entire codebase
+  | 'package'     // D1: top-level module/directory
+  | 'module'      // D2: file
+  | 'class'       // D3: class/interface
+  | 'function'    // D3: function/method
+  | 'interface'   // D3: interface/type
+  | 'variable'    // D3: exported constant/singleton
+  | 'method'      // D4: method inside class
+  | 'field';      // D4: class field
+
+export type RelationType =
+  | 'contains'
+  | 'depends_on'
+  | 'implements'
+  | 'inherits'
+  | 'calls'
+  | 'emits'
+  | 'subscribes'
+  | 'reads'
+  | 'writes';
+
+export type ViewLensType = 'component' | 'flow' | 'domain' | 'custom';
+
+export interface SourceReference {
+  filePath: string;
+  lineStart: number;
+  lineEnd: number;
+  contentHash: string;
+}
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  kind: GraphNodeKind;
+  depth: GraphDepth;
+  parentId: string | null;
+  children: string[];           // child node IDs
+  sourceRef: SourceReference | null;
+  tags: string[];
+  lensConfig: Record<string, {  // per-lens overrides
+    visible?: boolean;
+    shape?: string;
+    style?: string;
+  }>;
+  domainProjections: string[];  // DomainNode IDs this maps to
+}
+
+export interface GraphRelation {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  type: RelationType;
+  label?: string;
+  lensVisibility: Record<string, boolean>; // lensId → visible
+}
+
+export interface ViewLensStyleRule {
+  match: {
+    kind?: GraphNodeKind[];
+    depth?: GraphDepth[];
+    tags?: string[];
+  };
+  shape?: string;    // Mermaid shape: 'rounded', 'stadium', 'cylinder', 'hexagon', etc.
+  style?: string;    // Mermaid style string: 'fill:#f9f,stroke:#333'
+  className?: string;
+}
+
+export interface ViewLens {
+  id: string;
+  name: string;
+  type: ViewLensType;
+  nodeFilter: {
+    kinds?: GraphNodeKind[];
+    minDepth?: GraphDepth;
+    maxDepth?: GraphDepth;
+    tags?: string[];
+  };
+  relationFilter: {
+    types?: RelationType[];
+  };
+  styleRules: ViewLensStyleRule[];
+  layoutHint: 'TD' | 'LR' | 'BT' | 'RL';
+}
+
+export type ProjectionRole = 'primary' | 'supporting' | 'referenced';
+
+export type DomainRelationType = 'owns' | 'triggers' | 'requires' | 'produces' | 'consumes';
+
+export interface DomainNode {
+  id: string;
+  name: string;
+  description?: string;
+  projections: Array<{
+    graphNodeId: string;
+    role: ProjectionRole;
+  }>;
+  children: string[];   // child DomainNode IDs
+  parentId: string | null;
+}
+
+export interface DomainRelation {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  type: DomainRelationType;
+  label?: string;
+}
+
+export type SyncLockStatus = 'locked' | 'modified' | 'missing';
+
+export interface SyncLockEntry {
+  nodeId: string;
+  sourceRef: SourceReference;
+  status: SyncLockStatus;
+  lastChecked: number;
+}
+
+export type CodeGraphAnomalyType =
+  | 'circular_dependency'
+  | 'orphan_node'
+  | 'broken_reference'
+  | 'high_coupling'
+  | 'god_node'
+  | 'missing_abstraction'
+  | 'hidden_dependency'
+  | 'naming_convention';
+
+export type CodeGraphAnomalySeverity = 'info' | 'warning' | 'error';
+
+export interface CodeGraphAnomaly {
+  type: CodeGraphAnomalyType;
+  severity: CodeGraphAnomalySeverity;
+  message: string;
+  nodeIds: string[];
+  relationIds?: string[];
+}
+
+export interface CodeGraphConfig {
+  id: string;
+  repoId: string;
+  depthRules: {
+    collapseAbove?: GraphDepth;
+    expandBelow?: GraphDepth;
+  };
+  defaultLensId?: string;
+  anomalyThresholds: {
+    maxFanOut?: number;
+    maxFanIn?: number;
+    maxDepth?: GraphDepth;
+  };
+  scanPatterns: ScanConfig;
+}
+
+export interface CodeGraph {
+  id: string;
+  name: string;
+  workspaceId: string;
+  repoId: string;
+  createdAt: number;
+  updatedAt: number;
+  nodes: Record<string, GraphNode>;
+  relations: Record<string, GraphRelation>;
+  domainNodes: Record<string, DomainNode>;
+  domainRelations: Record<string, DomainRelation>;
+  lenses: ViewLens[];
+  activeLensId: string;
+  syncLock: Record<string, SyncLockEntry>;
+  rootNodeId: string;
+}

@@ -119,6 +119,106 @@ function extractPythonImports(code: string): FileImport[] {
   return imports;
 }
 
+interface ClassHierarchyEntry {
+  name: string;
+  extends?: string;
+  implements: string[];
+  lineStart: number;
+}
+
+function extractTSJSClassHierarchy(code: string): ClassHierarchyEntry[] {
+  const results: ClassHierarchyEntry[] = [];
+  const re = /^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w\s,]+))?\s*\{/gm;
+  let m: RegExpExecArray | null;
+  const lines = code.split('\n');
+
+  while ((m = re.exec(code)) !== null) {
+    const charsBefore = code.substring(0, m.index);
+    const lineStart = charsBefore.split('\n').length;
+    const entry: ClassHierarchyEntry = {
+      name: m[1],
+      lineStart,
+      implements: [],
+    };
+    if (m[2]) entry.extends = m[2];
+    if (m[3]) entry.implements = m[3].split(',').map(s => s.trim()).filter(Boolean);
+    results.push(entry);
+  }
+
+  return results;
+}
+
+function extractPythonClassHierarchy(code: string): ClassHierarchyEntry[] {
+  const results: ClassHierarchyEntry[] = [];
+  const re = /^class\s+(\w+)(?:\(([^)]*)\))?\s*:/gm;
+  let m: RegExpExecArray | null;
+
+  while ((m = re.exec(code)) !== null) {
+    const charsBefore = code.substring(0, m.index);
+    const lineStart = charsBefore.split('\n').length;
+    const entry: ClassHierarchyEntry = {
+      name: m[1],
+      lineStart,
+      implements: [],
+    };
+    if (m[2]) {
+      const bases = m[2].split(',').map(s => s.trim()).filter(s => s && s !== 'object');
+      if (bases.length > 0) entry.extends = bases[0];
+      if (bases.length > 1) entry.implements = bases.slice(1);
+    }
+    results.push(entry);
+  }
+
+  return results;
+}
+
+function extractCallRefsFromCode(code: string, language: string, knownSymbols: string[]): Array<{ caller: string; callee: string }> {
+  if (knownSymbols.length === 0) return [];
+
+  const results: Array<{ caller: string; callee: string }> = [];
+  const lines = code.split('\n');
+
+  // Build a set for fast lookup
+  const symbolSet = new Set(knownSymbols);
+  // Build a regex to find symbol references followed by (
+  const symbolPattern = new RegExp(`\\b(${knownSymbols.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\s*\\(`, 'g');
+
+  // Determine which function/class scope each line belongs to
+  let currentScope: string | null = null;
+  const scopeRe = language === 'python'
+    ? /^(?:class|(?:async\s+)?def)\s+(\w+)/
+    : /^(?:export\s+)?(?:(?:async\s+)?function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=|(?:abstract\s+)?class\s+(\w+))/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const scopeMatch = scopeRe.exec(line);
+    if (scopeMatch) {
+      currentScope = scopeMatch[1] || scopeMatch[2] || scopeMatch[3] || null;
+    }
+
+    if (!currentScope) continue;
+
+    let m: RegExpExecArray | null;
+    symbolPattern.lastIndex = 0;
+    while ((m = symbolPattern.exec(line)) !== null) {
+      const callee = m[1];
+      if (callee !== currentScope && symbolSet.has(callee)) {
+        results.push({ caller: currentScope, callee });
+      }
+    }
+  }
+
+  return results;
+}
+
+async function computeContentHash(content: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(content);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export const codeParserService = {
   extractImports(code: string, language: string): FileImport[] {
     switch (language) {
@@ -200,4 +300,22 @@ export const codeParserService = {
     symbols.sort((a, b) => a.lineStart - b.lineStart);
     return symbols;
   },
+
+  extractClassHierarchy(code: string, language: string): ClassHierarchyEntry[] {
+    switch (language) {
+      case 'typescript':
+      case 'javascript':
+        return extractTSJSClassHierarchy(code);
+      case 'python':
+        return extractPythonClassHierarchy(code);
+      default:
+        return [];
+    }
+  },
+
+  extractCallReferences(code: string, language: string, knownSymbols: string[]): Array<{ caller: string; callee: string }> {
+    return extractCallRefsFromCode(code, language, knownSymbols);
+  },
+
+  computeContentHash,
 };

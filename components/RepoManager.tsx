@@ -10,6 +10,7 @@ interface RepoManagerProps {
   onReopenRepo: (repoId: string) => void;
   onClose: () => void;
   onGenerateDiagrams?: () => void;
+  onCreateGraph?: (repoId: string) => Promise<any>;
 }
 
 export const RepoManager: React.FC<RepoManagerProps> = ({
@@ -18,7 +19,8 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
   onRemoveRepo,
   onReopenRepo,
   onClose,
-  onGenerateDiagrams
+  onGenerateDiagrams,
+  onCreateGraph
 }) => {
   const isSupported = fileSystemService.isSupported();
 
@@ -119,6 +121,21 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
               >
                 <GitBranch className="w-4 h-4" />
                 Generate Diagrams
+              </button>
+            )}
+            {onCreateGraph && repos.some(r => fileSystemService.hasHandle(r.id)) && (
+              <button
+                onClick={() => {
+                  const connected = repos.find(r => fileSystemService.hasHandle(r.id));
+                  if (connected) {
+                    onClose();
+                    onCreateGraph(connected.id);
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-sm font-medium"
+              >
+                <GitBranch className="w-4 h-4" />
+                Create Code Graph
               </button>
             )}
           </div>

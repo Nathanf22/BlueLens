@@ -26,6 +26,9 @@ import { useLLMSettings } from './hooks/useLLMSettings';
 import { useChatHandlers } from './hooks/useChatHandlers';
 import { useScanHandlers } from './hooks/useScanHandlers';
 import { useCodebaseImport } from './hooks/useCodebaseImport';
+import { useCodeGraph } from './hooks/useCodeGraph';
+import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
+import { codeGraphStorageService } from './services/codeGraphStorageService';
 
 export default function App() {
   // --- State Management ---
@@ -80,6 +83,10 @@ export default function App() {
     setDiffViewData,
     isCodebaseImportOpen,
     setIsCodebaseImportOpen,
+    activeGraphId,
+    setActiveGraphId,
+    isCodeGraphConfigOpen,
+    setIsCodeGraphConfigOpen,
     workspaceDiagrams,
     workspaceFolders,
     workspaceRepos,
@@ -140,6 +147,14 @@ export default function App() {
       createFolderProgrammatic,
       setActiveId,
     });
+
+  // --- CodeGraph ---
+  const codeGraph = useCodeGraph(activeWorkspaceId);
+  const codeGraphHandlers = useCodeGraphHandlers(codeGraph.activeGraph, codeGraph.updateGraph);
+
+  const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {
+    codeGraphStorageService.saveCodeGraphConfig(config);
+  }, []);
 
   // --- Diagram Analysis ---
   const [diagramAnalysis, setDiagramAnalysis] = useState<DiagramAnalysis | null>(null);
@@ -289,6 +304,12 @@ export default function App() {
             onOpenRepoManager={() => setIsRepoManagerOpen(true)}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            repos={workspaceRepos}
+            codeGraphs={codeGraph.codeGraphs}
+            activeGraphId={codeGraph.activeGraphId}
+            onSelectGraph={codeGraph.selectGraph}
+            onCreateGraph={codeGraph.createGraph}
+            onDeleteGraph={codeGraph.deleteGraph}
           />
         </div>
 
@@ -336,6 +357,21 @@ export default function App() {
           isDragging={isDragging}
           containerRef={containerRef}
           onMouseDown={handleMouseDown}
+          codeGraph={codeGraph.activeGraph}
+          codeGraphLens={codeGraph.activeLens}
+          codeGraphMermaidCode={codeGraph.renderedMermaidCode}
+          codeGraphFocusNodeId={codeGraph.focusNodeId}
+          codeGraphBreadcrumbStack={codeGraph.breadcrumbStack}
+          codeGraphIsSyncing={codeGraph.isSyncing}
+          onCodeGraphSwitchLens={codeGraph.switchLens}
+          onCodeGraphFocusNode={codeGraph.focusNode}
+          onCodeGraphFocusUp={codeGraph.focusUp}
+          onCodeGraphFocusRoot={codeGraph.focusRoot}
+          onCodeGraphNavigateBreadcrumb={codeGraph.navigateBreadcrumb}
+          onCodeGraphSync={codeGraph.syncGraph}
+          onCodeGraphGetAnomalies={codeGraph.getGraphAnomalies}
+          onCodeGraphDelete={() => codeGraph.activeGraphId && codeGraph.deleteGraph(codeGraph.activeGraphId)}
+          onCodeGraphRename={codeGraphHandlers.handleRenameCodeGraph}
         />
       </div>
 
@@ -398,6 +434,13 @@ export default function App() {
         isCodebaseImporting={isCodebaseImporting}
         onResetCodebaseImport={resetCodebaseImport}
         onOpenCodebaseImport={() => setIsCodebaseImportOpen(true)}
+        onCreateGraph={codeGraph.createGraph}
+        isCodeGraphConfigOpen={isCodeGraphConfigOpen}
+        onCloseCodeGraphConfig={() => setIsCodeGraphConfigOpen(false)}
+        codeGraphConfig={codeGraph.activeGraph ? codeGraphStorageService.loadCodeGraphConfig(codeGraph.activeGraph.id) : null}
+        onSaveCodeGraphConfig={handleSaveCodeGraphConfig}
+        codeGraphRepoId={codeGraph.activeGraph?.repoId || ''}
+        codeGraphId={codeGraph.activeGraph?.id || ''}
       />
     </div>
   );
