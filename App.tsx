@@ -152,9 +152,48 @@ export default function App() {
   const codeGraph = useCodeGraph(activeWorkspaceId);
   const codeGraphHandlers = useCodeGraphHandlers(codeGraph.activeGraph, codeGraph.updateGraph);
 
+  const handleCreateGraph = useCallback((repoId: string) => {
+    return codeGraph.createGraph(repoId, llmSettings);
+  }, [codeGraph.createGraph, llmSettings]);
+
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {
     codeGraphStorageService.saveCodeGraphConfig(config);
   }, []);
+
+  const handleCodeGraphViewCode = useCallback(async (nodeId: string) => {
+    if (!codeGraph.activeGraph) return;
+    const node = codeGraph.activeGraph.nodes[nodeId];
+    if (!node?.sourceRef) return;
+
+    const handle = fileSystemService.getHandle(codeGraph.activeGraph.repoId);
+    if (!handle) {
+      alert('Repository is disconnected. Please reopen it from the Repo Manager.');
+      setIsRepoManagerOpen(true);
+      return;
+    }
+
+    try {
+      const content = await fileSystemService.readFile(handle, node.sourceRef.filePath);
+      const language = fileSystemService.getLanguage(node.sourceRef.filePath);
+      const codeFile: CodeFile = {
+        repoId: codeGraph.activeGraph.repoId,
+        filePath: node.sourceRef.filePath,
+        content,
+        language,
+        lineStart: node.sourceRef.lineStart,
+        lineEnd: node.sourceRef.lineEnd,
+      };
+      setActiveCodeFile(codeFile);
+      setIsCodePanelOpen(true);
+    } catch (e) {
+      console.error('Failed to read file:', e);
+      alert('Failed to read file. The repository may need to be reopened.');
+    }
+  }, [codeGraph.activeGraph, setActiveCodeFile, setIsCodePanelOpen, setIsRepoManagerOpen]);
+
+  const handleCodeGraphAnalyzeDomain = useCallback(() => {
+    codeGraph.analyzeDomain(llmSettings);
+  }, [codeGraph.analyzeDomain, llmSettings]);
 
   // --- Diagram Analysis ---
   const [diagramAnalysis, setDiagramAnalysis] = useState<DiagramAnalysis | null>(null);
@@ -308,8 +347,10 @@ export default function App() {
             codeGraphs={codeGraph.codeGraphs}
             activeGraphId={codeGraph.activeGraphId}
             onSelectGraph={codeGraph.selectGraph}
-            onCreateGraph={codeGraph.createGraph}
+            onCreateGraph={handleCreateGraph}
             onDeleteGraph={codeGraph.deleteGraph}
+            onLoadDemoGraph={codeGraph.loadDemoGraph}
+            graphCreationProgress={codeGraph.graphCreationProgress}
           />
         </div>
 
@@ -359,10 +400,12 @@ export default function App() {
           onMouseDown={handleMouseDown}
           codeGraph={codeGraph.activeGraph}
           codeGraphLens={codeGraph.activeLens}
-          codeGraphMermaidCode={codeGraph.renderedMermaidCode}
           codeGraphFocusNodeId={codeGraph.focusNodeId}
+          codeGraphSelectedNodeId={codeGraph.selectedNodeId}
+          codeGraphSelectedNode={codeGraph.selectedNode}
           codeGraphBreadcrumbStack={codeGraph.breadcrumbStack}
           codeGraphIsSyncing={codeGraph.isSyncing}
+          codeGraphIsAnalyzingDomain={codeGraph.isAnalyzingDomain}
           onCodeGraphSwitchLens={codeGraph.switchLens}
           onCodeGraphFocusNode={codeGraph.focusNode}
           onCodeGraphFocusUp={codeGraph.focusUp}
@@ -372,6 +415,16 @@ export default function App() {
           onCodeGraphGetAnomalies={codeGraph.getGraphAnomalies}
           onCodeGraphDelete={() => codeGraph.activeGraphId && codeGraph.deleteGraph(codeGraph.activeGraphId)}
           onCodeGraphRename={codeGraphHandlers.handleRenameCodeGraph}
+          onCodeGraphSelectNode={codeGraph.selectNode}
+          onCodeGraphDeselectNode={codeGraph.deselectNode}
+          onCodeGraphAnalyzeDomain={handleCodeGraphAnalyzeDomain}
+          onCodeGraphOpenConfig={() => setIsCodeGraphConfigOpen(true)}
+          onCodeGraphViewCode={handleCodeGraphViewCode}
+          codeGraphContextualFlows={codeGraph.contextualFlows}
+          codeGraphActiveFlow={codeGraph.activeFlow}
+          codeGraphActiveFlowId={codeGraph.activeFlowId}
+          onCodeGraphSelectFlow={codeGraph.selectFlow}
+          onCodeGraphDeselectFlow={codeGraph.deselectFlow}
         />
       </div>
 
@@ -434,7 +487,7 @@ export default function App() {
         isCodebaseImporting={isCodebaseImporting}
         onResetCodebaseImport={resetCodebaseImport}
         onOpenCodebaseImport={() => setIsCodebaseImportOpen(true)}
-        onCreateGraph={codeGraph.createGraph}
+        onCreateGraph={handleCreateGraph}
         isCodeGraphConfigOpen={isCodeGraphConfigOpen}
         onCloseCodeGraphConfig={() => setIsCodeGraphConfigOpen(false)}
         codeGraphConfig={codeGraph.activeGraph ? codeGraphStorageService.loadCodeGraphConfig(codeGraph.activeGraph.id) : null}

@@ -19,6 +19,53 @@ import { fileSystemService } from './fileSystemService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+const RESOLVE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.py', ''];
+const INDEX_SUFFIXES = ['/index.ts', '/index.tsx', '/index.js', '/index.jsx'];
+
+/**
+ * Resolve an import specifier to an actual file path.
+ * Handles relative (`./`, `../`) and alias (`@/`) imports.
+ */
+function resolveImportToFile(
+  importSource: string,
+  currentFile: string,
+  allFiles: string[],
+): string | null {
+  let basePath: string;
+
+  if (importSource.startsWith('.')) {
+    const currentDir = currentFile.substring(0, currentFile.lastIndexOf('/'));
+    const parts = importSource.split('/');
+    let resolved = currentDir;
+    for (const part of parts) {
+      if (part === '.') continue;
+      if (part === '..') {
+        const idx = resolved.lastIndexOf('/');
+        resolved = idx >= 0 ? resolved.substring(0, idx) : '';
+      } else {
+        resolved = resolved ? `${resolved}/${part}` : part;
+      }
+    }
+    basePath = resolved;
+  } else if (importSource.startsWith('@/')) {
+    basePath = importSource.slice(2);
+  } else {
+    return null;
+  }
+
+  for (const ext of RESOLVE_EXTENSIONS) {
+    const candidate = basePath + ext;
+    if (allFiles.includes(candidate)) return candidate;
+  }
+
+  for (const idx of INDEX_SUFFIXES) {
+    const candidate = basePath + idx;
+    if (allFiles.includes(candidate)) return candidate;
+  }
+
+  return null;
+}
+
 function symbolKindToNodeKind(kind: ScannedEntity['kind']): GraphNodeKind {
   switch (kind) {
     case 'class': return 'class';
@@ -162,24 +209,22 @@ export async function parseCodebaseToGraph(
   }
 
   // Relations from imports: file-level depends_on
+  const allFilePaths = Array.from(fileIdMap.keys());
   for (const mod of analysis.modules) {
     for (const file of mod.files) {
       const fileNodeId = fileIdMap.get(file.filePath);
       if (!fileNodeId) continue;
 
       for (const imp of file.imports) {
-        if (imp.isExternal) continue;
+        if (imp.isExternal && !imp.source.startsWith('@/')) continue;
 
-        // Try to resolve the import to a known file
-        for (const [filePath, targetNodeId] of fileIdMap) {
-          // Simple heuristic: import source matches file name (without extension)
-          const targetBaseName = filePath.split('/').pop()?.replace(/\.\w+$/, '') || '';
-          const importBaseName = imp.source.split('/').pop() || '';
-          if (targetBaseName === importBaseName && targetNodeId !== fileNodeId) {
-            const depResult = codeGraphModelService.addRelation(graph, fileNodeId, targetNodeId, 'depends_on', imp.name);
-            graph = depResult.graph;
-            break;
-          }
+        const resolved = resolveImportToFile(imp.source, file.filePath, allFilePaths);
+        if (!resolved) continue;
+
+        const targetNodeId = fileIdMap.get(resolved);
+        if (targetNodeId && targetNodeId !== fileNodeId) {
+          const depResult = codeGraphModelService.addRelation(graph, fileNodeId, targetNodeId, 'depends_on', imp.name);
+          graph = depResult.graph;
         }
       }
     }

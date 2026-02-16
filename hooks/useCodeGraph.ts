@@ -1,16 +1,18 @@
 /**
  * Central hook for CodeGraph state: lens switching, depth navigation,
- * and rendered Mermaid output.
+ * node selection, and domain analysis.
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { CodeGraph, GraphDepth, ViewLens, CodeGraphAnomaly } from '../types';
+import { CodeGraph, GraphDepth, ViewLens, CodeGraphAnomaly, LLMSettings, GraphFlow } from '../types';
 import { codeGraphStorageService } from '../services/codeGraphStorageService';
 import { codeGraphModelService } from '../services/codeGraphModelService';
-import { codeGraphRendererService } from '../services/codeGraphRendererService';
 import { codeGraphSyncService } from '../services/codeGraphSyncService';
 import { codebaseAnalyzerService } from '../services/codebaseAnalyzerService';
 import { codeToGraphParserService } from '../services/codeToGraphParserService';
+import { codeGraphDomainService } from '../services/codeGraphDomainService';
+import { analyzeCodebaseWithAI } from '../services/codeGraphAgentService';
+import { generateDemoGraph } from '../services/demoGraphService';
 import { fileSystemService } from '../services/fileSystemService';
 
 interface BreadcrumbEntry {
@@ -25,6 +27,12 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const [depthRange, setDepthRange] = useState<{ min?: GraphDepth; max?: GraphDepth }>({});
   const [breadcrumbStack, setBreadcrumbStack] = useState<BreadcrumbEntry[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
+  const [isAnalyzingDomain, setIsAnalyzingDomain] = useState(false);
+  const [graphCreationProgress, setGraphCreationProgress] = useState<{
+    step: string; current: number; total: number;
+  } | null>(null);
 
   // Load graphs for current workspace on mount / workspace switch
   useEffect(() => {
@@ -38,6 +46,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     setActiveGraphId(null);
     setFocusNodeId(null);
     setBreadcrumbStack([]);
+    setSelectedNodeId(null);
   }, [activeWorkspaceId]);
 
   const activeGraph = useMemo(
@@ -50,16 +59,24 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     [activeGraph]
   );
 
-  // Rendered Mermaid code — recomputed whenever graph/lens/focus changes
-  const renderedMermaidCode = useMemo(() => {
-    if (!activeGraph || !activeLens) return null;
-    return codeGraphRendererService.renderGraphToMermaid(
-      activeGraph,
-      activeLens,
-      focusNodeId || undefined,
-      depthRange
-    );
-  }, [activeGraph, activeLens, focusNodeId, depthRange]);
+  // Selected node data (for property inspector)
+  const selectedNode = useMemo(() => {
+    if (!activeGraph || !selectedNodeId) return null;
+    return activeGraph.nodes[selectedNodeId] || null;
+  }, [activeGraph, selectedNodeId]);
+
+  // Flows scoped to the current focus level
+  const contextualFlows = useMemo((): GraphFlow[] => {
+    if (!activeGraph) return [];
+    const flows = Object.values(activeGraph.flows);
+    const scopeId = focusNodeId || activeGraph.rootNodeId;
+    return flows.filter(f => f.scopeNodeId === scopeId);
+  }, [activeGraph, focusNodeId]);
+
+  const activeFlow = useMemo((): GraphFlow | null => {
+    if (!activeGraph || !activeFlowId) return null;
+    return activeGraph.flows[activeFlowId] || null;
+  }, [activeGraph, activeFlowId]);
 
   // --- Graph lifecycle ---
 
@@ -68,11 +85,32 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     codeGraphStorageService.saveCodeGraph(updated);
   }, []);
 
-  const createGraph = useCallback(async (repoId: string) => {
+  const createGraph = useCallback(async (repoId: string, llmSettings?: LLMSettings) => {
     const handle = fileSystemService.getHandle(repoId);
     if (!handle) return null;
 
-    const analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
+    setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
+
+    let analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
+
+    // Try AI-powered grouping if LLM is configured
+    if (llmSettings) {
+      const config = llmSettings.providers[llmSettings.activeProvider];
+      if (config?.apiKey) {
+        try {
+          analysis = await analyzeCodebaseWithAI(
+            analysis,
+            llmSettings,
+            (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          );
+        } catch {
+          // Fallback: keep original directory-based analysis
+        }
+      }
+    }
+
+    setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
+
     const graph = await codeToGraphParserService.parseCodebaseToGraph(
       analysis,
       repoId,
@@ -84,6 +122,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     setCodeGraphs(prev => [...prev, graph]);
     codeGraphStorageService.saveCodeGraph(graph);
     setActiveGraphId(graph.id);
+    setGraphCreationProgress(null);
     return graph;
   }, [activeWorkspaceId]);
 
@@ -94,14 +133,44 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       setActiveGraphId(null);
       setFocusNodeId(null);
       setBreadcrumbStack([]);
+      setSelectedNodeId(null);
     }
   }, [activeGraphId]);
+
+  const loadDemoGraph = useCallback(() => {
+    const graph = generateDemoGraph(activeWorkspaceId);
+    setCodeGraphs(prev => [...prev, graph]);
+    codeGraphStorageService.saveCodeGraph(graph);
+    setActiveGraphId(graph.id);
+    return graph;
+  }, [activeWorkspaceId]);
 
   const selectGraph = useCallback((graphId: string | null) => {
     setActiveGraphId(graphId);
     setFocusNodeId(null);
     setBreadcrumbStack([]);
     setDepthRange({});
+    setSelectedNodeId(null);
+  }, []);
+
+  // --- Node selection ---
+
+  const selectNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+  }, []);
+
+  const deselectNode = useCallback(() => {
+    setSelectedNodeId(null);
+  }, []);
+
+  // --- Flow selection ---
+
+  const selectFlow = useCallback((flowId: string) => {
+    setActiveFlowId(flowId);
+  }, []);
+
+  const deselectFlow = useCallback(() => {
+    setActiveFlowId(null);
   }, []);
 
   // --- Lens switching ---
@@ -109,6 +178,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const switchLens = useCallback((lensId: string) => {
     if (!activeGraph) return;
     updateGraph({ ...activeGraph, activeLensId: lensId, updatedAt: Date.now() });
+    setSelectedNodeId(null);
+    setActiveFlowId(null);
   }, [activeGraph, updateGraph]);
 
   // --- Depth navigation ---
@@ -120,6 +191,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
     setBreadcrumbStack(prev => [...prev, { nodeId, name: node.name }]);
     setFocusNodeId(nodeId);
+    setActiveFlowId(null);
   }, [activeGraph]);
 
   const focusUp = useCallback(() => {
@@ -162,6 +234,29 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     }
   }, [activeGraph, updateGraph]);
 
+  // --- Domain analysis ---
+
+  const analyzeDomain = useCallback(async (llmSettings: LLMSettings) => {
+    if (!activeGraph) return;
+
+    setIsAnalyzingDomain(true);
+    try {
+      const { domainNodes, domainRelations } = await codeGraphDomainService.analyzeDomain(
+        activeGraph,
+        llmSettings
+      );
+      const updated: CodeGraph = {
+        ...activeGraph,
+        domainNodes,
+        domainRelations,
+        updatedAt: Date.now(),
+      };
+      updateGraph(updated);
+    } finally {
+      setIsAnalyzingDomain(false);
+    }
+  }, [activeGraph, updateGraph]);
+
   // --- Validation ---
 
   const getGraphAnomalies = useCallback((): CodeGraphAnomaly[] => {
@@ -177,20 +272,32 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     focusNodeId,
     depthRange,
     breadcrumbStack,
-    renderedMermaidCode,
     isSyncing,
+    selectedNodeId,
+    selectedNode,
+    isAnalyzingDomain,
+    graphCreationProgress,
+    contextualFlows,
+    activeFlow,
+    activeFlowId,
 
     createGraph,
     deleteGraph,
+    loadDemoGraph,
     selectGraph,
     updateGraph,
     switchLens,
+    selectNode,
+    deselectNode,
+    selectFlow,
+    deselectFlow,
     focusNode,
     focusUp,
     focusRoot,
     navigateBreadcrumb,
     setDepthRange,
     syncGraph,
+    analyzeDomain,
     getGraphAnomalies,
   };
 };

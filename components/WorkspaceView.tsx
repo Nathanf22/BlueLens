@@ -5,7 +5,8 @@ import { Preview } from './Preview';
 import { CodePanel } from './CodePanel';
 import { AIChatPanel } from './AIChatPanel';
 import { CodeGraphPanel } from './CodeGraphPanel';
-import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings, SyncStatus, CodeGraph, ViewLens, CodeGraphAnomaly } from '../types';
+import { CodeGraphVisualizer } from './CodeGraphVisualizer';
+import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings, SyncStatus, CodeGraph, ViewLens, GraphNode, CodeGraphAnomaly, GraphFlow } from '../types';
 import { useCodePanelResize } from '../hooks/useCodePanelResize';
 
 interface WorkspaceViewProps {
@@ -52,10 +53,12 @@ interface WorkspaceViewProps {
   // CodeGraph
   codeGraph?: CodeGraph | null;
   codeGraphLens?: ViewLens | null;
-  codeGraphMermaidCode?: string | null;
   codeGraphFocusNodeId?: string | null;
+  codeGraphSelectedNodeId?: string | null;
+  codeGraphSelectedNode?: GraphNode | null;
   codeGraphBreadcrumbStack?: Array<{ nodeId: string; name: string }>;
   codeGraphIsSyncing?: boolean;
+  codeGraphIsAnalyzingDomain?: boolean;
   onCodeGraphSwitchLens?: (lensId: string) => void;
   onCodeGraphFocusNode?: (nodeId: string) => void;
   onCodeGraphFocusUp?: () => void;
@@ -65,6 +68,17 @@ interface WorkspaceViewProps {
   onCodeGraphGetAnomalies?: () => CodeGraphAnomaly[];
   onCodeGraphDelete?: () => void;
   onCodeGraphRename?: (name: string) => void;
+  onCodeGraphSelectNode?: (nodeId: string) => void;
+  onCodeGraphDeselectNode?: () => void;
+  onCodeGraphAnalyzeDomain?: () => void;
+  onCodeGraphOpenConfig?: () => void;
+  onCodeGraphViewCode?: (nodeId: string) => void;
+  // CodeGraph flows
+  codeGraphContextualFlows?: GraphFlow[];
+  codeGraphActiveFlow?: GraphFlow | null;
+  codeGraphActiveFlowId?: string | null;
+  onCodeGraphSelectFlow?: (flowId: string) => void;
+  onCodeGraphDeselectFlow?: () => void;
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
@@ -108,10 +122,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onMouseDown,
   codeGraph,
   codeGraphLens,
-  codeGraphMermaidCode,
   codeGraphFocusNodeId,
+  codeGraphSelectedNodeId,
+  codeGraphSelectedNode,
   codeGraphBreadcrumbStack = [],
   codeGraphIsSyncing = false,
+  codeGraphIsAnalyzingDomain = false,
   onCodeGraphSwitchLens,
   onCodeGraphFocusNode,
   onCodeGraphFocusUp,
@@ -121,11 +137,20 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onCodeGraphGetAnomalies,
   onCodeGraphDelete,
   onCodeGraphRename,
+  onCodeGraphSelectNode,
+  onCodeGraphDeselectNode,
+  onCodeGraphAnalyzeDomain,
+  onCodeGraphOpenConfig,
+  onCodeGraphViewCode,
+  codeGraphContextualFlows = [],
+  codeGraphActiveFlow = null,
+  codeGraphActiveFlowId = null,
+  onCodeGraphSelectFlow,
+  onCodeGraphDeselectFlow,
 }) => {
   const { codePanelWidthPercent, isDraggingCodePanel, handleCodePanelMouseDown } = useCodePanelResize(containerRef);
 
   const isCodeGraphMode = !!codeGraph;
-  const previewCode = isCodeGraphMode ? (codeGraphMermaidCode || '') : (activeDiagram?.code || '');
 
   return (
     <main
@@ -142,7 +167,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 activeLens={codeGraphLens || null}
                 focusNodeId={codeGraphFocusNodeId || null}
                 breadcrumbStack={codeGraphBreadcrumbStack}
+                selectedNode={codeGraphSelectedNode || null}
                 isSyncing={codeGraphIsSyncing}
+                isAnalyzingDomain={codeGraphIsAnalyzingDomain}
                 onSwitchLens={onCodeGraphSwitchLens || (() => {})}
                 onFocusNode={onCodeGraphFocusNode || (() => {})}
                 onFocusUp={onCodeGraphFocusUp || (() => {})}
@@ -152,6 +179,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onGetAnomalies={onCodeGraphGetAnomalies || (() => [])}
                 onDeleteGraph={onCodeGraphDelete || (() => {})}
                 onRenameGraph={onCodeGraphRename || (() => {})}
+                onAnalyzeDomain={onCodeGraphAnalyzeDomain || (() => {})}
+                onOpenConfig={onCodeGraphOpenConfig || (() => {})}
+                onViewCode={onCodeGraphViewCode || (() => {})}
+                contextualFlows={codeGraphContextualFlows}
+                activeFlowId={codeGraphActiveFlowId}
+                onSelectFlow={onCodeGraphSelectFlow || (() => {})}
+                onDeselectFlow={onCodeGraphDeselectFlow || (() => {})}
               />
             </div>
           ) : (
@@ -181,31 +215,46 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           </div>
           )}
 
-          {/* Preview Pane */}
-          <div className={`${isCodePanelOpen ? 'flex-1 min-w-0' : 'flex-1 min-w-0'} h-1/2 lg:h-full p-4 bg-[#0d0d0d]`}>
-            <Preview
-              code={previewCode}
-              comments={activeDiagram?.comments || []}
-              onAddComment={onAddComment}
-              onDeleteComment={onDeleteComment}
-              onError={onError}
-              onSuccess={onSuccess}
-              currentDiagram={activeDiagram}
-              breadcrumbPath={breadcrumbPath}
-              onZoomIn={onZoomIn}
-              onZoomOut={onZoomOut}
-              onGoToRoot={onGoToRoot}
-              onBreadcrumbNavigate={onBreadcrumbNavigate}
-              onManageLinks={onManageLinks}
-              onManageCodeLinks={onManageCodeLinks}
-              onViewCode={onViewCode}
-              onToggleAIChat={onToggleAIChat}
-              isAIChatOpen={isAIChatOpen}
-              onScanCode={onScanCode}
-              syncStatus={syncStatus}
-              onAnalyze={onAnalyze}
-            />
-          </div>
+          {/* Center Pane: Preview or Force Graph */}
+          {isCodeGraphMode && codeGraph && codeGraphLens ? (
+            <div className="flex-1 min-w-0 h-1/2 lg:h-full p-2">
+              <CodeGraphVisualizer
+                graph={codeGraph}
+                lens={codeGraphLens}
+                focusNodeId={codeGraphFocusNodeId || null}
+                selectedNodeId={codeGraphSelectedNodeId || null}
+                activeFlow={codeGraphActiveFlow}
+                onNodeClick={onCodeGraphSelectNode || (() => {})}
+                onNodeDoubleClick={onCodeGraphFocusNode || (() => {})}
+                onBackgroundClick={onCodeGraphDeselectNode || (() => {})}
+              />
+            </div>
+          ) : (
+            <div className={`flex-1 min-w-0 h-1/2 lg:h-full p-4 bg-[#0d0d0d]`}>
+              <Preview
+                code={activeDiagram?.code || ''}
+                comments={activeDiagram?.comments || []}
+                onAddComment={onAddComment}
+                onDeleteComment={onDeleteComment}
+                onError={onError}
+                onSuccess={onSuccess}
+                currentDiagram={activeDiagram}
+                breadcrumbPath={breadcrumbPath}
+                onZoomIn={onZoomIn}
+                onZoomOut={onZoomOut}
+                onGoToRoot={onGoToRoot}
+                onBreadcrumbNavigate={onBreadcrumbNavigate}
+                onManageLinks={onManageLinks}
+                onManageCodeLinks={onManageCodeLinks}
+                onViewCode={onViewCode}
+                onToggleAIChat={onToggleAIChat}
+                isAIChatOpen={isAIChatOpen}
+                onScanCode={onScanCode}
+                syncStatus={syncStatus}
+                onAnalyze={onAnalyze}
+              />
+            </div>
+          )}
 
           {/* Code Panel Resizer + Panel */}
           {isCodePanelOpen && activeCodeFile && (
@@ -229,7 +278,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           )}
 
           {/* AI Chat Panel */}
-          {isAIChatOpen && (
+          {isAIChatOpen && !isCodeGraphMode && (
             <>
               <div
                 className="hidden lg:flex w-2 bg-dark-900 border-l border-r border-gray-800 hover:bg-brand-600 cursor-col-resize items-center justify-center transition-colors z-10"
@@ -260,7 +309,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           Select or create a diagram
         </div>
       )}
-      
+
       {/* Overlay while dragging */}
       {(isDragging || isDraggingCodePanel) && (
         <div className="absolute inset-0 z-50 cursor-col-resize" />

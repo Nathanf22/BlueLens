@@ -41,6 +41,8 @@ interface SidebarProps {
   onSelectGraph?: (graphId: string | null) => void;
   onCreateGraph?: (repoId: string) => Promise<CodeGraph | null>;
   onDeleteGraph?: (graphId: string) => void;
+  onLoadDemoGraph?: () => void;
+  graphCreationProgress?: { step: string; current: number; total: number } | null;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -75,6 +77,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectGraph,
   onCreateGraph,
   onDeleteGraph,
+  onLoadDemoGraph,
+  graphCreationProgress,
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -549,6 +553,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
           </div>
+          {isCreatingGraph && graphCreationProgress && (
+            <div className="px-3 mb-2">
+              <div className="flex items-center gap-2 text-xs text-green-400">
+                <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                <span className="truncate">{graphCreationProgress.step}</span>
+                {graphCreationProgress.total > 1 && (
+                  <span className="text-gray-500">{graphCreationProgress.current}/{graphCreationProgress.total}</span>
+                )}
+              </div>
+            </div>
+          )}
           {codeGraphs.length > 0 && (
             <div className="space-y-0.5 px-2">
               {codeGraphs.map(graph => (
@@ -586,11 +601,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
           {codeGraphs.length === 0 && (
-            <p className="px-3 text-xs text-gray-600 italic">
-              {connectedRepos.length === 0
-                ? 'Connect a repository to create a graph'
-                : 'Click + to create a Code Graph'}
-            </p>
+            <div className="px-3">
+              <p className="text-xs text-gray-600 italic mb-2">
+                {connectedRepos.length === 0
+                  ? 'Connect a repository to create a graph'
+                  : 'Click + to create a Code Graph'}
+              </p>
+              {onLoadDemoGraph && (
+                <button
+                  onClick={onLoadDemoGraph}
+                  className="text-xs text-green-500 hover:text-green-400 underline underline-offset-2 transition-colors"
+                >
+                  Load demo graph (RealWorld)
+                </button>
+              )}
+            </div>
           )}
         </div>
 

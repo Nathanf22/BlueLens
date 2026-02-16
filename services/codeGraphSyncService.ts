@@ -88,6 +88,7 @@ async function fullResync(
     activeLensId: graph.activeLensId,
     domainNodes: graph.domainNodes,
     domainRelations: graph.domainRelations,
+    flows: graph.flows || {},
   };
 }
 

@@ -102,6 +102,7 @@ function createEmptyGraph(workspaceId: string, repoId: string, name: string): Co
     relations: {},
     domainNodes: {},
     domainRelations: {},
+    flows: {},
     lenses,
     activeLensId: lenses[0].id,
     syncLock: {},
@@ -428,6 +429,34 @@ function validateGraph(graph: CodeGraph): CodeGraphAnomaly[] {
   return anomalies;
 }
 
+// --- Single-level display (semantic zoom) ---
+
+function getDirectChildrenForDisplay(
+  graph: CodeGraph,
+  lens: ViewLens,
+  focusNodeId?: string
+): GraphNode[] {
+  const contextNodeId = focusNodeId || graph.rootNodeId;
+  const contextNode = graph.nodes[contextNodeId];
+  if (!contextNode) return [];
+
+  return contextNode.children
+    .map(id => graph.nodes[id])
+    .filter((node): node is GraphNode => {
+      if (!node) return false;
+      // Per-node lens override
+      const override = node.lensConfig[lens.id];
+      if (override?.visible === false) return false;
+      // Kind filter
+      if (lens.nodeFilter.kinds && !lens.nodeFilter.kinds.includes(node.kind)) return false;
+      // Tag filter
+      if (lens.nodeFilter.tags?.length) {
+        if (!lens.nodeFilter.tags.some(tag => node.tags.includes(tag))) return false;
+      }
+      return true;
+    });
+}
+
 export const codeGraphModelService = {
   createEmptyGraph,
   addNode,
@@ -438,6 +467,7 @@ export const codeGraphModelService = {
   getDescendants,
   getAncestors,
   getVisibleNodes,
+  getDirectChildrenForDisplay,
   getVisibleRelations,
   validateGraph,
   getDefaultLenses,

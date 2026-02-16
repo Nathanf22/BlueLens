@@ -452,6 +452,21 @@ export interface CodeGraphConfig {
   scanPatterns: ScanConfig;
 }
 
+export interface GraphFlowStep {
+  nodeId: string;
+  label: string;
+  order: number;
+}
+
+export interface GraphFlow {
+  id: string;
+  name: string;
+  description: string;
+  scopeNodeId: string;  // root ID → end-to-end flow, module ID → module-level flow
+  steps: GraphFlowStep[];
+  sequenceDiagram: string;  // Mermaid sequence diagram code
+}
+
 export interface CodeGraph {
   id: string;
   name: string;
@@ -463,6 +478,7 @@ export interface CodeGraph {
   relations: Record<string, GraphRelation>;
   domainNodes: Record<string, DomainNode>;
   domainRelations: Record<string, DomainRelation>;
+  flows: Record<string, GraphFlow>;
   lenses: ViewLens[];
   activeLensId: string;
   syncLock: Record<string, SyncLockEntry>;
