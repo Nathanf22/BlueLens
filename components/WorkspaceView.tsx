@@ -79,6 +79,10 @@ interface WorkspaceViewProps {
   codeGraphActiveFlowId?: string | null;
   onCodeGraphSelectFlow?: (flowId: string) => void;
   onCodeGraphDeselectFlow?: () => void;
+  // CodeGraph flow generation
+  codeGraphIsGeneratingFlows?: boolean;
+  codeGraphFlowSource?: 'llm' | 'heuristic' | null;
+  onCodeGraphRegenerateFlows?: () => void;
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
@@ -147,6 +151,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   codeGraphActiveFlowId = null,
   onCodeGraphSelectFlow,
   onCodeGraphDeselectFlow,
+  codeGraphIsGeneratingFlows = false,
+  codeGraphFlowSource,
+  onCodeGraphRegenerateFlows,
 }) => {
   const { codePanelWidthPercent, isDraggingCodePanel, handleCodePanelMouseDown } = useCodePanelResize(containerRef);
 
@@ -186,6 +193,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 activeFlowId={codeGraphActiveFlowId}
                 onSelectFlow={onCodeGraphSelectFlow || (() => {})}
                 onDeselectFlow={onCodeGraphDeselectFlow || (() => {})}
+                isGeneratingFlows={codeGraphIsGeneratingFlows}
+                flowSource={codeGraphFlowSource}
+                onRegenerateFlows={onCodeGraphRegenerateFlows}
               />
             </div>
           ) : (

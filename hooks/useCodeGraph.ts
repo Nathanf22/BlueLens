@@ -12,6 +12,7 @@ import { codebaseAnalyzerService } from '../services/codebaseAnalyzerService';
 import { codeToGraphParserService } from '../services/codeToGraphParserService';
 import { codeGraphDomainService } from '../services/codeGraphDomainService';
 import { analyzeCodebaseWithAI } from '../services/codeGraphAgentService';
+import { generateFlows, type FlowGenerationResult } from '../services/codeGraphFlowService';
 import { generateDemoGraph } from '../services/demoGraphService';
 import { fileSystemService } from '../services/fileSystemService';
 
@@ -30,6 +31,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
   const [isAnalyzingDomain, setIsAnalyzingDomain] = useState(false);
+  const [isGeneratingFlows, setIsGeneratingFlows] = useState(false);
+  const [flowSource, setFlowSource] = useState<'llm' | 'heuristic' | null>(null);
   const [graphCreationProgress, setGraphCreationProgress] = useState<{
     step: string; current: number; total: number;
   } | null>(null);
@@ -111,13 +114,31 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
     setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
 
-    const graph = await codeToGraphParserService.parseCodebaseToGraph(
+    let graph = await codeToGraphParserService.parseCodebaseToGraph(
       analysis,
       repoId,
       handle.name,
       activeWorkspaceId,
       handle
     );
+
+    // Generate flows
+    setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
+    setIsGeneratingFlows(true);
+    try {
+      const flowResult = await generateFlows(
+        graph,
+        llmSettings,
+        (step, current, total) => setGraphCreationProgress({ step, current, total }),
+      );
+      graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+      setFlowSource(flowResult.source);
+    } catch {
+      // Non-fatal: graph works without flows
+      console.warn('[CodeGraph] Flow generation failed');
+    } finally {
+      setIsGeneratingFlows(false);
+    }
 
     setCodeGraphs(prev => [...prev, graph]);
     codeGraphStorageService.saveCodeGraph(graph);
@@ -162,6 +183,32 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const deselectNode = useCallback(() => {
     setSelectedNodeId(null);
   }, []);
+
+  // --- Flow regeneration ---
+
+  const regenerateFlows = useCallback(async (llmSettings?: LLMSettings) => {
+    if (!activeGraph) return;
+
+    setIsGeneratingFlows(true);
+    setActiveFlowId(null);
+    try {
+      const flowResult = await generateFlows(
+        activeGraph,
+        llmSettings,
+        (step, current, total) => setGraphCreationProgress({ step, current, total }),
+      );
+      const updated: CodeGraph = {
+        ...activeGraph,
+        flows: flowResult.flows,
+        updatedAt: Date.now(),
+      };
+      updateGraph(updated);
+      setFlowSource(flowResult.source);
+    } finally {
+      setIsGeneratingFlows(false);
+      setGraphCreationProgress(null);
+    }
+  }, [activeGraph, updateGraph]);
 
   // --- Flow selection ---
 
@@ -276,6 +323,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     selectedNodeId,
     selectedNode,
     isAnalyzingDomain,
+    isGeneratingFlows,
+    flowSource,
     graphCreationProgress,
     contextualFlows,
     activeFlow,
@@ -289,6 +338,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     switchLens,
     selectNode,
     deselectNode,
+    regenerateFlows,
     selectFlow,
     deselectFlow,
     focusNode,

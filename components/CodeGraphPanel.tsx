@@ -45,6 +45,10 @@ interface CodeGraphPanelProps {
   activeFlowId: string | null;
   onSelectFlow: (flowId: string) => void;
   onDeselectFlow: () => void;
+  // Flow generation
+  isGeneratingFlows?: boolean;
+  flowSource?: 'llm' | 'heuristic' | null;
+  onRegenerateFlows?: () => void;
 }
 
 const KIND_ICONS: Record<string, React.ReactNode> = {
@@ -95,6 +99,9 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
   activeFlowId,
   onSelectFlow,
   onDeselectFlow,
+  isGeneratingFlows = false,
+  flowSource,
+  onRegenerateFlows,
 }) => {
   const [showAnomalies, setShowAnomalies] = useState(false);
   const [anomalies, setAnomalies] = useState<CodeGraphAnomaly[]>([]);
@@ -225,40 +232,62 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
       </div>
 
       {/* Flow List (Flow lens) */}
-      {isFlowLens && contextualFlows.length > 0 && (
+      {isFlowLens && (
         <div className="border-b border-gray-800">
-          <div className="px-3 py-1.5">
+          {/* Heuristic warning banner */}
+          {flowSource === 'heuristic' && (
+            <div className="flex items-start gap-2 px-3 py-2 bg-yellow-900/20 border-b border-yellow-800/30">
+              <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0 mt-0.5" />
+              <p className="text-[10px] text-yellow-400/80 leading-relaxed">
+                Flows generated without AI. Configure AI settings and regenerate for richer results.
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between px-3 py-1.5">
             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
               Flows ({contextualFlows.length})
             </span>
-          </div>
-          <div className="max-h-48 overflow-y-auto">
-            {contextualFlows.map(flow => (
+            {onRegenerateFlows && (
               <button
-                key={flow.id}
-                onClick={() => activeFlowId === flow.id ? onDeselectFlow() : onSelectFlow(flow.id)}
-                className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-start gap-2 ${
-                  activeFlowId === flow.id
-                    ? 'bg-cyan-900/30 text-cyan-300 border-l-2 border-cyan-400'
-                    : 'text-gray-400 hover:bg-dark-700 hover:text-gray-200 border-l-2 border-transparent'
-                }`}
+                onClick={onRegenerateFlows}
+                disabled={isGeneratingFlows}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:text-cyan-400 hover:bg-dark-700 transition-colors disabled:opacity-50"
+                title="Regenerate flows"
               >
-                <Play className={`w-3 h-3 mt-0.5 flex-shrink-0 ${
-                  activeFlowId === flow.id ? 'text-cyan-400' : 'text-gray-600'
-                }`} />
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{flow.name}</div>
-                  <div className="text-[10px] text-gray-600 truncate mt-0.5">{flow.description}</div>
-                </div>
+                <RefreshCw className={`w-3 h-3 ${isGeneratingFlows ? 'animate-spin' : ''}`} />
+                <span>{isGeneratingFlows ? 'Generating...' : 'Regenerate'}</span>
               </button>
-            ))}
+            )}
           </div>
-        </div>
-      )}
 
-      {isFlowLens && contextualFlows.length === 0 && (
-        <div className="px-3 py-3 text-xs text-gray-600 text-center border-b border-gray-800">
-          No flows at this level
+          {contextualFlows.length > 0 ? (
+            <div className="max-h-48 overflow-y-auto">
+              {contextualFlows.map(flow => (
+                <button
+                  key={flow.id}
+                  onClick={() => activeFlowId === flow.id ? onDeselectFlow() : onSelectFlow(flow.id)}
+                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-start gap-2 ${
+                    activeFlowId === flow.id
+                      ? 'bg-cyan-900/30 text-cyan-300 border-l-2 border-cyan-400'
+                      : 'text-gray-400 hover:bg-dark-700 hover:text-gray-200 border-l-2 border-transparent'
+                  }`}
+                >
+                  <Play className={`w-3 h-3 mt-0.5 flex-shrink-0 ${
+                    activeFlowId === flow.id ? 'text-cyan-400' : 'text-gray-600'
+                  }`} />
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{flow.name}</div>
+                    <div className="text-[10px] text-gray-600 truncate mt-0.5">{flow.description}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-3 py-3 text-xs text-gray-600 text-center">
+              {isGeneratingFlows ? 'Generating flows...' : 'No flows at this level'}
+            </div>
+          )}
         </div>
       )}
 

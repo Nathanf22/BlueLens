@@ -156,6 +156,10 @@ export default function App() {
     return codeGraph.createGraph(repoId, llmSettings);
   }, [codeGraph.createGraph, llmSettings]);
 
+  const handleRegenerateFlows = useCallback(() => {
+    codeGraph.regenerateFlows(llmSettings);
+  }, [codeGraph.regenerateFlows, llmSettings]);
+
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {
     codeGraphStorageService.saveCodeGraphConfig(config);
   }, []);
@@ -425,6 +429,9 @@ export default function App() {
           codeGraphActiveFlowId={codeGraph.activeFlowId}
           onCodeGraphSelectFlow={codeGraph.selectFlow}
           onCodeGraphDeselectFlow={codeGraph.deselectFlow}
+          codeGraphIsGeneratingFlows={codeGraph.isGeneratingFlows}
+          codeGraphFlowSource={codeGraph.flowSource}
+          onCodeGraphRegenerateFlows={handleRegenerateFlows}
         />
       </div>
 
