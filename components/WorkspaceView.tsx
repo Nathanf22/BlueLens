@@ -42,7 +42,7 @@ interface WorkspaceViewProps {
   onApplyCode: (msg: ChatMessage) => void;
   onClearChat: () => void;
   activeProvider: LLMSettings['activeProvider'];
-  // Scan
+  // TODO(DELETE): SCAN FEATURE — onScanCode, syncStatus, and their usages in Preview below
   onScanCode: () => void;
   syncStatus?: SyncStatus;
   onAnalyze?: () => void;

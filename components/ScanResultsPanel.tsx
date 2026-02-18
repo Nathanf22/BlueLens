@@ -1,3 +1,8 @@
+// TODO(DELETE): SCAN FEATURE — This entire file is marked for removal.
+// Superseded by the CodeGraph system. Remove along with codeScannerService.ts,
+// useScanHandlers.ts, and all scan wiring in App.tsx / ModalManager /
+// WorkspaceView / PreviewToolbar / types.ts.
+
 import React, { useState } from 'react';
 import { X, Search, CheckCircle2, AlertTriangle, Info, Loader2, Plus, Trash2, RefreshCw, Settings2, Check, XCircle } from 'lucide-react';
 import { Button } from './Button';

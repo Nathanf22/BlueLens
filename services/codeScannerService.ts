@@ -1,3 +1,10 @@
+// TODO(DELETE): SCAN FEATURE — This entire file is marked for removal.
+// The diagram↔code divergence scan is superseded by the CodeGraph system
+// which provides richer, structured code analysis. Remove this file along
+// with useScanHandlers.ts, ScanResultsPanel.tsx, and all related wiring in
+// App.tsx, ModalManager, WorkspaceView, PreviewToolbar, and types.ts.
+// See KNOWN_ISSUES.md for context.
+
 /**
  * On-demand code scanning and divergence detection.
  * Recursively walks a repo directory, extracts symbols, and compares with diagram nodes.

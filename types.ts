@@ -86,6 +86,7 @@ export interface CodeLink {
   label?: string;           // Display label
 }
 
+// TODO(DELETE): SCAN FEATURE — ScanConfig (and scanConfig on RepoConfig below)
 export interface ScanConfig {
   includePaths: string[];   // glob patterns, e.g. ["src/**"]
   excludePaths: string[];   // e.g. ["**/*.test.ts", "**/node_modules/**"]
@@ -157,6 +158,10 @@ export interface ChatSession {
   diagramId: string;
   messages: ChatMessage[];
 }
+
+// TODO(DELETE): SCAN FEATURE — everything from here to ScanMatch (included) should be removed:
+// SyncMode, SyncStatus, SuggestionType, SyncSuggestion, ScanResult,
+// ScannedEntity, DiagramNodeInfo, ScanMatch
 
 // Sync modes (FR3.3)
 export type SyncMode = 'manual' | 'semi-auto' | 'auto';

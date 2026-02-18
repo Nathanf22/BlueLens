@@ -2,6 +2,8 @@ import React from 'react';
 import { MessageCircle, ZoomIn, ZoomOut, RotateCcw, Maximize, Download, Link2, Code, MessageSquare, Search, Brain } from 'lucide-react';
 import { SyncStatus } from '../../types';
 
+// TODO(DELETE): SCAN FEATURE — SYNC_STATUS_COLORS, SYNC_STATUS_LABELS, onScanCode prop,
+// syncStatus prop, and the scan button block (lines ~89-94) should be removed.
 const SYNC_STATUS_COLORS: Record<SyncStatus, string> = {
   unknown: 'bg-gray-500',
   synced: 'bg-green-500',

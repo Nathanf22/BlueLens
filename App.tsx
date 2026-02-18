@@ -24,7 +24,7 @@ import { useSplitPane } from './hooks/useSplitPane';
 import { useStoragePersistence } from './hooks/useStoragePersistence';
 import { useLLMSettings } from './hooks/useLLMSettings';
 import { useChatHandlers } from './hooks/useChatHandlers';
-import { useScanHandlers } from './hooks/useScanHandlers';
+import { useScanHandlers } from './hooks/useScanHandlers'; // TODO(DELETE): SCAN FEATURE
 import { useCodebaseImport } from './hooks/useCodebaseImport';
 import { useCodeGraph } from './hooks/useCodeGraph';
 import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
@@ -140,6 +140,7 @@ export default function App() {
   const { chatSession, isAIChatLoading, sendChatMessage, applyCodeFromMessage, clearChat } =
     useChatHandlers(activeDiagram, updateActiveDiagram, llmSettings);
 
+  // TODO(DELETE): SCAN FEATURE — remove this block and all scan props passed below
   const {
     scanResult, isScanning, scanError, runScan, addMissingToDiagram, clearScanResult,
     syncMode, setSyncMode, syncStatus, applySuggestion, applyAllSuggestions
@@ -331,7 +332,7 @@ export default function App() {
     }
   }, [activeDiagram, llmSettings, sendChatMessage, setError]);
 
-  // --- Scan Config Update ---
+  // TODO(DELETE): SCAN FEATURE — handleUpdateScanConfig + ScanConfig import
   const handleUpdateScanConfig = useCallback((repoId: string, config: ScanConfig) => {
     setRepos(prev => prev.map(r =>
       r.id === repoId ? { ...r, scanConfig: config } : r
@@ -597,6 +598,7 @@ export default function App() {
         onCloseAISettings={() => setIsAISettingsOpen(false)}
         onUpdateProvider={updateProvider}
         onSetActiveProvider={setActiveProvider}
+        // TODO(DELETE): SCAN FEATURE — remove these 11 props
         isScanResultsOpen={isScanResultsOpen}
         onCloseScanResults={() => { setIsScanResultsOpen(false); clearScanResult(); }}
         scanResult={scanResult}

@@ -1,3 +1,8 @@
+// TODO(DELETE): SCAN FEATURE — This entire file is marked for removal.
+// Superseded by the CodeGraph system. Remove along with codeScannerService.ts,
+// ScanResultsPanel.tsx, and all scan wiring in App.tsx / ModalManager /
+// WorkspaceView / PreviewToolbar / types.ts.
+
 import { useState, useCallback } from 'react';
 import { ScanResult, DiagramNodeInfo, Diagram, LLMSettings, RepoConfig, SyncMode, SyncStatus, SyncSuggestion } from '../types';
 import { codeScannerService } from '../services/codeScannerService';
