@@ -17,50 +17,69 @@ export const svgParserService = {
    */
   parseNodes(svgElement: SVGElement): ParsedNode[] {
     const nodes: ParsedNode[] = [];
-    
-    // Mermaid uses .node class for graph nodes
+
+    // ── Flowchart / graph diagrams ──────────────────────────────────────────
+    // Mermaid uses g.node for flowchart nodes
     const nodeElements = svgElement.querySelectorAll<SVGGElement>('.node');
-    
-    nodeElements.forEach((element, index) => {
+
+    nodeElements.forEach((element) => {
       const id = element.id || '';
-      
-      // Extract the Mermaid node ID from the SVG element ID
       const nodeId = this.extractNodeId(id);
-      
-      // Get the label text - Mermaid uses foreignObject with nodeLabel
+
       let label = '';
-      
-      // Mermaid structure: g.node > g.label > foreignObject > div > span.nodeLabel > p
       const labelGroup = element.querySelector('g.label');
       if (labelGroup) {
-        // Try to find the nodeLabel span
         const nodeLabel = labelGroup.querySelector('.nodeLabel');
-        if (nodeLabel) {
-          label = nodeLabel.textContent?.trim() || '';
-        }
+        if (nodeLabel) label = nodeLabel.textContent?.trim() || '';
       }
-      
-      // Fallback: try direct text element (older Mermaid versions)
       if (!label) {
         const textElement = element.querySelector('text');
-        if (textElement) {
-          label = textElement.textContent?.trim() || '';
-        }
+        if (textElement) label = textElement.textContent?.trim() || '';
       }
 
-      
-      // Get bounding box
-      const bounds = element.getBoundingClientRect();
-      
-      nodes.push({
-        id: nodeId,
-        svgElementId: id,
-        bounds,
-        label,
-        element
-      });
+      nodes.push({ id: nodeId, svgElementId: id, bounds: element.getBoundingClientRect(), label, element });
     });
-    
+
+    // ── Sequence diagrams ────────────────────────────────────────────────────
+    // Mermaid renders participants as g elements with class "actor" (top + bottom copy).
+    // We deduplicate by participant name so each participant appears once.
+    if (nodes.length === 0) {
+      const seen = new Set<string>();
+
+      // Try multiple selectors for different Mermaid versions
+      const candidates = [
+        ...Array.from(svgElement.querySelectorAll<SVGGElement>('g.actor')),
+        ...Array.from(svgElement.querySelectorAll<SVGGElement>('g.actor-top')),
+        ...Array.from(svgElement.querySelectorAll<SVGGElement>('g.actor-bottom')),
+      ];
+
+      for (const el of candidates) {
+        const textEl = el.querySelector('text');
+        const label = textEl?.textContent?.trim() || '';
+        if (!label || seen.has(label)) continue;
+        seen.add(label);
+        // In sequence diagrams the participant name IS the ID used in the code
+        nodes.push({
+          id: label,
+          svgElementId: el.id || label,
+          bounds: el.getBoundingClientRect(),
+          label,
+          element: el,
+        });
+      }
+
+      // Last-resort: plain text elements with class "actor" (some Mermaid builds)
+      if (nodes.length === 0) {
+        svgElement.querySelectorAll<SVGTextElement>('text.actor').forEach(textEl => {
+          const label = textEl.textContent?.trim() || '';
+          if (!label || seen.has(label)) return;
+          seen.add(label);
+          const groupEl = (textEl.closest('g') || textEl) as SVGGElement;
+          nodes.push({ id: label, svgElementId: label, bounds: groupEl.getBoundingClientRect(), label, element: groupEl });
+        });
+      }
+    }
+
     return nodes;
   },
 

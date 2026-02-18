@@ -35,15 +35,55 @@ export const CodeLinkManager: React.FC<CodeLinkManagerProps> = ({
   const [lineStart, setLineStart] = useState('');
   const [lineEnd, setLineEnd] = useState('');
   const [symbols, setSymbols] = useState<CodeSymbol[]>([]);
+  // Track which repos have an active handle (may update as reconnect runs)
+  const [connectedRepoIds, setConnectedRepoIds] = useState<Set<string>>(
+    () => new Set(repos.filter(r => fileSystemService.hasHandle(r.id)).map(r => r.id))
+  );
+  const [repoConnecting, setRepoConnecting] = useState(false);
 
-  // Parse nodes from rendered SVG
+  // Parse nodes from rendered SVG — retries once after 150ms if Mermaid not yet rendered.
   useEffect(() => {
-    const svgContainer = document.querySelector('.mermaid-svg-container');
-    const svgElement = svgContainer?.querySelector('svg');
-    if (svgElement) {
-      setAvailableNodes(svgParserService.parseNodes(svgElement as SVGElement));
+    const queryNodes = () => {
+      const svgContainer = document.querySelector('.mermaid-svg-container');
+      const svgElement = svgContainer?.querySelector('svg');
+      if (svgElement) {
+        const nodes = svgParserService.parseNodes(svgElement as SVGElement);
+        if (nodes.length > 0) { setAvailableNodes(nodes); return true; }
+      }
+      return false;
+    };
+    if (!queryNodes()) {
+      const t = setTimeout(queryNodes, 150);
+      return () => clearTimeout(t);
     }
-  }, [currentDiagram.code]);
+  }, []);
+
+  // Silently reconnect repos from IndexedDB on mount (handles lost after page refresh).
+  useEffect(() => {
+    let cancelled = false;
+    const reconnect = async () => {
+      const connected = new Set(repos.filter(r => fileSystemService.hasHandle(r.id)).map(r => r.id));
+      for (const repo of repos) {
+        if (connected.has(repo.id)) continue;
+        const result = await fileSystemService.reconnectRepo(repo.id);
+        if (!cancelled && result) connected.add(repo.id);
+      }
+      if (!cancelled) setConnectedRepoIds(new Set(connected));
+    };
+    reconnect();
+    return () => { cancelled = true; };
+  }, [repos]);
+
+  // When the user selects a repo that isn't connected, try to reconnect it.
+  const handleRepoSelect = async (repoId: string) => {
+    setSelectedRepoId(repoId);
+    setSelectedFilePath('');
+    if (!repoId || connectedRepoIds.has(repoId)) return;
+    setRepoConnecting(true);
+    const result = await fileSystemService.reconnectRepo(repoId);
+    if (result) setConnectedRepoIds(prev => new Set([...prev, repoId]));
+    setRepoConnecting(false);
+  };
 
   // Extract symbols when a file is selected
   useEffect(() => {
@@ -68,7 +108,8 @@ export const CodeLinkManager: React.FC<CodeLinkManagerProps> = ({
     return () => { cancelled = true; };
   }, [selectedRepoId, selectedFilePath]);
 
-  const connectedRepos = repos.filter(r => fileSystemService.hasHandle(r.id));
+  // Show ALL workspace repos — user can select any and we reconnect on demand
+  const connectedRepos = repos;
   const codeLinks = currentDiagram.codeLinks || [];
 
   const handleAdd = () => {
@@ -190,15 +231,26 @@ export const CodeLinkManager: React.FC<CodeLinkManagerProps> = ({
                   <label className="block text-sm text-gray-400 mb-2">Select Repository</label>
                   <select
                     value={selectedRepoId}
-                    onChange={e => { setSelectedRepoId(e.target.value); setSelectedFilePath(''); setSymbols([]); }}
+                    onChange={e => handleRepoSelect(e.target.value)}
                     className="w-full px-3 py-2 bg-dark-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-brand-500"
                     disabled={!selectedNodeId}
                   >
                     <option value="">-- Choose a repo --</option>
-                    {connectedRepos.map(r => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
+                    {connectedRepos.map(r => {
+                      const isConnected = connectedRepoIds.has(r.id);
+                      return (
+                        <option key={r.id} value={r.id}>
+                          {isConnected ? '● ' : '○ '}{r.name}
+                        </option>
+                      );
+                    })}
                   </select>
+                  {repoConnecting && (
+                    <p className="text-xs text-gray-500 mt-1">Reconnecting repository…</p>
+                  )}
+                  {selectedRepoId && !repoConnecting && !connectedRepoIds.has(selectedRepoId) && (
+                    <p className="text-xs text-yellow-500 mt-1">Repository not accessible — try opening the Repo Manager to reconnect.</p>
+                  )}
                 </div>
 
                 {/* File Browser */}

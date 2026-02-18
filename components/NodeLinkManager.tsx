@@ -23,17 +23,24 @@ export const NodeLinkManager: React.FC<NodeLinkManagerProps> = ({
   const [selectedTargetDiagramId, setSelectedTargetDiagramId] = useState<string>('');
   const [customLabel, setCustomLabel] = useState<string>('');
 
-  // Parse nodes from current diagram's rendered SVG
+  // Parse nodes from the rendered Mermaid SVG.
+  // Uses [] so it re-runs every time the modal mounts (modal unmounts when closed).
+  // Retries once after 150ms in case Mermaid hasn't finished rendering yet.
   useEffect(() => {
-    // Find the SVG element in the DOM
-    const svgContainer = document.querySelector('.mermaid-svg-container');
-    const svgElement = svgContainer?.querySelector('svg');
-    
-    if (svgElement) {
-      const nodes = svgParserService.parseNodes(svgElement as SVGElement);
-      setAvailableNodes(nodes);
+    const queryNodes = () => {
+      const svgContainer = document.querySelector('.mermaid-svg-container');
+      const svgElement = svgContainer?.querySelector('svg');
+      if (svgElement) {
+        const nodes = svgParserService.parseNodes(svgElement as SVGElement);
+        if (nodes.length > 0) { setAvailableNodes(nodes); return true; }
+      }
+      return false;
+    };
+    if (!queryNodes()) {
+      const t = setTimeout(queryNodes, 150);
+      return () => clearTimeout(t);
     }
-  }, [currentDiagram.code]);
+  }, []);
 
   // Get existing link for selected node
   const existingLink = currentDiagram.nodeLinks?.find(link => link.nodeId === selectedNodeId);
