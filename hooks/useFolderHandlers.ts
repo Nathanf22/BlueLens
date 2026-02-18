@@ -29,17 +29,15 @@ export const useFolderHandlers = (
   };
 
   const handleDeleteFolder = (folderId: string) => {
-    if (window.confirm('Delete this folder? Diagrams inside will be moved to root.')) {
-      // Move diagrams to root
-      setDiagrams(prev => prev.map(d => 
-        (d.folderId === folderId && d.workspaceId === activeWorkspaceId) ? { ...d, folderId: null } : d
-      ));
-      // Delete folder and move child folders to root
-      setFolders(prev => prev
-        .filter(f => f.id !== folderId)
-        .map(f => (f.parentId === folderId && f.workspaceId === activeWorkspaceId) ? { ...f, parentId: null } : f)
-      );
-    }
+    // Move diagrams to root
+    setDiagrams(prev => prev.map(d =>
+      (d.folderId === folderId && d.workspaceId === activeWorkspaceId) ? { ...d, folderId: null } : d
+    ));
+    // Delete folder and move child folders to root
+    setFolders(prev => prev
+      .filter(f => f.id !== folderId)
+      .map(f => (f.parentId === folderId && f.workspaceId === activeWorkspaceId) ? { ...f, parentId: null } : f)
+    );
   };
 
   const handleRenameFolder = (folderId: string, name: string) => {
