@@ -1,5 +1,5 @@
 import React from 'react';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, GitBranch, ChevronRight, ArrowRight } from 'lucide-react';
 import { Editor } from './Editor';
 import { Preview } from './Preview';
 import { CodePanel } from './CodePanel';
@@ -89,6 +89,9 @@ interface WorkspaceViewProps {
   isProgressLogExpanded?: boolean;
   onToggleProgressLog?: () => void;
   onDismissProgressLog?: () => void;
+  // Source CodeGraph context (when viewing an exported flow diagram)
+  sourceGraph?: CodeGraph | null;
+  onGoToSourceGraph?: (graphId: string) => void;
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
@@ -164,6 +167,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   isProgressLogExpanded = false,
   onToggleProgressLog,
   onDismissProgressLog,
+  sourceGraph,
+  onGoToSourceGraph,
 }) => {
   const { codePanelWidthPercent, isDraggingCodePanel, handleCodePanelMouseDown } = useCodePanelResize(containerRef);
 
@@ -176,6 +181,31 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     >
       {activeDiagram || isCodeGraphMode ? (
         <>
+          {/* Source CodeGraph context bar — shown when diagram was exported from a flow */}
+          {!isCodeGraphMode && activeDiagram?.sourceGraphId && sourceGraph && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-950/40 border-b border-cyan-900/40 text-xs flex-shrink-0">
+              <GitBranch className="w-3.5 h-3.5 text-cyan-500 flex-shrink-0" />
+              <span className="text-gray-500">Code Graph</span>
+              <ChevronRight className="w-3 h-3 text-gray-700 flex-shrink-0" />
+              <span className="text-cyan-400 font-medium">{sourceGraph.name}</span>
+              <ChevronRight className="w-3 h-3 text-gray-700 flex-shrink-0" />
+              <span className="text-gray-300 truncate">{activeDiagram.name}</span>
+              {activeDiagram.description && (
+                <span className="text-gray-600 truncate hidden md:block">— {activeDiagram.description}</span>
+              )}
+              {onGoToSourceGraph && (
+                <button
+                  onClick={() => onGoToSourceGraph(sourceGraph.id)}
+                  className="ml-auto flex items-center gap-1 text-cyan-500 hover:text-cyan-300 font-medium transition-colors flex-shrink-0"
+                  title="Open this Code Graph"
+                >
+                  <span>Open Code Graph</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
           {/* Left Pane: Editor or CodeGraphPanel */}
           {isCodeGraphMode && codeGraph ? (

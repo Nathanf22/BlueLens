@@ -166,23 +166,30 @@ export default function App() {
   // --- Flow export state ---
   const [pendingFlowExport, setPendingFlowExport] = useState<{ graph: CodeGraph } | null>(null);
 
-  /** Core export logic: builds plan and inserts folders + diagrams. */
-  const doExportFlows = useCallback((graph: CodeGraph, mode: 'overwrite' | 'new') => {
-    const flows = Object.values(graph.flows).filter(f => !!f.sequenceDiagram);
+  /** Core export logic: builds plan and inserts folders + diagrams.
+   *  scopeFilter: if set, only flows with that scopeNodeId are exported/updated. */
+  const doExportFlows = useCallback((graph: CodeGraph, mode: 'overwrite' | 'new', scopeFilter?: string) => {
+    const flows = Object.values(graph.flows).filter(f => !!f.sequenceDiagram && (scopeFilter === undefined || f.scopeNodeId === scopeFilter));
     if (flows.length === 0) return;
 
-    const plan = buildExportPlan(graph);
+    const plan = buildExportPlan(graph, scopeFilter);
     const { existingFolder, existingDiagrams } = detectExistingExport(graph, folders, diagrams);
 
     if (mode === 'overwrite' && existingFolder) {
-      // Remove old exported diagrams, keep the folder tree (matched by name)
-      const oldIds = new Set(existingDiagrams.map(d => d.id));
-      setDiagrams(prev => prev.filter(d => !oldIds.has(d.id)));
-      // Remove old sub-folders (children of existingFolder)
-      const oldSubFolderIds = new Set(
-        folders.filter(f => f.parentId === existingFolder.id).map(f => f.id)
+      // Remove old exported diagrams at the target scope only
+      const oldIds = new Set(
+        existingDiagrams
+          .filter(d => scopeFilter === undefined || d.sourceScopeNodeId === scopeFilter)
+          .map(d => d.id)
       );
-      setFolders(prev => prev.filter(f => !oldSubFolderIds.has(f.id)));
+      setDiagrams(prev => prev.filter(d => !oldIds.has(d.id)));
+      // Remove old sub-folders only when doing a full export (no scope filter)
+      if (scopeFilter === undefined) {
+        const oldSubFolderIds = new Set(
+          folders.filter(f => f.parentId === existingFolder.id).map(f => f.id)
+        );
+        setFolders(prev => prev.filter(f => !oldSubFolderIds.has(f.id)));
+      }
 
       // Re-use the existing parent folder ID
       const resolvedIds = new Map([[plan.foldersToCreate[0].tempId, existingFolder.id]]);
@@ -204,16 +211,23 @@ export default function App() {
     }
   }, [folders, diagrams, setFolders, setDiagrams, activeWorkspaceId]);
 
-  /** Trigger export after graph creation/regeneration. */
-  const triggerFlowExport = useCallback((graph: CodeGraph) => {
-    const flows = Object.values(graph.flows).filter(f => !!f.sequenceDiagram);
+  /** Trigger export after graph creation/regeneration.
+   *  scopeFilter: if set, only ask/update for flows at that scope level. */
+  const triggerFlowExport = useCallback((graph: CodeGraph, scopeFilter?: string) => {
+    const flows = Object.values(graph.flows).filter(
+      f => !!f.sequenceDiagram && (scopeFilter === undefined || f.scopeNodeId === scopeFilter)
+    );
     if (flows.length === 0) return;
 
-    const { existingFolder } = detectExistingExport(graph, folders, diagrams);
-    if (existingFolder) {
+    const { existingFolder, existingDiagrams } = detectExistingExport(graph, folders, diagrams);
+    const scopedExisting = scopeFilter !== undefined
+      ? existingDiagrams.filter(d => d.sourceScopeNodeId === scopeFilter)
+      : existingDiagrams;
+
+    if (existingFolder && scopedExisting.length > 0) {
       setPendingFlowExport({ graph });
     } else {
-      doExportFlows(graph, 'new');
+      doExportFlows(graph, 'new', scopeFilter);
     }
   }, [folders, diagrams, doExportFlows]);
 
@@ -231,8 +245,8 @@ export default function App() {
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
       await codeGraph.regenerateFlows(llmSettings, options);
-      // After regeneration, activeGraph is updated — read fresh from store
-      if (codeGraph.activeGraph) triggerFlowExport(codeGraph.activeGraph);
+      // Export only flows at the scope that was regenerated
+      if (codeGraph.activeGraph) triggerFlowExport(codeGraph.activeGraph, options?.scopeNodeId);
     },
     [codeGraph.regenerateFlows, codeGraph.activeGraph, llmSettings, triggerFlowExport]
   );
@@ -541,6 +555,13 @@ export default function App() {
           isProgressLogExpanded={progressLog.isExpanded}
           onToggleProgressLog={progressLog.toggleExpanded}
           onDismissProgressLog={progressLog.dismiss}
+          sourceGraph={activeDiagram?.sourceGraphId
+            ? codeGraph.codeGraphs.find(g => g.id === activeDiagram.sourceGraphId) ?? null
+            : null}
+          onGoToSourceGraph={(graphId) => {
+            codeGraph.selectGraph(graphId);
+            setActiveGraphId(graphId);
+          }}
         />
       </div>
 

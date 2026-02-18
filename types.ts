@@ -35,8 +35,9 @@ export interface Diagram {
   // Code integration
   codeLinks?: CodeLink[];
 
-  // If generated from a CodeGraph flow, tracks the source graph ID
+  // If generated from a CodeGraph flow, tracks the source graph + scope
   sourceGraphId?: string;
+  sourceScopeNodeId?: string; // scopeNodeId of the flow (null/rootNodeId = root-level)
 }
 
 export interface NodeLink {

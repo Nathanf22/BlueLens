@@ -40,9 +40,15 @@ export function detectExistingExport(
   return { existingFolder, existingDiagrams };
 }
 
-/** Build the export plan: folder structure + diagrams from graph flows. */
-export function buildExportPlan(graph: CodeGraph): FlowExportPlan {
-  const flows = Object.values(graph.flows);
+/**
+ * Build the export plan: folder structure + diagrams from graph flows.
+ * If `scopeFilter` is provided, only flows with that scopeNodeId are included.
+ */
+export function buildExportPlan(graph: CodeGraph, scopeFilter?: string): FlowExportPlan {
+  const allFlows = Object.values(graph.flows);
+  const flows = scopeFilter !== undefined
+    ? allFlows.filter(f => f.scopeNodeId === scopeFilter)
+    : allFlows;
   const parentFolderName = `Flows: ${graph.name}`;
 
   const foldersToCreate: FlowExportPlan['foldersToCreate'] = [];
@@ -119,6 +125,7 @@ function buildDiagram(
     workspaceId: graph.workspaceId,
     nodeLinks: [],
     sourceGraphId: graph.id,
+    sourceScopeNodeId: flow.scopeNodeId,
   };
 }
 
