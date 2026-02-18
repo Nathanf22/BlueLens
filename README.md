@@ -2,254 +2,174 @@
 
 **Living Architecture Diagrams That Sync With Reality**
 
-Blueprint is a web-based tool for software architects, tech leads, and developers to create, visualize, and maintain living architecture diagrams that stay synchronized with their codebase. Transform static diagrams into dynamic, trustworthy sources of truth that evolve alongside your code.
+Blueprint is an open-source platform for creating, visualizing, and maintaining architecture diagrams that stay synchronized with your codebase. It transforms static diagrams into dynamic, navigable maps of your system — from 30,000-foot views down to individual functions.
 
-![Blueprint](https://img.shields.io/badge/status-MVP-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+![React](https://img.shields.io/badge/React-19-blue)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![Mermaid](https://img.shields.io/badge/Mermaid.js-v11-orange)
 
-## ✨ Key Features
+> **Blueprint Cloud** — A hosted version with collaboration, cloud storage, and team features is coming soon. This repository is the open-source core.
 
-### 🔍 Multi-Level Zoom Navigation
+---
 
-- **Unlimited hierarchical navigation** from system-level architecture down to individual function implementations
-- **Visual badges** indicate elements with sub-diagrams
-- **Breadcrumb navigation** shows your current position in the hierarchy
-- **Smooth transitions** between diagram levels
+## Features
 
-### 🔗 Node Linking System
+### Diagram Editor
+- Live Mermaid preview with split-pane editing
+- All Mermaid diagram types (flowchart, sequence, class, ER, state, gantt, ...)
+- AI-powered generation from natural language prompts
+- Diagram analysis with anti-pattern detection (fan-out, god nodes, circular deps)
 
-- **Connect diagram elements** to other diagrams for deep-dive exploration
-- **Double-click navigation** to zoom into linked diagrams
-- **Visual indicators** (blue 3D badges) show which nodes have links
-- **Hover effects** highlight interactive nodes
+### Multi-Level Navigation
+- Link any diagram node to another diagram for drill-down exploration
+- Visual badges on nodes that have sub-diagrams (blue) or code links (green)
+- Breadcrumb trail tracks your position in the hierarchy
+- Double-click to zoom in, breadcrumb to zoom out
 
-### 🎨 Professional Diagram Editor
+### Code Integration
+- Connect diagrams to local repositories via the File System Access API
+- Link individual nodes to specific files and line ranges
+- Read-only Monaco Editor panel for viewing linked source code
+- Multi-repository support scoped to workspaces
 
-- **Live preview** with Mermaid.js rendering
-- **Split-pane interface** for simultaneous editing and viewing
-- **Syntax highlighting** with JetBrains Mono font
-- **Error detection** with helpful feedback
+### CodeGraph
+- Automatic graph generation from a codebase — no manual diagramming needed
+- Hierarchical model: System (D0) > Module (D1) > File (D2) > Symbol (D3)
+- ViewLens system: switch between Component, Flow, and Domain perspectives
+- Contextual flow detection with AI-generated sequence diagrams
+- Smart functional grouping via LLM agent pipeline (with heuristic fallback)
+- SHA-256 hash-based sync detection for code drift
 
-### 🤖 AI-Powered Generation
+### Intelligence Layer
+- Multi-provider LLM support: **Gemini**, **OpenAI**, **Anthropic**
+- AI chat panel for diagram modifications, conversions, and scaffolding
+- Code scanning with divergence detection and typed sync suggestions
+- Three sync modes: manual, semi-auto, auto
+- Visual diff via Monaco DiffEditor
+- Encrypted API key storage (AES-GCM + IndexedDB)
 
-- **Gemini 2.0 Flash integration** for diagram generation
-- **Natural language prompts** to create complex diagrams
-- **Intelligent suggestions** based on your requirements
+### Organization
+- Workspaces and nested folders
+- `.blueprint` export format preserving all metadata (comments, node links, folders)
+- Legacy import support (.mmd, .mermaid, .txt, .zip)
 
-### 📁 Advanced Organization
+---
 
-- **Multiple workspaces** for different projects
-- **Folder hierarchy** to organize diagrams
-- **Drag-and-drop** diagram management
-- **Import/Export** diagrams as `.mermaid` files or ZIP archives
-
-### 💾 Persistent Storage
-
-- **Browser-based storage** using IndexedDB
-- **Auto-save** with visual feedback
-- **No server required** - works completely offline
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
-- Modern web browser (Chrome, Edge, or Safari recommended)
-- Node.js 18+ (for development)
+- **Node.js 18+**
+- **Chromium-based browser** (Chrome, Edge, Brave) — required for the File System Access API
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/nathanf22/blueprint.git
-
-# Navigate to the project directory
-cd blueprint/MermaidViz
-
-# Install dependencies
+git clone https://github.com/Nathanf22/Blueprint.git
+cd Blueprint
 npm install
-
-# Start the development server
 npm run dev
 ```
 
-The application will be available at `http://localhost:3000`
+Open [http://localhost:3000](http://localhost:3000).
 
-### Quick Start Guide
+### AI Features (optional)
 
-1. **Create Your First Diagram**
-   - Click "+ New Diagram" in the sidebar
-   - Enter your Mermaid code in the editor
-   - See the live preview on the right
+AI-powered features (chat, code scanning, flow generation, smart grouping) require an API key from one of:
 
-2. **Link Diagrams Together**
-   - Create multiple diagrams for different system levels
-   - Click "Manage Node Links" button
-   - Select a node and link it to another diagram
-   - Double-click the node to navigate to the linked diagram
+| Provider | Setup |
+|----------|-------|
+| Google Gemini | API key from [Google AI Studio](https://aistudio.google.com/) |
+| OpenAI | API key from [OpenAI Platform](https://platform.openai.com/) |
+| Anthropic | API key + CORS proxy (browser cannot call the API directly) |
 
-3. **Use AI Generation**
-   - Click "Ask AI" in the top navigation
-   - Describe the diagram you want to create
-   - Review and refine the generated Mermaid code
+Configure via the **AI Settings** panel in the app.
 
-4. **Organize Your Work**
-   - Create folders to group related diagrams
-   - Use workspaces to separate different projects
-   - Export diagrams for sharing or backup
+---
 
-## 📖 Usage Examples
+## Architecture
 
-### Creating a Multi-Level Architecture
+This is a client-side-only React app. No backend, no router, no external state library. All data persists to `localStorage` and `IndexedDB`.
 
-**System Level (Diagram 1):**
+### Tech Stack
 
-```mermaid
-graph TD
-    Frontend[Frontend App] --> API[API Gateway]
-    API --> Auth[Auth Service]
-    API --> Data[Data Service]
-```
-
-**Auth Service Detail (Diagram 2):**
-
-```mermaid
-graph TD
-    Login[Login Controller] --> Validator[Token Validator]
-    Validator --> DB[(User Database)]
-    Login --> Session[Session Manager]
-```
-
-Link the "Auth Service" node in Diagram 1 to Diagram 2, then double-click to navigate between levels.
-
-### Supported Diagram Types
-
-Blueprint supports all Mermaid.js diagram types:
-
-- **Flowcharts** - System architecture, process flows
-- **Sequence Diagrams** - API interactions, user flows
-- **Class Diagrams** - Object-oriented design
-- **State Diagrams** - State machines, workflows
-- **ER Diagrams** - Database schemas
-- **Gantt Charts** - Project timelines
-- **And more** - See [Mermaid.js documentation](https://mermaid.js.org/)
-
-## 🎯 Product Vision
-
-Blueprint addresses the critical challenge of keeping architecture documentation synchronized with code in the age of AI-powered development. As developers increasingly focus on architecture design and code review rather than implementation, Blueprint provides:
-
-- **Single Source of Truth** - Diagrams that reflect actual system architecture
-- **Infinite Zoom** - Navigate from 30,000-foot view to implementation details
-- **AI-Accelerated Workflow** - Generate and update diagrams with natural language
-- **Collaboration Ready** - Share and discuss architectural decisions
-
-## 🛣️ Roadmap
-
-### ✅ Phase 1: Foundation (Current - MVP)
-
-- [x] Mermaid diagram editor with live preview
-- [x] Multi-level navigation with badges and zoom
-- [x] Breadcrumb navigation
-- [x] Workspace and folder management
-- [x] AI-powered diagram generation
-- [x] Import/Export functionality
-
-### 🔄 Phase 2: Code Integration (In Progress)
-
-- [ ] File System Access API implementation
-- [ ] Bidirectional code-diagram linking
-- [ ] Monaco Editor integration for code viewing
-- [ ] Multi-repository support
-
-### 📅 Phase 3: Intelligence Layer (Planned)
-
-- [ ] Code scanning and divergence detection
-- [ ] Automated synchronization suggestions
-- [ ] LLM integration layer (Claude, Gemini, OpenAI)
-- [ ] Visual diff view for changes
-
-### 🌐 Phase 4: Collaboration (Planned)
-
-- [ ] Real-time multi-user editing (CRDT with Yjs)
-- [ ] Element-specific comment threads
-- [ ] Permission system (view, comment, edit)
-- [ ] Offline-first with sync
-
-### 🎨 Phase 5: Polish & Advanced Features (Planned)
-
-- [ ] Semantic search
-- [ ] Auto-tagging and smart organization
-- [ ] Version history and timeline view
-- [ ] Diagram templates library
-- [ ] Advanced export options (PDF, HTML)
-
-## 🏗️ Architecture
-
-### Technology Stack
-
-| Layer              | Technology              |
-| ------------------ | ----------------------- |
-| Frontend Framework | React + TypeScript      |
-| Diagram Rendering  | Mermaid.js v11          |
-| Local Storage      | IndexedDB               |
-| AI Integration     | Google Gemini 2.0 Flash |
-| Styling            | Tailwind CSS            |
-| Fonts              | Inter, JetBrains Mono   |
+| Layer | Technology |
+|-------|-----------|
+| Framework | React 19 + TypeScript (strict) |
+| Build | Vite |
+| Diagrams | Mermaid.js v11 |
+| Code Viewer | Monaco Editor |
+| AI | Gemini SDK, OpenAI SDK, Anthropic (fetch) |
+| Styling | Tailwind CSS (CDN) |
+| Storage | localStorage + IndexedDB (encrypted) |
 
 ### Project Structure
 
 ```
-MermaidViz/
-├── components/          # React components
-│   ├── Editor.tsx      # Code editor pane
-│   ├── Preview.tsx     # Diagram preview with navigation
-│   ├── Sidebar.tsx     # Workspace and diagram list
-│   └── ...
-├── services/           # Business logic
-│   ├── storageService.ts    # IndexedDB persistence
-│   ├── svgParserService.ts  # SVG manipulation for badges
-│   └── aiService.ts         # Gemini AI integration
-├── hooks/              # Custom React hooks
-│   └── useNavigation.ts     # Zoom/pan controls
-├── types/              # TypeScript type definitions
-├── App.tsx             # Main application component
-└── index.html          # Entry point
+Blueprint/
+  App.tsx                    # Root orchestrator — composes hooks, passes props
+  types.ts                   # All TypeScript interfaces
+  components/                # React components (stateless — props only)
+    CodeGraphPanel.tsx       # CodeGraph node tree, lens tabs, flow list
+    CodeGraphVisualizer.tsx  # Force-directed graph + sequence diagrams
+    AIChatPanel.tsx          # AI chat with suggestion chips
+    ScanResultsPanel.tsx     # Code scan results and sync suggestions
+    ProgressLogPanel.tsx     # Build-log panel for graph creation
+    ...
+  hooks/                     # Custom hooks (state + logic)
+    useAppState.ts           # Central state: workspaces, diagrams, UI toggles
+    useCodeGraph.ts          # CodeGraph state, lens switching, flow nav
+    useLLMSettings.ts        # Encrypted LLM config storage
+    useChatHandlers.ts       # AI chat sessions
+    useScanHandlers.ts       # Code sync modes and suggestions
+    ...
+  services/                  # Pure services (no React dependency)
+    codeGraphModelService.ts # CodeGraph CRUD, tree traversal, lens queries
+    codeGraphRendererService.ts  # CodeGraph + ViewLens → Mermaid string
+    codeGraphFlowService.ts  # AI flow generation pipeline
+    codeGraphAgentService.ts # Two-agent LLM pipeline for smart grouping
+    llmService.ts            # Unified multi-provider LLM interface
+    codeScannerService.ts    # Divergence detection + sync suggestions
+    ...
 ```
 
-## 🤝 Contributing
+### Key Patterns
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-### Development Guidelines
-
-1. **Code Style** - Follow TypeScript best practices
-2. **Components** - Keep components focused and reusable
-3. **Types** - Use TypeScript types for all data structures
-4. **Testing** - Add tests for new features (coming soon)
-
-### Running Locally
-
-```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run preview      # Preview production build
-```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- **Mermaid.js** - Powerful diagram generation library
-- **Google Gemini** - AI-powered diagram generation
-- **React** - UI framework
-- **Tailwind CSS** - Utility-first CSS framework
-
-## 📞 Support
-
-For questions, issues, or feature requests, please open an issue on GitHub.
+- **Props-only components** — state lives in hooks, composed in `App.tsx`, drilled via props
+- **No context providers** — everything flows through the component tree
+- **Service layer** — pure functions with no React dependency
+- **Path alias** — `@/*` maps to the project root
 
 ---
 
-**Blueprint** - Making architecture diagrams that actually stay up to date.
+## Roadmap
+
+### Complete
+
+- **Phase 1 — Foundation**: Mermaid editor, live preview, multi-level zoom navigation, badges, breadcrumbs, workspaces, folders, import/export, AI generation
+- **Phase 2 — Code Integration**: File System Access API, code linking, Monaco viewer, multi-repo support, codebase-to-diagram generation
+- **Phase 3 — Intelligence Layer**: Multi-provider LLM, AI chat, code scanning, divergence detection, sync modes, visual diff, diagram analysis, encrypted storage, CodeGraph with flows
+
+### Planned
+
+- **Phase 4 — Collaboration**: Real-time editing with Yjs/CRDT, presence cursors, comment threads, permissions, offline-first sync
+- **Phase 5 — Polish**: Semantic search, version history, diagram templates, advanced exports (PDF, HTML)
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, architecture notes, and guidelines.
+
+## License
+
+[MIT](LICENSE) — Copyright (c) 2026 Nathan Kamokoue
+
+## Author
+
+**Nathan Kamokoue** — [LinkedIn](https://www.linkedin.com/in/nathan-kamokoue-1289121b8/) | [X](https://x.com/KamokoueNathan)
+
+---
+
+**Blueprint** — Architecture diagrams that actually stay up to date.
