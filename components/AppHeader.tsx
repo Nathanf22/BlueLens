@@ -1,24 +1,28 @@
 import React from 'react';
-import { Sparkles, Menu, Layout, Settings } from 'lucide-react';
+import { Sparkles, Menu, Layout, Settings, FolderGit2 } from 'lucide-react';
 import { Button } from './Button';
 
 interface AppHeaderProps {
   onToggleSidebar: () => void;
   onOpenAIModal: () => void;
   onOpenAISettings: () => void;
+  onOpenRepoManager: () => void;
   isSidebarOpen: boolean;
+  repoCount: number;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleSidebar,
   onOpenAIModal,
   onOpenAISettings,
-  isSidebarOpen
+  onOpenRepoManager,
+  isSidebarOpen,
+  repoCount,
 }) => {
   return (
     <header className="flex items-center justify-between px-4 py-2 bg-dark-800 border-b border-gray-700 shadow-md z-20 shrink-0 h-14">
       <div className="flex items-center gap-3">
-        <button 
+        <button
           onClick={onToggleSidebar}
           className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white lg:hidden"
         >
@@ -33,6 +37,23 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          onClick={onOpenRepoManager}
+          className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-green-600 bg-dark-900 hover:bg-green-900/20 text-gray-400 hover:text-green-400 transition-colors text-sm"
+          title="Manage Repositories"
+        >
+          <FolderGit2 className="w-4 h-4" />
+          <span className="hidden sm:inline">Repositories</span>
+          {repoCount > 0 ? (
+            <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-900/50 text-green-400 font-medium leading-none">
+              {repoCount}
+            </span>
+          ) : (
+            <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-900/50 text-yellow-500 font-medium leading-none">
+              0
+            </span>
+          )}
+        </button>
         <button
           onClick={onOpenAISettings}
           className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"

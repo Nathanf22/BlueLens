@@ -328,7 +328,9 @@ export default function App() {
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         onOpenAIModal={() => setIsAIModalOpen(true)}
         onOpenAISettings={() => setIsAISettingsOpen(true)}
+        onOpenRepoManager={() => setIsRepoManagerOpen(true)}
         isSidebarOpen={isSidebarOpen}
+        repoCount={workspaceRepos.length}
       />
 
       {/* Main Layout */}

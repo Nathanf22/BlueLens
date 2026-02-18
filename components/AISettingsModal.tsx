@@ -100,29 +100,36 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
             return (
               <div
                 key={provider}
-                className={`border rounded-lg p-4 space-y-3 transition-colors ${
-                  isActive ? 'border-brand-500 bg-brand-500/5' : 'border-gray-700'
+                className={`border rounded-lg transition-colors ${
+                  isActive ? 'border-brand-500 bg-brand-500/5' : 'border-gray-700 hover:border-gray-600'
                 }`}
               >
-                <div className="flex items-center justify-between">
+                {/* Clickable header — entire row selects this provider */}
+                <div
+                  className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
+                  onClick={() => onSetActiveProvider(provider)}
+                >
                   <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="activeProvider"
-                        checked={isActive}
-                        onChange={() => onSetActiveProvider(provider)}
-                        className="accent-brand-500"
-                      />
-                      <span className="font-medium text-white">{info.label}</span>
-                    </label>
-                    {isActive && (
+                    <input
+                      type="radio"
+                      name="activeProvider"
+                      checked={isActive}
+                      onChange={() => onSetActiveProvider(provider)}
+                      onClick={e => e.stopPropagation()}
+                      className="accent-brand-500 cursor-pointer"
+                    />
+                    <span className="font-medium text-white">{info.label}</span>
+                    {isActive ? (
                       <span className="text-xs px-2 py-0.5 bg-brand-600/30 text-brand-400 rounded-full">Active</span>
+                    ) : config?.apiKey ? (
+                      <span className="text-xs px-2 py-0.5 bg-green-900/30 text-green-500 rounded-full">Ready</span>
+                    ) : (
+                      <span className="text-xs text-gray-600">No API key</span>
                     )}
                   </div>
                   {config?.apiKey && (
                     <button
-                      onClick={() => handleTestConnection(provider)}
+                      onClick={e => { e.stopPropagation(); handleTestConnection(provider); }}
                       disabled={testingProvider !== null}
                       className="text-xs px-3 py-1 rounded border border-gray-600 text-gray-300 hover:bg-gray-700 disabled:opacity-50 flex items-center gap-1"
                     >
@@ -138,45 +145,48 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   )}
                 </div>
 
-                <p className="text-xs text-gray-500">{info.description}</p>
+                {/* Config fields */}
+                <div className="px-4 pb-4 space-y-3 border-t border-gray-800/60 pt-3">
+                  <p className="text-xs text-gray-500">{info.description}</p>
 
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">API Key</label>
-                  <input
-                    type="password"
-                    value={config?.apiKey || ''}
-                    onChange={e => handleApiKeyChange(provider, e.target.value)}
-                    placeholder={`Enter ${info.label} API key`}
-                    className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">Model (optional override)</label>
-                  <input
-                    type="text"
-                    value={config?.model || ''}
-                    onChange={e => handleModelChange(provider, e.target.value)}
-                    placeholder="Leave blank for default"
-                    className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                  />
-                </div>
-
-                {provider === 'anthropic' && (
                   <div>
-                    <label className="text-xs text-gray-400 block mb-1">CORS Proxy URL</label>
+                    <label className="text-xs text-gray-400 block mb-1">API Key</label>
                     <input
-                      type="text"
-                      value={config?.proxyUrl || ''}
-                      onChange={e => handleProxyUrlChange(provider, e.target.value)}
-                      placeholder="e.g., https://your-proxy.example.com"
+                      type="password"
+                      value={config?.apiKey || ''}
+                      onChange={e => handleApiKeyChange(provider, e.target.value)}
+                      placeholder={`Enter ${info.label} API key`}
                       className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
                     />
-                    <p className="text-xs text-gray-600 mt-1">
-                      The Anthropic API does not support browser requests (CORS). You need a proxy server that forwards requests to api.anthropic.com. Without a proxy, direct API calls will fail.
-                    </p>
                   </div>
-                )}
+
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Model (optional override)</label>
+                    <input
+                      type="text"
+                      value={config?.model || ''}
+                      onChange={e => handleModelChange(provider, e.target.value)}
+                      placeholder="Leave blank for default"
+                      className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                    />
+                  </div>
+
+                  {provider === 'anthropic' && (
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-1">CORS Proxy URL</label>
+                      <input
+                        type="text"
+                        value={config?.proxyUrl || ''}
+                        onChange={e => handleProxyUrlChange(provider, e.target.value)}
+                        placeholder="e.g., https://your-proxy.example.com"
+                        className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                      />
+                      <p className="text-xs text-gray-600 mt-1">
+                        The Anthropic API does not support browser requests (CORS). You need a proxy server that forwards requests to api.anthropic.com. Without a proxy, direct API calls will fail.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}

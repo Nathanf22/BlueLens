@@ -1,6 +1,7 @@
 /**
  * File System Access API wrapper for reading local repository files.
- * Chromium-only. Directory handles are in-memory (lost on page refresh).
+ * Chromium-only. Directory handles are in-memory (lost on page refresh),
+ * but can be persisted to IndexedDB and reconnected via requestPermission().
  */
 
 export interface FileEntry {
@@ -11,6 +12,58 @@ export interface FileEntry {
 
 // In-memory handle storage — handles can't be persisted to localStorage
 const repoHandleStore = new Map<string, FileSystemDirectoryHandle>();
+
+// IndexedDB helpers for persisting FileSystemDirectoryHandle across sessions
+const HANDLE_DB_NAME = 'blueprint_fs_handles';
+const HANDLE_STORE = 'handles';
+
+function openHandleDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HANDLE_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(HANDLE_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key: string): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openHandleDB();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(HANDLE_STORE, 'readonly').objectStore(HANDLE_STORE).get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function idbPut(key: string, handle: FileSystemDirectoryHandle): Promise<void> {
+  try {
+    const db = await openHandleDB();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(HANDLE_STORE, 'readwrite').objectStore(HANDLE_STORE).put(handle, key);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    // IndexedDB unavailable — silently skip persistence
+  }
+}
+
+async function idbDelete(key: string): Promise<void> {
+  try {
+    const db = await openHandleDB();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(HANDLE_STORE, 'readwrite').objectStore(HANDLE_STORE).delete(key);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    // Silently skip
+  }
+}
 
 const IGNORED_DIRS = new Set([
   '.git', 'node_modules', '__pycache__', '.next', '.nuxt',
@@ -72,10 +125,39 @@ export const fileSystemService = {
 
   removeHandle(repoId: string): void {
     repoHandleStore.delete(repoId);
+    idbDelete(repoId);
   },
 
   hasHandle(repoId: string): boolean {
     return repoHandleStore.has(repoId);
+  },
+
+  /** Persist a handle to IndexedDB so it can survive a page refresh. */
+  async persistHandle(repoId: string, handle: FileSystemDirectoryHandle): Promise<void> {
+    await idbPut(repoId, handle);
+  },
+
+  /**
+   * Try to reconnect a previously-persisted repo handle without opening
+   * the directory picker. Calls requestPermission() which shows a small
+   * browser prompt ("Allow Blueprint to access [folder]?") instead of
+   * the full directory picker.
+   * Returns true if permission was granted and the handle is ready to use.
+   */
+  async reconnectRepo(repoId: string): Promise<{ name: string } | null> {
+    const handle = await idbGet(repoId);
+    if (!handle) return null;
+
+    try {
+      const permission = await (handle as any).requestPermission({ mode: 'read' });
+      if (permission === 'granted') {
+        repoHandleStore.set(repoId, handle);
+        return { name: handle.name };
+      }
+    } catch {
+      // requestPermission not supported or denied
+    }
+    return null;
   },
 
   async listDirectory(handle: FileSystemDirectoryHandle, path: string = ''): Promise<FileEntry[]> {
