@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Check, AlertCircle, Loader2, ChevronDown } from 'lucide-react';
 import { Button } from './Button';
 import { LLMProvider, LLMProviderConfig, LLMSettings } from '../types';
 import { llmService } from '../services/llmService';
@@ -13,12 +13,49 @@ interface AISettingsModalProps {
 }
 
 const PROVIDER_INFO: Record<LLMProvider, { label: string; description: string }> = {
-  gemini: { label: 'Google Gemini', description: 'Uses the Gemini API. Free tier available.' },
-  openai: { label: 'OpenAI', description: 'GPT-4o, GPT-4o-mini, and other models.' },
+  gemini: { label: 'Google Gemini', description: 'Uses the Gemini API.' },
+  openai: { label: 'OpenAI', description: 'GPT-5.2, GPT-4.1, o3, o4-mini and other models.' },
   anthropic: { label: 'Anthropic', description: 'Claude models. Requires a CORS proxy for browser use.' },
 };
 
-const PROVIDER_ORDER: LLMProvider[] = ['gemini', 'openai', 'anthropic'];
+/** Known models per provider. The first entry is the service default. */
+const PROVIDER_MODELS: Record<LLMProvider, { id: string; label: string }[]> = {
+  gemini: [
+    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
+    { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+    { id: 'gemini-2.5-flash-preview', label: 'Gemini 2.5 Flash Preview' },
+    { id: 'gemini-2.5-pro-preview', label: 'Gemini 2.5 Pro Preview' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+    { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+    { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+    { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+    { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+    { id: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
+    { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+    { id: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+  ],
+  openai: [
+    { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+    { id: 'gpt-4o', label: 'GPT-4o' },
+    { id: 'gpt-4.1', label: 'GPT-4.1' },
+    { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+    { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
+    { id: 'gpt-5', label: 'GPT-5' },
+    { id: 'gpt-5.1', label: 'GPT-5.1' },
+    { id: 'gpt-5.2', label: 'GPT-5.2' },
+    { id: 'o3', label: 'o3' },
+    { id: 'o3-pro', label: 'o3 Pro' },
+    { id: 'o4-mini', label: 'o4-mini' },
+    { id: 'o1', label: 'o1' },
+    { id: 'o1-mini', label: 'o1-mini' },
+  ],
+};
+
+const PROVIDER_ORDER: LLMProvider[] = ['gemini', 'anthropic', 'openai'];
 
 export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   isOpen,
@@ -39,7 +76,8 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       onUpdateProvider(provider, {
         provider,
         apiKey: apiKey.trim(),
-        model: existing?.model,
+        // Preserve existing model selection, or initialize to the first known model (default)
+        model: existing?.model || PROVIDER_MODELS[provider][0].id,
         proxyUrl: existing?.proxyUrl,
       });
     } else {
@@ -50,7 +88,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const handleModelChange = (provider: LLMProvider, model: string) => {
     const existing = llmSettings.providers[provider];
     if (!existing) return;
-    onUpdateProvider(provider, { ...existing, model: model.trim() || undefined });
+    onUpdateProvider(provider, { ...existing, model });
   };
 
   const handleProxyUrlChange = (provider: LLMProvider, proxyUrl: string) => {
@@ -160,16 +198,33 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     />
                   </div>
 
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">Model (optional override)</label>
-                    <input
-                      type="text"
-                      value={config?.model || ''}
-                      onChange={e => handleModelChange(provider, e.target.value)}
-                      placeholder="Leave blank for default"
-                      className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                    />
-                  </div>
+                  {(() => {
+                    const models = PROVIDER_MODELS[provider];
+                    const defaultModel = models[0];
+                    const selectedId = config?.model || defaultModel.id;
+                    return (
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">Model</label>
+                        <div className="relative">
+                          <select
+                            value={selectedId}
+                            onChange={e => handleModelChange(provider, e.target.value)}
+                            className="w-full appearance-none bg-dark-800 border border-gray-700 rounded px-3 py-2 pr-8 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
+                          >
+                            {models.map((m, i) => (
+                              <option key={m.id} value={m.id}>
+                                {i === 0 ? `${m.label} (default)` : m.label}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                        </div>
+                        {selectedId === defaultModel.id && (
+                          <p className="text-xs text-gray-600 mt-1">Modèle recommandé pour ce fournisseur.</p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {provider === 'anthropic' && (
                     <div>
