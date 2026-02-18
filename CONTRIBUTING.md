@@ -96,4 +96,6 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Questions?
 
-Open an issue on GitHub. We're happy to help you get oriented.
+Open an issue on GitHub or reach out to the maintainer:
+
+**Nathan Kamokoue** — [LinkedIn](https://www.linkedin.com/in/nathan-kamokoue-1289121b8/) / [X](https://x.com/KamokoueNathan)
