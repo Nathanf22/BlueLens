@@ -6,6 +6,7 @@ import {
   GitBranch
 } from 'lucide-react';
 import { Diagram, Folder, Workspace, CodeGraph, RepoConfig } from '../types';
+import { ToastType } from '../hooks/useToast';
 import { BlueprintImportResult, exportDiagram, exportWorkspace, exportAll, importBlueprint, downloadJson } from '../services/exportService';
 import { fileSystemService } from '../services/fileSystemService';
 import JSZip from 'jszip';
@@ -43,6 +44,7 @@ interface SidebarProps {
   onDeleteGraph?: (graphId: string) => void;
   onLoadDemoGraph?: () => void;
   graphCreationProgress?: { step: string; current: number; total: number } | null;
+  showToast?: (message: string, type?: ToastType) => void;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -79,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteGraph,
   onLoadDemoGraph,
   graphCreationProgress,
+  showToast,
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -142,7 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onImportBlueprint(result);
           } catch (e) {
             console.error("Error importing blueprint", e);
-            alert(`Could not import blueprint file: ${file.name}`);
+            showToast?.(`Could not import blueprint file: ${file.name}`, 'error');
           }
           continue;
         }
@@ -172,7 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             await Promise.all(promises);
           } catch (e) {
             console.error("Error unzipping", e);
-            alert(`Could not read zip file: ${file.name}`);
+            showToast?.(`Could not read zip file: ${file.name}`, 'error');
           }
         } else {
           const text = await file.text();
@@ -191,7 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (newDiagrams.length > 0) onImport(newDiagrams);
     } catch (error) {
       console.error("Import error", error);
-      alert("Failed to import files.");
+      showToast?.('Failed to import files.', 'error');
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
