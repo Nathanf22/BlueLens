@@ -6,7 +6,8 @@ import { CodePanel } from './CodePanel';
 import { AIChatPanel } from './AIChatPanel';
 import { CodeGraphPanel } from './CodeGraphPanel';
 import { CodeGraphVisualizer } from './CodeGraphVisualizer';
-import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings, SyncStatus, CodeGraph, ViewLens, GraphNode, CodeGraphAnomaly, GraphFlow } from '../types';
+import { ProgressLogPanel } from './ProgressLogPanel';
+import { Diagram, Comment, CodeFile, ChatMessage, ChatSession, LLMSettings, SyncStatus, CodeGraph, ViewLens, GraphNode, CodeGraphAnomaly, GraphFlow, ProgressLogEntry } from '../types';
 import { useCodePanelResize } from '../hooks/useCodePanelResize';
 
 interface WorkspaceViewProps {
@@ -81,8 +82,13 @@ interface WorkspaceViewProps {
   onCodeGraphDeselectFlow?: () => void;
   // CodeGraph flow generation
   codeGraphIsGeneratingFlows?: boolean;
-  codeGraphFlowSource?: 'llm' | 'heuristic' | null;
-  onCodeGraphRegenerateFlows?: () => void;
+  onCodeGraphRegenerateFlows?: (options?: { scopeNodeId?: string; customPrompt?: string }) => void;
+  // Progress Log
+  progressLogEntries?: ProgressLogEntry[];
+  isProgressLogActive?: boolean;
+  isProgressLogExpanded?: boolean;
+  onToggleProgressLog?: () => void;
+  onDismissProgressLog?: () => void;
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
@@ -152,8 +158,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onCodeGraphSelectFlow,
   onCodeGraphDeselectFlow,
   codeGraphIsGeneratingFlows = false,
-  codeGraphFlowSource,
   onCodeGraphRegenerateFlows,
+  progressLogEntries = [],
+  isProgressLogActive = false,
+  isProgressLogExpanded = false,
+  onToggleProgressLog,
+  onDismissProgressLog,
 }) => {
   const { codePanelWidthPercent, isDraggingCodePanel, handleCodePanelMouseDown } = useCodePanelResize(containerRef);
 
@@ -162,10 +172,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   return (
     <main
       ref={containerRef}
-      className="flex-1 overflow-hidden flex flex-col lg:flex-row relative bg-[#0d0d0d]"
+      className="flex-1 overflow-hidden flex flex-col relative bg-[#0d0d0d]"
     >
       {activeDiagram || isCodeGraphMode ? (
         <>
+          <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
           {/* Left Pane: Editor or CodeGraphPanel */}
           {isCodeGraphMode && codeGraph ? (
             <div className="w-72 flex-shrink-0 h-1/2 lg:h-full overflow-hidden">
@@ -194,7 +205,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onSelectFlow={onCodeGraphSelectFlow || (() => {})}
                 onDeselectFlow={onCodeGraphDeselectFlow || (() => {})}
                 isGeneratingFlows={codeGraphIsGeneratingFlows}
-                flowSource={codeGraphFlowSource}
                 onRegenerateFlows={onCodeGraphRegenerateFlows}
               />
             </div>
@@ -312,6 +322,18 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 />
               </div>
             </>
+          )}
+          </div>
+
+          {/* Progress Log Panel */}
+          {progressLogEntries.length > 0 && onToggleProgressLog && onDismissProgressLog && (
+            <ProgressLogPanel
+              entries={progressLogEntries}
+              isActive={isProgressLogActive}
+              isExpanded={isProgressLogExpanded}
+              onToggleExpanded={onToggleProgressLog}
+              onDismiss={onDismissProgressLog}
+            />
           )}
         </>
       ) : (

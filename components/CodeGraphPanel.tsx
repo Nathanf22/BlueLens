@@ -13,7 +13,7 @@ import React, { useState, useMemo } from 'react';
 import {
   ChevronRight, Layers, Box, File, Code,
   GitBranch, RefreshCw, AlertTriangle, Trash2, Home,
-  Brain, Settings, Eye, ArrowRight, Play, X,
+  Brain, Settings, Eye, ArrowRight, Play, X, Plus,
 } from 'lucide-react';
 import {
   CodeGraph, ViewLens, GraphNode, GraphRelation,
@@ -47,8 +47,7 @@ interface CodeGraphPanelProps {
   onDeselectFlow: () => void;
   // Flow generation
   isGeneratingFlows?: boolean;
-  flowSource?: 'llm' | 'heuristic' | null;
-  onRegenerateFlows?: () => void;
+  onRegenerateFlows?: (options?: { scopeNodeId?: string; customPrompt?: string }) => void;
 }
 
 const KIND_ICONS: Record<string, React.ReactNode> = {
@@ -100,11 +99,13 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
   onSelectFlow,
   onDeselectFlow,
   isGeneratingFlows = false,
-  flowSource,
   onRegenerateFlows,
 }) => {
   const [showAnomalies, setShowAnomalies] = useState(false);
   const [anomalies, setAnomalies] = useState<CodeGraphAnomaly[]>([]);
+  const [customPromptText, setCustomPromptText] = useState('');
+
+  const currentScopeId = focusNodeId || graph.rootNodeId;
 
   const handleAnalyzeAnomalies = () => {
     const results = onGetAnomalies();
@@ -234,32 +235,58 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
       {/* Flow List (Flow lens) */}
       {isFlowLens && (
         <div className="border-b border-gray-800">
-          {/* Heuristic warning banner */}
-          {flowSource === 'heuristic' && (
-            <div className="flex items-start gap-2 px-3 py-2 bg-yellow-900/20 border-b border-yellow-800/30">
-              <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] text-yellow-400/80 leading-relaxed">
-                Flows generated without AI. Configure AI settings and regenerate for richer results.
-              </p>
-            </div>
-          )}
-
           <div className="flex items-center justify-between px-3 py-1.5">
             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
               Flows ({contextualFlows.length})
             </span>
             {onRegenerateFlows && (
               <button
-                onClick={onRegenerateFlows}
+                onClick={() => onRegenerateFlows({ scopeNodeId: currentScopeId })}
                 disabled={isGeneratingFlows}
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:text-cyan-400 hover:bg-dark-700 transition-colors disabled:opacity-50"
-                title="Regenerate flows"
+                title="Regenerate flows at this level"
               >
                 <RefreshCw className={`w-3 h-3 ${isGeneratingFlows ? 'animate-spin' : ''}`} />
                 <span>{isGeneratingFlows ? 'Generating...' : 'Regenerate'}</span>
               </button>
             )}
           </div>
+
+          {/* Custom prompt input */}
+          {onRegenerateFlows && (
+            <div className="px-3 pb-2">
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={customPromptText}
+                  onChange={e => setCustomPromptText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && customPromptText.trim() && !isGeneratingFlows) {
+                      onRegenerateFlows({ scopeNodeId: currentScopeId, customPrompt: customPromptText.trim() });
+                      setCustomPromptText('');
+                    }
+                  }}
+                  placeholder="Describe a flow to generate..."
+                  disabled={isGeneratingFlows}
+                  className="flex-1 min-w-0 px-2 py-1 rounded text-[11px] bg-dark-800 border border-gray-700 text-gray-300 placeholder-gray-600 focus:outline-none focus:border-cyan-600 disabled:opacity-50"
+                />
+                <button
+                  onClick={() => {
+                    if (customPromptText.trim()) {
+                      onRegenerateFlows({ scopeNodeId: currentScopeId, customPrompt: customPromptText.trim() });
+                      setCustomPromptText('');
+                    }
+                  }}
+                  disabled={isGeneratingFlows || !customPromptText.trim()}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[10px] bg-cyan-900/30 text-cyan-400 hover:bg-cyan-900/50 transition-colors disabled:opacity-40 disabled:hover:bg-cyan-900/30 flex-shrink-0"
+                  title="Generate flow from prompt"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Generate</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {contextualFlows.length > 0 ? (
             <div className="max-h-48 overflow-y-auto">
@@ -284,8 +311,19 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
               ))}
             </div>
           ) : (
-            <div className="px-3 py-3 text-xs text-gray-600 text-center">
-              {isGeneratingFlows ? 'Generating flows...' : 'No flows at this level'}
+            <div className="px-3 py-3 text-center">
+              {isGeneratingFlows ? (
+                <span className="text-xs text-gray-600">Generating flows...</span>
+              ) : onRegenerateFlows ? (
+                <button
+                  onClick={() => onRegenerateFlows({ scopeNodeId: currentScopeId })}
+                  className="px-3 py-1.5 rounded text-xs bg-cyan-900/30 text-cyan-400 hover:bg-cyan-900/50 transition-colors"
+                >
+                  Generate Flows
+                </button>
+              ) : (
+                <span className="text-xs text-gray-600">No flows at this level</span>
+              )}
             </div>
           )}
         </div>
@@ -295,10 +333,13 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
       {selectedNode ? (
         <div className="flex-1 overflow-y-auto">
           <div className="px-3 py-2 border-b border-gray-800">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-1">
               {KIND_ICONS[selectedNode.kind] || <Code className="w-3.5 h-3.5 text-gray-400" />}
               <span className="text-sm font-medium text-gray-200">{selectedNode.name}</span>
             </div>
+            {selectedNode.description && (
+              <p className="text-xs text-gray-400 mb-2 leading-relaxed">{selectedNode.description}</p>
+            )}
 
             <div className="space-y-1.5 text-xs">
               <div className="flex justify-between">

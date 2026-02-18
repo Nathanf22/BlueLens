@@ -11,8 +11,9 @@ import { codeGraphSyncService } from '../services/codeGraphSyncService';
 import { codebaseAnalyzerService } from '../services/codebaseAnalyzerService';
 import { codeToGraphParserService } from '../services/codeToGraphParserService';
 import { codeGraphDomainService } from '../services/codeGraphDomainService';
-import { analyzeCodebaseWithAI } from '../services/codeGraphAgentService';
-import { generateFlows, type FlowGenerationResult } from '../services/codeGraphFlowService';
+import { analyzeCodebaseWithAI, type LogEntryFn } from '../services/codeGraphAgentService';
+import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGrouper';
+import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
 import { generateDemoGraph } from '../services/demoGraphService';
 import { fileSystemService } from '../services/fileSystemService';
 
@@ -32,7 +33,6 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
   const [isAnalyzingDomain, setIsAnalyzingDomain] = useState(false);
   const [isGeneratingFlows, setIsGeneratingFlows] = useState(false);
-  const [flowSource, setFlowSource] = useState<'llm' | 'heuristic' | null>(null);
   const [graphCreationProgress, setGraphCreationProgress] = useState<{
     step: string; current: number; total: number;
   } | null>(null);
@@ -88,28 +88,43 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     codeGraphStorageService.saveCodeGraph(updated);
   }, []);
 
-  const createGraph = useCallback(async (repoId: string, llmSettings?: LLMSettings) => {
+  const createGraph = useCallback(async (
+    repoId: string,
+    llmSettings?: LLMSettings,
+    onLogEntry?: LogEntryFn,
+  ) => {
     const handle = fileSystemService.getHandle(repoId);
     if (!handle) return null;
 
     setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
+    onLogEntry?.('scan', 'Scanning codebase...');
 
     let analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
+    onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
     // Try AI-powered grouping if LLM is configured
     if (llmSettings) {
       const config = llmSettings.providers[llmSettings.activeProvider];
       if (config?.apiKey) {
+        onLogEntry?.('info', 'Starting AI analysis pipeline');
         try {
           analysis = await analyzeCodebaseWithAI(
             analysis,
             llmSettings,
             (step, current, total) => setGraphCreationProgress({ step, current, total }),
+            onLogEntry,
           );
         } catch {
-          // Fallback: keep original directory-based analysis
+          onLogEntry?.('info', 'AI analysis failed, using heuristic grouping');
+          analysis = groupByFunctionalHeuristics(analysis);
         }
+      } else {
+        onLogEntry?.('info', 'No API key configured, using heuristic grouping');
+        analysis = groupByFunctionalHeuristics(analysis);
       }
+    } else {
+      onLogEntry?.('info', 'No AI configured, using heuristic grouping');
+      analysis = groupByFunctionalHeuristics(analysis);
     }
 
     setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
@@ -119,10 +134,13 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       repoId,
       handle.name,
       activeWorkspaceId,
-      handle
+      handle,
+      undefined,
+      (message, current, total) => setGraphCreationProgress({ step: message, current, total }),
+      onLogEntry,
     );
 
-    // Generate flows
+    // Generate flows (AI only — skips if no LLM configured)
     setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
     setIsGeneratingFlows(true);
     try {
@@ -130,15 +148,22 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         graph,
         llmSettings,
         (step, current, total) => setGraphCreationProgress({ step, current, total }),
+        undefined,
+        onLogEntry,
       );
-      graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
-      setFlowSource(flowResult.source);
+      if (Object.keys(flowResult.flows).length > 0) {
+        graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+      }
     } catch {
       // Non-fatal: graph works without flows
       console.warn('[CodeGraph] Flow generation failed');
+      onLogEntry?.('flow', 'Flow generation failed (non-fatal)');
     } finally {
       setIsGeneratingFlows(false);
     }
+
+    const nodeCount = Object.keys(graph.nodes).length;
+    onLogEntry?.('info', `Graph creation complete (${nodeCount} nodes)`);
 
     setCodeGraphs(prev => [...prev, graph]);
     codeGraphStorageService.saveCodeGraph(graph);
@@ -186,7 +211,10 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
   // --- Flow regeneration ---
 
-  const regenerateFlows = useCallback(async (llmSettings?: LLMSettings) => {
+  const regenerateFlows = useCallback(async (
+    llmSettings?: LLMSettings,
+    options?: FlowGenerationOptions,
+  ) => {
     if (!activeGraph) return;
 
     setIsGeneratingFlows(true);
@@ -196,14 +224,41 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         activeGraph,
         llmSettings,
         (step, current, total) => setGraphCreationProgress({ step, current, total }),
+        options,
       );
+
+      // If generation returned nothing, preserve existing flows
+      if (Object.keys(flowResult.flows).length === 0) {
+        console.warn('[CodeGraph] Flow generation returned 0 flows, keeping existing');
+        return;
+      }
+
+      let mergedFlows: Record<string, import('../types').GraphFlow>;
+
+      if (options?.customPrompt) {
+        // Custom prompt: merge new flows into existing (additive)
+        mergedFlows = { ...activeGraph.flows, ...flowResult.flows };
+      } else if (options?.scopeNodeId) {
+        // Scoped regenerate: replace flows at this scope, keep other scopes
+        const scopeId = options.scopeNodeId;
+        const kept: Record<string, import('../types').GraphFlow> = {};
+        for (const [id, flow] of Object.entries(activeGraph.flows)) {
+          if (flow.scopeNodeId !== scopeId) {
+            kept[id] = flow;
+          }
+        }
+        mergedFlows = { ...kept, ...flowResult.flows };
+      } else {
+        // Full regenerate: replace all
+        mergedFlows = flowResult.flows;
+      }
+
       const updated: CodeGraph = {
         ...activeGraph,
-        flows: flowResult.flows,
+        flows: mergedFlows,
         updatedAt: Date.now(),
       };
       updateGraph(updated);
-      setFlowSource(flowResult.source);
     } finally {
       setIsGeneratingFlows(false);
       setGraphCreationProgress(null);
@@ -324,7 +379,6 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     selectedNode,
     isAnalyzingDomain,
     isGeneratingFlows,
-    flowSource,
     graphCreationProgress,
     contextualFlows,
     activeFlow,

@@ -13,6 +13,7 @@ import {
   CodebaseAnalysis, CodebaseModule, AnalyzedFile, ScannedEntity,
   SyncLockEntry, SourceReference, CodeGraphConfig, ScanConfig,
 } from '../types';
+import type { LogEntryFn } from './codeGraphAgentService';
 import { codeGraphModelService } from './codeGraphModelService';
 import { codeParserService } from './codeParserService';
 import { fileSystemService } from './fileSystemService';
@@ -82,10 +83,13 @@ export async function parseCodebaseToGraph(
   repoName: string,
   workspaceId: string,
   handle?: FileSystemDirectoryHandle,
-  config?: CodeGraphConfig
+  config?: CodeGraphConfig,
+  onProgress?: (message: string, current: number, total: number) => void,
+  onLogEntry?: LogEntryFn,
 ): Promise<CodeGraph> {
   let graph = codeGraphModelService.createEmptyGraph(workspaceId, repoId, repoName);
   const rootId = graph.rootNodeId;
+  const totalFiles = analysis.modules.reduce((sum, m) => sum + m.files.length, 0);
 
   // Maps for cross-referencing
   const moduleIdMap = new Map<string, string>();   // moduleName → nodeId
@@ -93,6 +97,8 @@ export async function parseCodebaseToGraph(
   const symbolIdMap = new Map<string, string>();    // "filePath:symbolName" → nodeId
 
   // D1: Modules/packages
+  onProgress?.('Creating modules', 0, totalFiles);
+  onLogEntry?.('parse', `Creating ${analysis.modules.length} modules`);
   for (const mod of analysis.modules) {
     const nodeId = generateId();
     moduleIdMap.set(mod.name, nodeId);
@@ -100,6 +106,7 @@ export async function parseCodebaseToGraph(
     const node: GraphNode = {
       id: nodeId,
       name: mod.name,
+      description: mod.description,
       kind: 'package',
       depth: 1,
       parentId: rootId,
@@ -119,10 +126,16 @@ export async function parseCodebaseToGraph(
   }
 
   // D2: Files
+  let fileCounter = 0;
   for (const mod of analysis.modules) {
     const moduleNodeId = moduleIdMap.get(mod.name)!;
 
     for (const file of mod.files) {
+      fileCounter++;
+      onProgress?.('Processing files', fileCounter, totalFiles);
+      if (fileCounter % 10 === 0 || fileCounter === totalFiles) {
+        onLogEntry?.('parse', `Processing files (${fileCounter}/${totalFiles})`, file.filePath.split('/').pop());
+      }
       const fileNodeId = generateId();
       fileIdMap.set(file.filePath, fileNodeId);
 
@@ -209,9 +222,13 @@ export async function parseCodebaseToGraph(
   }
 
   // Relations from imports: file-level depends_on
+  onLogEntry?.('resolve', `Resolving dependencies (${totalFiles} files)`);
   const allFilePaths = Array.from(fileIdMap.keys());
+  let importCounter = 0;
   for (const mod of analysis.modules) {
     for (const file of mod.files) {
+      importCounter++;
+      onProgress?.('Resolving dependencies', importCounter, totalFiles);
       const fileNodeId = fileIdMap.get(file.filePath);
       if (!fileNodeId) continue;
 
@@ -232,8 +249,12 @@ export async function parseCodebaseToGraph(
 
   // Relations from class hierarchy
   if (handle) {
+    onLogEntry?.('hierarchy', `Analyzing class hierarchy (${totalFiles} files)`);
+    let hierarchyCounter = 0;
     for (const mod of analysis.modules) {
       for (const file of mod.files) {
+        hierarchyCounter++;
+        onProgress?.('Analyzing class hierarchy', hierarchyCounter, totalFiles);
         try {
           const content = await fileSystemService.readFile(handle, file.filePath);
           const language = fileSystemService.getLanguage(file.filePath);

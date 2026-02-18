@@ -8,8 +8,11 @@
  * Falls back to directory-based grouping when LLM is unavailable or fails.
  */
 
-import { CodebaseAnalysis, CodebaseModule, AnalyzedFile, LLMSettings } from '../types';
+import { CodebaseAnalysis, CodebaseModule, AnalyzedFile, LLMSettings, ProgressLogCategory } from '../types';
 import { llmService } from './llmService';
+import { groupByFunctionalHeuristics } from './codeGraphHeuristicGrouper';
+
+export type LogEntryFn = (category: ProgressLogCategory, message: string, detail?: string) => void;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -233,13 +236,22 @@ function buildArchitectSystem(filePaths: string[]): string {
 
 CRITICAL RULES:
 1. Group by FUNCTIONAL COHESION, not directory structure
-2. Module names must be descriptive domain concepts (e.g. "Authentication", "Diagram Editor", "AI Intelligence")
+2. Module names must be descriptive domain concepts
 3. NEVER use technical groupings like "Services", "Hooks", "Components", "Utils" as module names
 4. Files from different directories that implement the same feature MUST be in the same module
 5. Every file must be in exactly one module
 6. Create between 2 and 10 modules
 7. Relationships describe data/control flow between modules
 8. File paths in the "files" arrays MUST be copied EXACTLY from the input — do NOT add "./" prefix or change them
+9. Each module MUST have a "description" explaining its functional purpose (1-2 sentences)
+
+GROUPING HINTS:
+- A component + its hook + its service = SAME module (e.g. "ChatPanel.tsx" + "useChatHandlers.ts" + "aiChatService.ts" → "AI Intelligence")
+- If file A imports heavily from file B, they likely belong together
+- Think in terms of user-facing FEATURES, not code layers
+
+GOOD module names: "Diagram Editor", "AI Intelligence", "Code Sync", "Navigation", "Workspace Management", "Import & Export"
+BAD module names: "Services", "Components", "Hooks", "Utils", "Core", "Lib"
 
 VALID FILE PATHS (use these exact strings):
 ${fileList}
@@ -247,7 +259,7 @@ ${fileList}
 Respond with a JSON object:
 {
   "modules": [
-    { "name": "Module Name", "description": "What this module does", "files": ["path1.ts", "path2.tsx"] }
+    { "name": "Module Name", "description": "What this module handles, in 1-2 sentences", "files": ["path1.ts", "path2.tsx"] }
   ],
   "relationships": [
     { "from": "Module A", "to": "Module B", "label": "what flows between them" }
@@ -403,6 +415,7 @@ export async function analyzeCodebaseWithAI(
   analysis: CodebaseAnalysis,
   llmSettings: LLMSettings,
   onProgress?: (step: string, current: number, total: number) => void,
+  onLogEntry?: LogEntryFn,
 ): Promise<CodebaseAnalysis> {
   const allFiles = analysis.modules.flatMap(m => m.files);
   if (allFiles.length === 0) return analysis;
@@ -427,8 +440,11 @@ export async function analyzeCodebaseWithAI(
   const allAnalyses: FileAnalysis[] = [];
   for (let i = 0; i < batches.length; i++) {
     onProgress?.('Analyzing files', i + 1, totalSteps);
+    const batchFileNames = batches[i].map(f => f.path.split('/').pop()).join(', ');
+    onLogEntry?.('ai-analyze', `Analyzing batch ${i + 1}/${batches.length} (${batches[i].length} files)`, batchFileNames);
     const batchResults = await analyzeFilesBatch(batches[i], llmSettings);
     allAnalyses.push(...batchResults);
+    onLogEntry?.('ai-analyze', `Batch ${i + 1} complete: ${batchResults.length} file analyses`);
   }
 
   console.log(`[CodeGraph] Agent 1 complete: ${allAnalyses.length} file analyses`);
@@ -463,11 +479,13 @@ export async function analyzeCodebaseWithAI(
 
   // Agent 2: Build architecture
   onProgress?.('Building architecture', batches.length + 1, totalSteps);
+  onLogEntry?.('ai-architect', 'Building functional architecture...');
   const blueprint = await buildArchitecture(allAnalyses, importEdges, llmSettings);
 
   if (!blueprint) {
-    console.warn('[CodeGraph] AI pipeline failed, returning directory-based grouping');
-    return analysis;
+    onLogEntry?.('ai-architect', 'AI architecture failed, falling back to heuristic grouping');
+    console.warn('[CodeGraph] AI pipeline failed, falling back to heuristic grouping');
+    return groupByFunctionalHeuristics(analysis);
   }
 
   // Convert blueprint to CodebaseAnalysis modules
@@ -488,12 +506,15 @@ export async function analyzeCodebaseWithAI(
 
     return {
       name: mod.name,
+      description: mod.description,
       path: files[0]?.filePath.split('/')[0] || '',
       files,
       dependencies,
     };
   });
 
+  const moduleNames = modules.map(m => m.name).join(', ');
+  onLogEntry?.('ai-architect', `Architecture: ${modules.length} modules, ${blueprint.relationships.length} relationships`, moduleNames);
   console.log(`[CodeGraph] AI pipeline success: ${modules.map(m => `${m.name}(${m.files.length})`).join(', ')}`);
 
   return {

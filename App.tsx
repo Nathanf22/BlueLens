@@ -28,6 +28,7 @@ import { useScanHandlers } from './hooks/useScanHandlers';
 import { useCodebaseImport } from './hooks/useCodebaseImport';
 import { useCodeGraph } from './hooks/useCodeGraph';
 import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
+import { useProgressLog } from './hooks/useProgressLog';
 import { codeGraphStorageService } from './services/codeGraphStorageService';
 
 export default function App() {
@@ -148,17 +149,29 @@ export default function App() {
       setActiveId,
     });
 
+  // --- Progress Log ---
+  const progressLog = useProgressLog();
+
   // --- CodeGraph ---
   const codeGraph = useCodeGraph(activeWorkspaceId);
   const codeGraphHandlers = useCodeGraphHandlers(codeGraph.activeGraph, codeGraph.updateGraph);
 
-  const handleCreateGraph = useCallback((repoId: string) => {
-    return codeGraph.createGraph(repoId, llmSettings);
-  }, [codeGraph.createGraph, llmSettings]);
+  const handleCreateGraph = useCallback(async (repoId: string) => {
+    progressLog.startLog();
+    try {
+      const result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry);
+      return result;
+    } finally {
+      progressLog.endLog();
+    }
+  }, [codeGraph.createGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog]);
 
-  const handleRegenerateFlows = useCallback(() => {
-    codeGraph.regenerateFlows(llmSettings);
-  }, [codeGraph.regenerateFlows, llmSettings]);
+  const handleRegenerateFlows = useCallback(
+    (options?: { scopeNodeId?: string; customPrompt?: string }) => {
+      codeGraph.regenerateFlows(llmSettings, options);
+    },
+    [codeGraph.regenerateFlows, llmSettings]
+  );
 
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {
     codeGraphStorageService.saveCodeGraphConfig(config);
@@ -430,8 +443,12 @@ export default function App() {
           onCodeGraphSelectFlow={codeGraph.selectFlow}
           onCodeGraphDeselectFlow={codeGraph.deselectFlow}
           codeGraphIsGeneratingFlows={codeGraph.isGeneratingFlows}
-          codeGraphFlowSource={codeGraph.flowSource}
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
+          progressLogEntries={progressLog.entries}
+          isProgressLogActive={progressLog.isActive}
+          isProgressLogExpanded={progressLog.isExpanded}
+          onToggleProgressLog={progressLog.toggleExpanded}
+          onDismissProgressLog={progressLog.dismiss}
         />
       </div>
 

@@ -252,6 +252,7 @@ export interface AnalyzedFile {
 
 export interface CodebaseModule {
   name: string;
+  description?: string;
   path: string;
   files: AnalyzedFile[];
   dependencies: string[];
@@ -294,6 +295,20 @@ export interface CodebaseImportProgress {
   diagramsCreated?: number;
 }
 
+// --- Progress Log ---
+
+export type ProgressLogCategory =
+  | 'scan' | 'ai-analyze' | 'ai-architect' | 'parse'
+  | 'resolve' | 'hierarchy' | 'flow' | 'info';
+
+export interface ProgressLogEntry {
+  id: string;
+  timestamp: number;        // elapsed ms since start
+  category: ProgressLogCategory;
+  message: string;
+  detail?: string;          // extra info (file names, counts)
+}
+
 // --- CodeGraph (RFC-0001) ---
 
 export type GraphDepth = 0 | 1 | 2 | 3 | 4;
@@ -332,6 +347,7 @@ export interface SourceReference {
 export interface GraphNode {
   id: string;
   name: string;
+  description?: string;
   kind: GraphNodeKind;
   depth: GraphDepth;
   parentId: string | null;

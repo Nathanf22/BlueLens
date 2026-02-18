@@ -29,6 +29,7 @@ const DOMAIN_COLOR = '#60a5fa'; // blue-400 for domain nodes
 interface ForceNode {
   id: string;
   name: string;
+  description?: string;
   kind: GraphNodeKind | 'domain';
   depth: number;
   val: number;
@@ -156,6 +157,18 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#e2e8f0';
     ctx.fillText(node.name, x, y + radius + 2);
+
+    // Description subtitle for D1 (package) nodes
+    if (node.description && node.kind === 'package' && globalScale > 0.6) {
+      const descFontSize = Math.max(8 / globalScale, 1.2);
+      ctx.font = `${descFontSize}px sans-serif`;
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
+      const maxLen = 35;
+      const desc = node.description.length > maxLen
+        ? node.description.slice(0, maxLen) + '...'
+        : node.description;
+      ctx.fillText(desc, x, y + radius + 2 + fontSize + 2);
+    }
   }, []);
 
   // Hit area for pointer detection
@@ -312,6 +325,7 @@ function buildStandardGraphData(
   const nodes: ForceNode[] = visibleNodes.map(node => ({
     id: node.id,
     name: node.name,
+    description: node.description,
     kind: node.kind,
     depth: node.depth,
     val: Math.max(2, (node.children?.length || 0) + 1),

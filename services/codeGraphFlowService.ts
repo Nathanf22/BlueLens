@@ -1,16 +1,16 @@
 /**
  * Automatic flow generation for CodeGraph.
  *
- * Three layers:
+ * Two layers:
  *   1. Graph summary extraction — extracts D1-D3 nodes, relations with labels,
  *      symbol inventories, and import semantics to give the LLM deep context.
- *   2a. Heuristic flow generation (fallback) — uses relation labels for arrows
- *   2b. LLM flow generation (primary) — rich prompt with file contents/symbols
- *   3. Orchestrator
+ *   2. LLM flow generation — rich prompt with file contents/symbols
+ *   3. Orchestrator — returns empty if LLM unavailable (preserves existing flows)
  */
 
-import { CodeGraph, GraphFlow, GraphFlowStep, GraphNode, GraphRelation, LLMSettings } from '../types';
+import { CodeGraph, GraphFlow, GraphFlowStep, GraphNode, LLMSettings } from '../types';
 import { llmService } from './llmService';
+import type { LogEntryFn } from './codeGraphAgentService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -50,14 +50,26 @@ interface GraphSummary {
   callEdges: Array<{ callerFile: string; callerSymbol: string; calleeFile: string; calleeSymbol: string }>;
 }
 
-function buildGraphSummary(graph: CodeGraph): GraphSummary {
+function buildGraphSummary(graph: CodeGraph, scopeNodeId?: string): GraphSummary {
   const nodes = graph.nodes;
   const relations = Object.values(graph.relations);
 
   // D1 = modules (packages), D2 = files (modules), D3 = symbols
-  const d1Nodes = Object.values(nodes).filter(n => n.depth === 1);
-  const d2Nodes = Object.values(nodes).filter(n => n.depth === 2);
-  const d3Nodes = Object.values(nodes).filter(n => n.depth === 3);
+  let d1Nodes = Object.values(nodes).filter(n => n.depth === 1);
+  let d2Nodes = Object.values(nodes).filter(n => n.depth === 2);
+  let d3Nodes = Object.values(nodes).filter(n => n.depth === 3);
+
+  // When scoped to a specific module, filter to only its children
+  if (scopeNodeId && scopeNodeId !== graph.rootNodeId) {
+    const scopeNode = nodes[scopeNodeId];
+    if (scopeNode && scopeNode.depth === 1) {
+      d1Nodes = [scopeNode];
+      const childIds = new Set(scopeNode.children);
+      d2Nodes = d2Nodes.filter(n => childIds.has(n.id));
+      const d2Ids = new Set(d2Nodes.map(n => n.id));
+      d3Nodes = d3Nodes.filter(n => n.parentId && d2Ids.has(n.parentId));
+    }
+  }
 
   // Build lookups
   const fileToModule = new Map<string, GraphNode>();
@@ -181,155 +193,7 @@ function buildGraphSummary(graph: CodeGraph): GraphSummary {
   return { rootNodeId: graph.rootNodeId, modules, fileEdges, entryPoints, callEdges };
 }
 
-// ── Layer 2a: Heuristic Flow Generation ────────────────────────────
-
-function generateFlowsHeuristic(graph: CodeGraph, summary: GraphSummary): Record<string, GraphFlow> {
-  const flows: Record<string, GraphFlow> = {};
-
-  // Build adjacency list with edge labels
-  const adj = new Map<string, Array<{ target: string; label: string }>>();
-  for (const edge of summary.fileEdges) {
-    if (!adj.has(edge.sourceId)) adj.set(edge.sourceId, []);
-    adj.get(edge.sourceId)!.push({ target: edge.targetId, label: edge.label });
-  }
-
-  // Module lookup for node IDs
-  const nodeToModule = new Map<string, string>();
-  for (const mod of summary.modules) {
-    for (const file of mod.files) {
-      nodeToModule.set(file.nodeId, mod.nodeId);
-    }
-  }
-
-  // File symbol lookup for labels
-  const fileSymbols = new Map<string, FileSymbol[]>();
-  for (const mod of summary.modules) {
-    for (const file of mod.files) {
-      fileSymbols.set(file.nodeId, file.symbols);
-    }
-  }
-
-  // DFS from each entry point, collecting edge labels along the way
-  const chains: Array<{
-    nodes: string[];
-    modules: Set<string>;
-    edgeLabels: string[];  // label between consecutive nodes
-  }> = [];
-
-  for (const entry of summary.entryPoints) {
-    const visited = new Set<string>();
-    const chain: string[] = [];
-    const labels: string[] = [];
-
-    function dfs(nodeId: string, depth: number) {
-      if (depth > 8 || visited.has(nodeId)) return;
-      visited.add(nodeId);
-      chain.push(nodeId);
-
-      const neighbors = adj.get(nodeId) || [];
-      for (const { target, label } of neighbors) {
-        if (!visited.has(target)) {
-          labels.push(label);
-          dfs(target, depth + 1);
-        }
-      }
-    }
-
-    dfs(entry.nodeId, 0);
-
-    if (chain.length >= 3) {
-      const modulesInChain = new Set<string>();
-      for (const nid of chain) {
-        const mid = nodeToModule.get(nid);
-        if (mid) modulesInChain.add(mid);
-      }
-      chains.push({ nodes: [...chain], modules: modulesInChain, edgeLabels: [...labels] });
-    }
-  }
-
-  // Deduplicate: if two chains share >70% nodes, keep longer
-  const deduped: typeof chains = [];
-  for (const chain of chains) {
-    let isDuplicate = false;
-    for (const existing of deduped) {
-      const existingSet = new Set(existing.nodes);
-      const overlap = chain.nodes.filter(n => existingSet.has(n)).length;
-      const maxLen = Math.max(chain.nodes.length, existing.nodes.length);
-      if (overlap / maxLen > 0.7) {
-        if (chain.nodes.length > existing.nodes.length) {
-          existing.nodes = chain.nodes;
-          existing.modules = chain.modules;
-          existing.edgeLabels = chain.edgeLabels;
-        }
-        isDuplicate = true;
-        break;
-      }
-    }
-    if (!isDuplicate) deduped.push(chain);
-  }
-
-  // Convert chains to flows with richer labels
-  for (const chain of deduped) {
-    const isRootLevel = chain.modules.size > 1;
-    const scopeNodeId = isRootLevel
-      ? summary.rootNodeId
-      : (chain.modules.values().next().value || summary.rootNodeId);
-
-    const firstName = graph.nodes[chain.nodes[0]]?.name || 'unknown';
-    const lastName = graph.nodes[chain.nodes[chain.nodes.length - 1]]?.name || 'unknown';
-
-    // Build a more descriptive name using symbols
-    const firstSymbols = fileSymbols.get(chain.nodes[0]) || [];
-    const mainSymbol = firstSymbols.find(s => s.kind === 'function' || s.kind === 'class');
-    const name = isRootLevel
-      ? mainSymbol
-        ? `${mainSymbol.name} (${firstName} → ${lastName})`
-        : `${firstName} → ${lastName}`
-      : mainSymbol
-        ? `${mainSymbol.name} flow`
-        : `${firstName} chain`;
-
-    const steps: GraphFlowStep[] = chain.nodes.map((nodeId, i) => {
-      const node = graph.nodes[nodeId];
-      const syms = fileSymbols.get(nodeId) || [];
-      // Use the primary symbol name if available
-      const mainSym = syms.find(s => s.kind === 'function' || s.kind === 'class');
-      const label = mainSym
-        ? `${mainSym.name} (${node?.name || nodeId})`
-        : node?.name || nodeId;
-      return { nodeId, label, order: i };
-    });
-
-    // Build sequence diagram with real edge labels
-    const participants = steps.map(s => {
-      const shortName = s.label.replace(/\.[^.]+$/, '');
-      return `  participant ${s.nodeId} as ${shortName}`;
-    }).join('\n');
-
-    const arrows = steps.slice(0, -1).map((s, i) => {
-      const edgeLabel = chain.edgeLabels[i] || 'depends_on';
-      return `  ${s.nodeId}->>${steps[i + 1].nodeId}: ${edgeLabel}`;
-    }).join('\n');
-
-    const sequenceDiagram = `sequenceDiagram\n${participants}\n${arrows}`;
-
-    // Build description from symbol info
-    const symbolNames = chain.nodes
-      .map(nid => (fileSymbols.get(nid) || []).map(s => s.name))
-      .flat()
-      .slice(0, 5);
-    const description = symbolNames.length > 0
-      ? `${isRootLevel ? 'Cross-module' : 'Module-level'} flow involving ${symbolNames.join(', ')}`
-      : `${isRootLevel ? 'Cross-module' : 'Module-level'} flow: ${steps.length} steps`;
-
-    const id = generateId();
-    flows[id] = { id, name, description, scopeNodeId, steps, sequenceDiagram };
-  }
-
-  return flows;
-}
-
-// ── Layer 2b: LLM Flow Generation ──────────────────────────────────
+// ── Layer 2: LLM Flow Generation ───────────────────────────────────
 
 function extractJSON(text: string): string {
   const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)```/);
@@ -344,7 +208,7 @@ function extractJSON(text: string): string {
   return text.trim();
 }
 
-function buildFlowSystemPrompt(summary: GraphSummary): string {
+function buildFlowSystemPrompt(summary: GraphSummary, customPrompt?: string): string {
   // Build rich module structure with symbols per file
   const moduleList = summary.modules.map(m => {
     const files = m.files.map(f => {
@@ -362,6 +226,10 @@ function buildFlowSystemPrompt(summary: GraphSummary): string {
     ...summary.modules.flatMap(m => m.files.map(f => f.nodeId)),
   ];
 
+  const taskDescription = customPrompt
+    ? `YOUR TASK: Generate flows that address the user's request. Focus on flows that are relevant to:\n"${customPrompt}"\n\nGenerate 1-5 focused flows matching the user's intent.`
+    : 'YOUR TASK: Identify 5-15 critical runtime flows that represent real use cases and data paths.';
+
   return `You are a senior software architect. You are analyzing a codebase graph to identify the critical RUNTIME FLOWS — the actual paths data and control follow when the application runs.
 
 You have access to:
@@ -370,7 +238,7 @@ You have access to:
 - Import/dependency edges between files (with the imported symbol names)
 - Function-to-function call relationships
 
-YOUR TASK: Identify 5-15 critical runtime flows that represent real use cases and data paths.
+${taskDescription}
 
 QUALITY REQUIREMENTS:
 1. Each flow must tell a STORY: "User does X → system processes via Y → result Z"
@@ -517,6 +385,7 @@ async function generateFlowsWithLLM(
   graph: CodeGraph,
   summary: GraphSummary,
   llmSettings: LLMSettings,
+  customPrompt?: string,
 ): Promise<Record<string, GraphFlow> | null> {
   const validNodeIds = new Set<string>([
     summary.rootNodeId,
@@ -542,14 +411,17 @@ async function generateFlowsWithLLM(
     };
   }
 
-  const systemPrompt = buildFlowSystemPrompt(promptSummary);
+  const systemPrompt = buildFlowSystemPrompt(promptSummary, customPrompt);
   const userPrompt = buildFlowUserPrompt(promptSummary);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
+      const basePrompt = customPrompt
+        ? `${userPrompt}\n\nADDITIONAL CONTEXT FROM USER:\n${customPrompt}`
+        : userPrompt;
       const userContent = attempt === 0
-        ? userPrompt
-        : `${userPrompt}\n\nPrevious response was invalid. Return ONLY valid JSON matching the schema. All nodeIds must come from the valid list. Make sure sequenceDiagram starts with "sequenceDiagram".`;
+        ? basePrompt
+        : `${basePrompt}\n\nPrevious response was invalid. Return ONLY valid JSON matching the schema. All nodeIds must come from the valid list. Make sure sequenceDiagram starts with "sequenceDiagram".`;
 
       const response = await llmService.sendMessage(
         [{ role: 'user', content: userContent }],
@@ -580,55 +452,71 @@ async function generateFlowsWithLLM(
 
 export interface FlowGenerationResult {
   flows: Record<string, GraphFlow>;
-  source: 'llm' | 'heuristic';
   warnings: string[];
+}
+
+export interface FlowGenerationOptions {
+  scopeNodeId?: string;    // only generate for this scope level
+  customPrompt?: string;   // user's additional context/question
 }
 
 export async function generateFlows(
   graph: CodeGraph,
   llmSettings?: LLMSettings,
   onProgress?: (step: string, current: number, total: number) => void,
+  options?: FlowGenerationOptions,
+  onLogEntry?: LogEntryFn,
 ): Promise<FlowGenerationResult> {
   const warnings: string[] = [];
+  const { scopeNodeId, customPrompt } = options || {};
 
   // Check for empty graph
   const d2Nodes = Object.values(graph.nodes).filter(n => n.depth === 2);
   if (d2Nodes.length === 0) {
     warnings.push('Graph has no file-level nodes — cannot generate flows');
-    return { flows: {}, source: 'heuristic', warnings };
+    return { flows: {}, warnings };
+  }
+
+  // Flows require AI — bail early if not configured
+  if (!llmSettings) {
+    warnings.push('Flow generation requires AI — configure AI settings to generate flows');
+    onLogEntry?.('flow', 'Skipped: no AI configured');
+    return { flows: {}, warnings };
+  }
+
+  const config = llmSettings.providers[llmSettings.activeProvider];
+  if (!config?.apiKey) {
+    warnings.push('Flow generation requires an API key — configure AI settings');
+    onLogEntry?.('flow', 'Skipped: no API key configured');
+    return { flows: {}, warnings };
   }
 
   onProgress?.('Analyzing graph structure', 0, 2);
-  const summary = buildGraphSummary(graph);
+  onLogEntry?.('flow', 'Analyzing graph structure');
+  const summary = buildGraphSummary(graph, scopeNodeId);
 
-  // Try LLM if configured
-  if (llmSettings) {
-    const config = llmSettings.providers[llmSettings.activeProvider];
-    if (config?.apiKey) {
-      onProgress?.('Generating flows with AI', 1, 2);
-      const llmFlows = await generateFlowsWithLLM(graph, summary, llmSettings);
-      if (llmFlows && Object.keys(llmFlows).length > 0) {
-        onProgress?.('Done', 2, 2);
-        return { flows: llmFlows, source: 'llm', warnings };
+  onProgress?.('Generating flows with AI', 1, 2);
+  onLogEntry?.('flow', 'Generating flows with AI');
+  const llmFlows = await generateFlowsWithLLM(graph, summary, llmSettings, customPrompt);
+
+  if (llmFlows && Object.keys(llmFlows).length > 0) {
+    if (scopeNodeId) {
+      for (const flow of Object.values(llmFlows)) {
+        flow.scopeNodeId = scopeNodeId;
       }
-      warnings.push('LLM flow generation failed — using heuristic fallback');
     }
+    onProgress?.('Done', 2, 2);
+    onLogEntry?.('flow', `Generated ${Object.keys(llmFlows).length} flows`);
+    return { flows: llmFlows, warnings };
   }
 
-  // Heuristic fallback
-  onProgress?.('Generating flows (heuristic)', 1, 2);
-  const heuristicFlows = generateFlowsHeuristic(graph, summary);
-
-  if (Object.keys(heuristicFlows).length === 0) {
-    warnings.push('No flows could be generated from graph structure');
-  }
-
+  warnings.push('AI flow generation failed after retries');
+  onLogEntry?.('flow', 'AI flow generation failed after retries');
   onProgress?.('Done', 2, 2);
-  return { flows: heuristicFlows, source: 'heuristic', warnings };
+  return { flows: {}, warnings };
 }
 
 export const codeGraphFlowService = {
   generateFlows,
   buildGraphSummary,
-  generateFlowsHeuristic,
 };
