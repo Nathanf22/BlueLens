@@ -20,6 +20,7 @@ export const useRepoHandlers = (
 
     const id = generateId();
     fileSystemService.storeHandle(id, result.handle);
+    await fileSystemService.persistHandle(id, result.handle);
 
     const newRepo: RepoConfig = {
       id,
@@ -39,11 +40,22 @@ export const useRepoHandlers = (
   const handleReopenRepo = async (repoId: string) => {
     if (!fileSystemService.isSupported()) return;
 
+    // Try to reconnect using the persisted handle (shows a small permission
+    // prompt instead of the full directory picker).
+    const reconnected = await fileSystemService.reconnectRepo(repoId);
+    if (reconnected) {
+      setRepos(prev =>
+        prev.map(r => (r.id === repoId ? { ...r, name: reconnected.name } : r))
+      );
+      return;
+    }
+
+    // Persisted handle not available or permission denied — fall back to picker.
     const result = await fileSystemService.openDirectory();
     if (!result) return;
 
     fileSystemService.storeHandle(repoId, result.handle);
-    // Update the name in case the user picked a different directory
+    await fileSystemService.persistHandle(repoId, result.handle);
     setRepos(prev =>
       prev.map(r => (r.id === repoId ? { ...r, name: result.name } : r))
     );

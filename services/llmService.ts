@@ -10,7 +10,7 @@ import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig } 
 const DEFAULT_MODELS: Record<LLMProvider, string> = {
   gemini: 'gemini-3-flash-preview',
   openai: 'gpt-4o-mini',
-  anthropic: 'claude-sonnet-4-5-20250929',
+  anthropic: 'claude-sonnet-4-6',
 };
 
 async function sendGemini(

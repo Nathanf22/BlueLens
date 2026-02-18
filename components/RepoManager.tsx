@@ -62,36 +62,64 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
                 return (
                   <div
                     key={repo.id}
-                    className="flex items-center justify-between p-3 bg-dark-800 rounded-lg border border-gray-700"
+                    className="bg-dark-800 rounded-lg border border-gray-700 overflow-hidden"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <FolderOpen className={`w-4 h-4 flex-shrink-0 ${isConnected ? 'text-green-400' : 'text-gray-500'}`} />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-200 truncate">{repo.name}</p>
-                        <p className={`text-xs ${isConnected ? 'text-green-400' : 'text-gray-500'}`}>
-                          {isConnected ? 'Connected' : 'Disconnected — reopen to reconnect'}
-                        </p>
+                    {/* Top row: info + disconnect/remove */}
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FolderOpen className={`w-4 h-4 flex-shrink-0 ${isConnected ? 'text-green-400' : 'text-gray-500'}`} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-200 truncate">{repo.name}</p>
+                          <p className={`text-xs ${isConnected ? 'text-green-400' : 'text-gray-500'}`}>
+                            {isConnected ? 'Connected' : 'Disconnected'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {!isConnected && (
+                          <button
+                            onClick={() => onReopenRepo(repo.id)}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded hover:bg-dark-700 text-brand-400 hover:text-brand-300 transition-colors text-xs font-medium"
+                            title="Reconnect this repository"
+                            disabled={!isSupported}
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Reconnect
+                          </button>
+                        )}
+                        <button
+                          onClick={() => onRemoveRepo(repo.id)}
+                          className="p-2 rounded hover:bg-red-500/10 text-red-400 hover:text-red-300 transition-colors"
+                          title="Remove repository"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {!isConnected && (
-                        <button
-                          onClick={() => onReopenRepo(repo.id)}
-                          className="p-2 rounded hover:bg-dark-700 text-brand-400 hover:text-brand-300 transition-colors"
-                          title="Reopen directory"
-                          disabled={!isSupported}
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => onRemoveRepo(repo.id)}
-                        className="p-2 rounded hover:bg-red-500/10 text-red-400 hover:text-red-300 transition-colors"
-                        title="Remove repository"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+
+                    {/* Bottom row: actions for connected repos */}
+                    {isConnected && (onGenerateDiagrams || onCreateGraph) && (
+                      <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-700/60 bg-dark-900/40">
+                        {onGenerateDiagrams && (
+                          <button
+                            onClick={() => { onClose(); onGenerateDiagrams!(); }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700/80 hover:bg-green-600 text-white rounded text-xs font-medium transition-colors"
+                          >
+                            <GitBranch className="w-3.5 h-3.5" />
+                            Generate Diagrams
+                          </button>
+                        )}
+                        {onCreateGraph && (
+                          <button
+                            onClick={() => { onClose(); onCreateGraph!(repo.id); }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white rounded text-xs font-medium transition-colors"
+                          >
+                            <GitBranch className="w-3.5 h-3.5" />
+                            Create Code Graph
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -105,40 +133,14 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-700 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onAddRepo}
-              disabled={!isSupported}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg transition-colors text-sm font-medium"
-            >
-              <Plus className="w-4 h-4" />
-              Open Directory
-            </button>
-            {onGenerateDiagrams && repos.some(r => fileSystemService.hasHandle(r.id)) && (
-              <button
-                onClick={() => { onClose(); onGenerateDiagrams(); }}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
-              >
-                <GitBranch className="w-4 h-4" />
-                Generate Diagrams
-              </button>
-            )}
-            {onCreateGraph && repos.some(r => fileSystemService.hasHandle(r.id)) && (
-              <button
-                onClick={() => {
-                  const connected = repos.find(r => fileSystemService.hasHandle(r.id));
-                  if (connected) {
-                    onClose();
-                    onCreateGraph(connected.id);
-                  }
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-sm font-medium"
-              >
-                <GitBranch className="w-4 h-4" />
-                Create Code Graph
-              </button>
-            )}
-          </div>
+          <button
+            onClick={onAddRepo}
+            disabled={!isSupported}
+            className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg transition-colors text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Open Directory
+          </button>
           <button
             onClick={onClose}
             className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-200 rounded-lg transition-colors text-sm"
