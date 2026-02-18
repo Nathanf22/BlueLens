@@ -88,6 +88,14 @@ export const Preview: React.FC<PreviewProps> = ({
     handleMouseUp
   } = useNavigation(svgContent);
 
+  // Track fullscreen state to show name/description overlay
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
   // Keyboard navigation
   useKeyboardNavigation({
     onZoomIn: currentDiagram && currentDiagram.nodeLinks && currentDiagram.nodeLinks.length > 0 ? () => {} : undefined,
@@ -241,10 +249,20 @@ export const Preview: React.FC<PreviewProps> = ({
       
       {/* Breadcrumb Navigation */}
       {breadcrumbPath.length > 0 && (
-        <Breadcrumb 
+        <Breadcrumb
           path={breadcrumbPath}
           onNavigate={onBreadcrumbNavigate}
         />
+      )}
+
+      {/* Name + description — shown in fullscreen where editor and context bar are hidden */}
+      {isFullscreen && currentDiagram?.name && (
+        <div className="flex items-baseline gap-4 px-5 py-3 bg-dark-900/80 border-b border-gray-800 backdrop-blur-sm flex-shrink-0 pointer-events-none select-none">
+          <span className="text-lg font-semibold text-white truncate">{currentDiagram.name}</span>
+          {currentDiagram.description && (
+            <span className="text-sm text-gray-400 truncate">{currentDiagram.description}</span>
+          )}
+        </div>
       )}
       
       <PreviewToolbar 
