@@ -150,14 +150,17 @@ export const fileSystemService = {
 
     try {
       const permission = await (handle as any).requestPermission({ mode: 'read' });
-      if (permission === 'granted') {
-        repoHandleStore.set(repoId, handle);
-        return { name: handle.name };
-      }
+      if (permission === 'denied') return null;
+      // 'granted' or 'prompt' — store the handle.
+      // If 'prompt', the browser will ask for permission on first actual file read.
+      repoHandleStore.set(repoId, handle);
+      return { name: handle.name };
     } catch {
-      // requestPermission not supported or denied
+      // requestPermission not supported — store the handle anyway,
+      // the browser will prompt when it is actually used.
+      repoHandleStore.set(repoId, handle);
+      return { name: handle.name };
     }
-    return null;
   },
 
   async listDirectory(handle: FileSystemDirectoryHandle, path: string = ''): Promise<FileEntry[]> {

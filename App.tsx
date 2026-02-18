@@ -182,7 +182,22 @@ export default function App() {
     const node = codeGraph.activeGraph.nodes[nodeId];
     if (!node?.sourceRef) return;
 
-    const handle = fileSystemService.getHandle(codeGraph.activeGraph.repoId);
+    let handle = fileSystemService.getHandle(codeGraph.activeGraph.repoId);
+    if (!handle) {
+      // Handle lost (page refresh) — try to reconnect silently from IndexedDB.
+      // The user's click counts as a user gesture, so requestPermission() will work.
+      await fileSystemService.reconnectRepo(codeGraph.activeGraph.repoId);
+      handle = fileSystemService.getHandle(codeGraph.activeGraph.repoId);
+    }
+    if (!handle) {
+      // TODO(known-issue): repoId mismatch — graph.repoId references a repo that was
+      // removed+re-added (new UUID). Fallback picks the FIRST connected repo, which is
+      // wrong when multiple repos are connected. Proper fix: store repo *name* on the
+      // CodeGraph and resolve by name, or prompt the user to re-link the graph to a repo.
+      // Tracked: KNOWN_ISSUES.md
+      const fallbackRepo = workspaceRepos.find(r => fileSystemService.hasHandle(r.id));
+      if (fallbackRepo) handle = fileSystemService.getHandle(fallbackRepo.id);
+    }
     if (!handle) {
       alert('Repository is disconnected. Please reopen it from the Repo Manager.');
       setIsRepoManagerOpen(true);
@@ -284,7 +299,18 @@ export default function App() {
     const codeLink = (activeDiagram.codeLinks || []).find(cl => cl.nodeId === nodeId);
     if (!codeLink) return;
 
-    const handle = fileSystemService.getHandle(codeLink.repoId);
+    let handle = fileSystemService.getHandle(codeLink.repoId);
+    if (!handle) {
+      // Handle lost (page refresh) — try to reconnect silently from IndexedDB.
+      await fileSystemService.reconnectRepo(codeLink.repoId);
+      handle = fileSystemService.getHandle(codeLink.repoId);
+    }
+    if (!handle) {
+      // TODO(known-issue): same repoId mismatch as handleCodeGraphViewCode.
+      // Tracked: KNOWN_ISSUES.md
+      const fallbackRepo = workspaceRepos.find(r => fileSystemService.hasHandle(r.id));
+      if (fallbackRepo) handle = fileSystemService.getHandle(fallbackRepo.id);
+    }
     if (!handle) {
       alert('Repository is disconnected. Please reopen it from the Repo Manager.');
       setIsRepoManagerOpen(true);
