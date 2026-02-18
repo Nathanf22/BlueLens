@@ -1,301 +1,243 @@
-Blueprint
-Living Architecture Diagrams That Sync With Reality
+Blueprint — Core
 Product Requirements Document
-Version
-1.0
-Date
-February 2, 2026
-Status
-Draft - Pre-Development
+Version 2.0
+Date: February 17, 2026
+Status: Phases 1-3 Complete — Phases 4-5 Planned
+
+---
 
 Executive Summary
-Blueprint is a web-based tool designed for software architects, tech leads, and developers to create, visualize, and maintain living architecture diagrams that stay synchronized with their codebase. As AI-powered code generation becomes increasingly prevalent, the role of human developers is evolving toward architecture design, code review, and system comprehension. Blueprint addresses the critical need for architectural clarity in this new paradigm.
-The tool provides multi-level diagram navigation (from system overview to individual functions), bidirectional linking between diagrams and code, automated synchronization detection, real-time collaboration, and AI-assisted diagram management. Blueprint transforms static diagrams into dynamic, trustworthy sources of truth that evolve alongside the codebase.
+
+Blueprint is an open-source, client-side platform for creating and maintaining living architecture diagrams that stay synchronized with codebases. It runs entirely in the browser — no backend, no accounts, no data leaving the machine.
+
+This document covers the open-source core. A separate cloud product (Blueprint Cloud) will handle collaboration, cloud storage, hosted AI, and team features.
+
+---
+
 Problem Statement
-Current Challenges
-As AI tools increasingly handle code generation, developers face new challenges in managing and understanding complex systems:
-    • Diagrams become obsolete quickly: Architecture diagrams are created during design but rarely updated as code evolves, leading to documentation drift.
-    • Difficult to navigate complexity: Static diagrams cannot show both high-level system architecture and low-level implementation details simultaneously.
-    • Broken workflow: Developers must switch between multiple tools (diagram editors, AI assistants, code editors) to update and validate diagrams.
-    • Poor collaboration: Sharing architectural knowledge requires screenshots and static exports, preventing interactive discussion and versioning.
-    • No code-diagram linkage: Difficult to trace from diagram components to actual implementation and verify consistency.
-User Pain Points
-As an Architect:
-    • I need to understand existing systems before designing new features, but diagrams are often outdated or non-existent.
-    • I need to compare multiple architectural options, but managing multiple diagram versions is cumbersome.
-    • I need to explain architectural decisions with context and evolution history, but current tools only show snapshots.
-As a Code Reviewer:
-    • I struggle to quickly understand the architecture of code I'm reviewing without up-to-date diagrams.
-    • I cannot easily verify that implementation matches the architectural design.
-    • I have no efficient way to annotate diagrams with questions and share them with the team.
-As a Tech Lead:
-    • I need different levels of detail for different audiences (junior developers vs. executives), but creating multiple versions is time-consuming.
-    • I cannot keep diagrams synchronized with code evolution without significant manual effort.
-Product Vision
-Blueprint is the living documentation platform that bridges the gap between architectural thinking and code implementation. It enables teams to design, understand, and evolve software systems through interactive, multi-level diagrams that remain synchronized with the codebase.
-Core Value Propositions
-    • Single Source of Truth: Diagrams that stay synchronized with code through bidirectional linking and automated change detection.
-    • Infinite Zoom Architecture: Navigate seamlessly from system-level overview to function-level details without switching tools or views.
-    • AI-Accelerated Workflow: Update diagrams, generate code scaffolds, and detect inconsistencies with integrated AI assistance.
-    • Real-Time Collaboration: Share diagrams with contextual discussions, annotations, and version history for effective team communication.
-    • Workflow Integration: Work directly with your codebase through File System Access API and IDE integration.
+
+As AI tools handle more code generation, developers spend more time on architecture design, code review, and system comprehension. Current diagram tools fail this workflow:
+
+- Diagrams become obsolete as code evolves
+- Static diagrams cannot show both high-level architecture and low-level details
+- No link between diagram elements and actual code
+- Creating multi-level views requires maintaining separate files manually
+
+Blueprint solves this by generating diagrams from code, linking them to source files, and detecting when they drift.
+
+---
+
 Target Users
-Primary Personas
-1. Software Architect
-    • Role: Designs system architecture, makes technology decisions, creates technical specifications.
-    • Needs: Multi-level diagrams, comparison tools, version history, architectural decision documentation.
-    • Success Metric: Reduced time from architectural design to validated implementation.
-2. Tech Lead / Engineering Manager
-    • Role: Manages technical teams, reviews architecture, onboards developers, maintains technical documentation.
-    • Needs: Different detail levels for different audiences, collaboration features, synchronization with code.
-    • Success Metric: Faster developer onboarding and improved code review efficiency.
-3. Code Reviewer / Senior Developer
-    • Role: Reviews pull requests, validates implementation against architecture, provides feedback.
-    • Needs: Quick architectural comprehension, code-diagram linking, annotation capabilities.
-    • Success Metric: Faster code review cycles with fewer architectural misunderstandings.
+
+1. Software Architect — needs multi-level diagrams, code-to-architecture traceability, anti-pattern detection
+2. Tech Lead — needs different detail levels for different audiences, sync status at a glance, onboarding material that stays current
+3. Senior Developer / Code Reviewer — needs quick architectural comprehension, code-diagram linking, annotation capabilities
+
+---
 
 Core Features & Requirements
-1. Multi-Level Zoom Navigation
-Feature Description
-Unlimited hierarchical diagram navigation allowing users to zoom from system-level architecture down to individual function implementations without depth restrictions.
-Functional Requirements
-    • FR1.1: Any diagram element can contain a sub-diagram, indicated by a visual badge.
-    • FR1.2: Double-clicking an element with a sub-diagram opens the detailed view.
-    • FR1.3: Breadcrumb navigation displays current hierarchy path (e.g., Platform > Auth Service > UserModule > UserRepository).
-    • FR1.4: Users can skip intermediate levels if no diagrams exist at those levels.
-    • FR1.5: Keyboard shortcuts for navigation: Z (zoom in), Shift+Z (zoom out), Home (return to root).
-    • FR1.6: Minimap showing overall hierarchy with current position indicator.
-    • FR1.7: Visual inheritance: child diagrams inherit color coding and styling from parent elements.
-Technical Requirements
-    • TR1.1: Store diagrams as Mermaid code with hierarchical metadata in JSON structure.
-    • TR1.2: Generate Mermaid code dynamically based on current zoom level.
-    • TR1.3: Use IndexedDB for client-side storage of diagram hierarchy.
-2. Bidirectional Code-Diagram Linking
-Feature Description
-Establish and maintain connections between diagram elements and code implementation, enabling navigation in both directions and verification of consistency.
-Functional Requirements
-    • FR2.1: Users can manually create links from diagram elements to code files (file path, line range).
-    • FR2.2: Automated scanning suggests potential code-diagram links based on naming patterns.
-    • FR2.3: Links have confidence levels: confirmed (user-verified), suggested (auto-detected), broken (code no longer exists).
-    • FR2.4: Right-click on diagram element → 'View Code' opens the linked file in split view.
-    • FR2.5: Support for multi-repository projects with repository configuration per workspace.
-    • FR2.6: Conceptual elements (e.g., Event Bus, Message Queue) can be marked as having no code implementation.
-    • FR2.7: Display code links panel for each element showing all associated code locations.
-Technical Requirements
-    • TR2.1: Use File System Access API to read local repositories (with user permission).
-    • TR2.2: Implement code parser using Tree-sitter WASM for Python and TypeScript/JavaScript.
-    • TR2.3: Store code links with timestamp for last validation.
-    • TR2.4: Integrate Monaco Editor for inline code viewing.
-3. Code-Diagram Synchronization
-Feature Description
-Automated detection of divergences between diagrams and code with smart suggestions for updates in either direction.
-Functional Requirements
-    • FR3.1: On-demand synchronization scan comparing current code state with diagram state.
-    • FR3.2: Sync status dashboard showing: up-to-date (green), suggestions available (yellow), conflicts detected (red).
-    • FR3.3: Three synchronization modes:
-        ◦ Manual: Review all suggestions, accept/reject individually
-        ◦ Semi-auto: Auto-accept additions, confirm deletions
-        ◦ Auto: Full automatic synchronization (with confirmation for destructive changes)
-    • FR3.4: Bidirectional sync:
-        ◦ Code → Diagram: Detect new classes, modules, dependencies; suggest diagram updates
-        ◦ Diagram → Code: Generate code scaffolding from diagram design
-    • FR3.5: Visual diff view showing current diagram vs. suggested changes with color-coded additions (green), deletions (red), modifications (orange).
-    • FR3.6: Ignore utility classes and small helper functions by default (configurable).
-    • FR3.7: Suggestion types: add component, remove component, add relationship, update relationship, mark as obsolete.
-Technical Requirements
-    • TR3.1: Implement divergence detection algorithm comparing AST-parsed code entities with diagram nodes.
-    • TR3.2: Use heuristic rules + optional LLM assistance for intelligent suggestions.
-    • TR3.3: Support configurable scan patterns (include/exclude paths) per repository.
-    • TR3.4: Generate code templates using LLM from diagram structure.
 
-4. Real-Time Collaboration
-Feature Description
-Multi-user collaboration with real-time synchronization, element-specific discussions, and conflict-free concurrent editing.
-Functional Requirements
-    • FR4.1: Share diagrams via link with permission levels: view-only, comment, edit.
-    • FR4.2: Real-time presence indicators showing other users' cursors and active elements.
-    • FR4.3: Element-specific comment threads (not general diagram comments).
-    • FR4.4: Comment features: create, reply, resolve, mention (@username).
-    • FR4.5: Change suggestions tracked with author attribution (similar to GitHub suggestions).
-    • FR4.6: Offline-first architecture: work offline, sync when connected.
-    • FR4.7: Export diagrams with all comments and discussions included as PDF or HTML.
-Technical Requirements
-    • TR4.1: Implement CRDT (Conflict-free Replicated Data Type) using Yjs library.
-    • TR4.2: Use y-indexeddb for local persistence and y-websocket for real-time sync.
-    • TR4.3: Backend WebSocket server for coordination (deployment options: Vercel/Supabase, AWS, self-hosted).
-    • TR4.4: PostgreSQL for authoritative state and comment storage.
-5. AI-Assisted Diagram Management
-Feature Description
-Integrated AI assistance for diagram creation, modification, analysis, and code generation using user-provided or built-in LLM providers.
-Functional Requirements
-    • FR5.1: AI chat panel for natural language diagram modifications (e.g., 'Add a caching layer between API and database').
-    • FR5.2: Context-aware suggestions based on selected diagram element.
-    • FR5.3: Anti-pattern detection with explanations (e.g., 'This service has too many dependencies - consider decomposition').
-    • FR5.4: Generate sequence diagrams from architectural diagrams and vice versa.
-    • FR5.5: Multiple LLM provider support:
-        ◦ User brings their own API key (OpenAI, Anthropic, etc.)
-        ◦ Built-in Claude and Gemini integration (pre-configured)
-    • FR5.6: Fallback to heuristic rules when AI is unavailable or disabled.
-Technical Requirements
-    • TR5.1: Abstraction layer supporting multiple LLM APIs with unified interface.
-    • TR5.2: Secure API key storage (encrypted in IndexedDB, never sent to Blueprint servers).
-    • TR5.3: Implement rule-based analysis for common architectural patterns independent of AI.
-6. Intelligent Search & Organization
-Feature Description
-Comprehensive search and organizational tools to quickly find relevant diagrams across projects.
-Functional Requirements
-    • FR6.1: Semantic search: find diagrams by concept, not just exact title match (e.g., 'authentication system' finds auth-related diagrams).
-    • FR6.2: Auto-tagging based on detected patterns: language, architecture pattern, team, date.
-    • FR6.3: Manual tags and collections/workspaces for custom organization.
-    • FR6.4: Quick access sections: Recent, Favorites, Needs Update (obsolete diagrams).
-    • FR6.5: Filter by: project, language, date range, sync status, tags.
-    • FR6.6: Search within diagram content (component names, relationships).
+1. Multi-Level Zoom Navigation [COMPLETE]
+
+Unlimited hierarchical diagram navigation from system-level architecture down to individual functions.
+
+- FR1.1: Any diagram element can contain a sub-diagram, indicated by a visual badge
+- FR1.2: Double-clicking an element with a sub-diagram opens the detailed view
+- FR1.3: Breadcrumb navigation displays current hierarchy path
+- FR1.4: Users can skip intermediate levels if no diagrams exist at those levels
+
+Implementation: NodeLink system with blue 3D badges injected into Mermaid SVG via svgParserService. Breadcrumb trail in Preview toolbar. Navigation stack managed by useNavigationHandlers.
+
+2. Diagram Editor [COMPLETE]
+
+Professional Mermaid editor with live preview and AI generation.
+
+- FR2.1: Split-pane editor with live Mermaid rendering
+- FR2.2: All Mermaid diagram types supported (flowchart, sequence, class, ER, state, gantt, etc.)
+- FR2.3: AI-powered diagram generation from natural language prompts
+- FR2.4: Error detection with visual feedback
+
+Implementation: Editor.tsx + Preview.tsx in resizable split pane. AI generation via multi-provider LLM (Gemini, OpenAI, Anthropic).
+
+3. Organization & Export [COMPLETE]
+
+Workspace and folder management with full-fidelity export format.
+
+- FR3.1: Multiple workspaces for different projects
+- FR3.2: Nested folder hierarchy within workspaces
+- FR3.3: .blueprint export format preserving all metadata (comments, node links, folders, workspace info)
+- FR3.4: Legacy import support (.mmd, .mermaid, .txt, .zip)
+- FR3.5: Auto-save to localStorage with visual feedback
+
+Implementation: useAppState manages workspaces/folders/diagrams. exportService handles .blueprint format with ID remapping on import.
+
+4. Code Integration [COMPLETE]
+
+Bidirectional linking between diagram elements and source code.
+
+- FR4.1: Connect local repositories via File System Access API (Chromium only)
+- FR4.2: Link diagram nodes to specific files and line ranges (CodeLink)
+- FR4.3: Green badges on nodes with code links (distinct from blue sub-diagram badges)
+- FR4.4: Read-only Monaco Editor panel for viewing linked source code
+- FR4.5: Multi-repository support scoped to workspaces
+- FR4.6: Automatic codebase scanning with symbol extraction (regex-based, TS/JS/Python)
+- FR4.7: Codebase-to-diagram generation (3-level: System Overview, Module Detail, File Detail)
+
+Implementation: fileSystemService wraps File System Access API. codeParserService provides regex-based symbol/import/export extraction. CodePanel uses Monaco in read-only mode. Codebase import generates diagrams in a dedicated folder with NodeLinks for drill-down.
+
+5. Code-Diagram Synchronization [COMPLETE]
+
+Automated detection of divergences between diagrams and code.
+
+- FR5.1: On-demand scan comparing code state with diagram state
+- FR5.2: Sync status indicator (green/yellow/red) in Preview toolbar
+- FR5.3: Three sync modes: manual, semi-auto, auto
+- FR5.4: Typed suggestions: add component, remove component, add relationship, update relationship, mark as obsolete
+- FR5.5: Visual diff view via Monaco DiffEditor
+- FR5.6: Configurable scan patterns (include/exclude paths, ignore patterns) per repository
+- FR5.7: Code scaffolding from diagram structure via LLM
+
+Implementation: codeScannerService handles recursive scanning and divergence detection. ScanResultsPanel groups suggestions by type. DiffViewModal wraps Monaco DiffEditor. scaffoldService generates code via LLM.
+
+6. AI-Assisted Diagram Management [COMPLETE]
+
+Integrated AI for diagram creation, modification, analysis, and code generation.
+
+- FR6.1: AI chat panel for natural language diagram modifications
+- FR6.2: Context-aware suggestions based on selected diagram element
+- FR6.3: Diagram conversion (e.g., flowchart to sequence diagram)
+- FR6.4: Anti-pattern detection with heuristic rules (fan-out, fan-in, god nodes, circular deps, isolated nodes, missing labels)
+- FR6.5: Multiple LLM providers: Gemini (SDK), OpenAI (SDK), Anthropic (fetch + CORS proxy)
+- FR6.6: Encrypted API key storage (AES-GCM via Web Crypto API + IndexedDB)
+- FR6.7: Fallback to heuristic rules when AI is unavailable
+
+Implementation: llmService provides unified multi-provider interface. aiChatService builds prompts. diagramAnalyzerService implements heuristic rules. cryptoStorageService handles AES-GCM encryption. useLLMSettings manages encrypted config with auto-migration from localStorage.
+
+7. CodeGraph [COMPLETE]
+
+Automatic graph generation from a codebase — separate entity from Diagram.
+
+- FR7.1: Hierarchical model: System (D0) > Module (D1) > File (D2) > Symbol (D3)
+- FR7.2: ViewLens system for different perspectives (Component, Flow, Domain)
+- FR7.3: Smart functional grouping via LLM agent pipeline (2 agents: File Analyst + Architect)
+- FR7.4: Heuristic fallback grouper using naming conventions + import affinity
+- FR7.5: SHA-256 hash-based sync detection for code drift
+- FR7.6: Contextual flow generation with AI-generated sequence diagrams
+- FR7.7: Flows are contextual to zoom level (root = end-to-end, module = module-level)
+- FR7.8: Progress Log Panel showing pipeline status in real-time
+- FR7.9: Force-directed graph visualization with zoom/focus navigation
+- FR7.10: Configurable anomaly thresholds and scan patterns
+
+Implementation: codeGraphModelService (CRUD, tree traversal), codeGraphRendererService (graph + lens → Mermaid), codeGraphAgentService (2-agent LLM pipeline), codeGraphHeuristicGrouper (pattern + import affinity), codeGraphFlowService (AI-only flow generation), codeGraphSyncService (SHA-256 change detection). useCodeGraph manages state and pipeline orchestration. CodeGraphPanel and CodeGraphVisualizer handle UI. ProgressLogPanel shows build log.
+
+---
+
+Planned Features (Core)
+
+8. Search & Organization [PLANNED]
+
+- FR8.1: Semantic search across diagrams (by concept, not just title)
+- FR8.2: Auto-tagging based on detected patterns
+- FR8.3: Search within diagram content (component names, relationships)
+- FR8.4: Quick access: Recent, Favorites, Needs Update
+
+9. Version History [PLANNED]
+
+- FR9.1: Timeline view of diagram changes
+- FR9.2: Diff between versions
+- FR9.3: Restore previous versions
+
+10. Templates & Export [PLANNED]
+
+- FR10.1: Diagram template library (common architectures)
+- FR10.2: PDF export with comments and annotations
+- FR10.3: HTML export for interactive sharing
+- FR10.4: Performance optimization for large diagrams (1000+ nodes)
+
+11. Additional Language Support [PLANNED]
+
+- FR11.1: Extend code parser beyond TS/JS/Python (Java, Go, Rust, C#)
+- FR11.2: Framework-aware analysis (React, Spring, Django patterns)
+
+---
+
+Out of Scope (Cloud Product)
+
+The following features are NOT part of the core and will be implemented in Blueprint Cloud:
+
+- Real-time collaboration (Yjs/CRDT, WebSocket server)
+- Presence indicators and cursor sharing
+- Element-specific comment threads with replies and mentions
+- Permission system (view, comment, edit)
+- Cloud storage and sync
+- Hosted AI (no API key needed)
+- Team workspaces and organization management
+- User accounts and authentication
+
+---
 
 Technical Architecture
-Technology Stack
-Layer
-Technology
-Frontend Framework
-React + TypeScript
-Diagram Rendering
-Mermaid.js + React Flow (navigation)
-Code Editor
-Monaco Editor (VSCode)
-Local Storage
-IndexedDB
-Code Parser
-Tree-sitter WASM (Python, TypeScript/JavaScript)
-File Access
-File System Access API (Chrome/Edge/Safari)
-Collaboration
-Yjs (CRDT) + y-indexeddb + y-websocket
-Backend
-WebSocket server (Node.js / Vercel / Supabase)
-Database
-PostgreSQL (authoritative state, comments)
-AI Integration
-LLM abstraction layer (Claude, Gemini, OpenAI APIs)
-Data Model
-Core Entities
-DiagramNode
-    • id: string (unique identifier)
-    • type: 'system' | 'service' | 'module' | 'class' | 'function'
-    • label: string (display name)
-    • mermaidCode: string (Mermaid diagram code for this level)
-    • hasSubDiagram: boolean
-    • subDiagramId?: string
-    • codeLinks: CodeLink[]
-    • metadata: { tags, description, isConceptual }
-    • position: { x, y }
-    • parentId?: string
-CodeLink
-    • repoUrl?: string
-    • filePath: string
-    • lineStart: number
-    • lineEnd: number
-    • confidence: 'confirmed' | 'suggested' | 'broken'
-    • lastValidated: Date
-DiagramWorkspace
-    • id: string
-    • name: string
-    • diagrams: Map<string, DiagramNode>
-    • rootDiagramId: string
-    • repos: RepoConfig[]
-    • syncStatus: SyncStatus
 
-Development Roadmap
-Phase 1: Foundation (MVP)
-Timeline: 6-8 weeks
-    • Mermaid diagram editor with live preview
-    • IndexedDB storage for diagrams
-    • Multi-level navigation with badges and zoom
-    • Breadcrumb navigation
-    • Basic workspace management
-    • Export diagrams as .mermaid files
-Success Criteria:
-    • Users can create hierarchical diagrams with unlimited depth
-    • Smooth navigation between diagram levels
-Phase 2: Code Integration
-Timeline: 8-10 weeks
-    • File System Access API implementation
-    • Tree-sitter WASM parser for Python and TypeScript/JavaScript
-    • Manual code link creation
-    • Monaco Editor integration for code viewing
-    • Split view: diagram + code side-by-side
-    • Multi-repository support
-Success Criteria:
-    • Users can link diagram elements to code files
-    • Click diagram element → view corresponding code
-Phase 3: Intelligence Layer
-Timeline: 8-10 weeks
-    • On-demand code scanning and divergence detection
-    • Suggestion engine with heuristic rules
-    • LLM integration layer (Claude, Gemini, custom API)
-    • Three sync modes: manual, semi-auto, auto
-    • Visual diff view for suggested changes
-    • AI chat panel for diagram modifications
-Success Criteria:
-    • Automated detection of code-diagram divergences
-    • Users can update diagrams using natural language
-Phase 4: Collaboration
-Timeline: 6-8 weeks
-    • Yjs CRDT implementation
-    • WebSocket server deployment
-    • Real-time presence and cursor sharing
-    • Element-specific comment threads
-    • Permission system (view, comment, edit)
-    • Offline-first with sync on reconnection
-Success Criteria:
-    • Multiple users can edit diagrams simultaneously without conflicts
-    • Productive async discussions on specific diagram elements
-Phase 5: Polish & Advanced Features
-Timeline: 6-8 weeks
-    • Semantic search implementation
-    • Auto-tagging and smart organization
-    • Version history and timeline view
-    • Diagram templates library
-    • Advanced export options (PDF with comments, HTML)
-    • Performance optimization for large diagrams (1000+ nodes)
+Technology Stack
+
+| Layer               | Technology                                   |
+| ------------------- | -------------------------------------------- |
+| Framework           | React 19 + TypeScript (strict mode)          |
+| Build               | Vite                                         |
+| Diagram Rendering   | Mermaid.js v11                               |
+| Code Viewer         | Monaco Editor                                |
+| Graph Visualization | Canvas 2D (force-directed)                   |
+| AI Integration      | Gemini SDK, OpenAI SDK, Anthropic (fetch)    |
+| Styling             | Tailwind CSS (CDN)                           |
+| Storage             | localStorage + IndexedDB (AES-GCM encrypted) |
+| File Access         | File System Access API (Chromium)            |
+| Code Parsing        | Regex-based (TS/JS/Python)                   |
+
+Architecture
+
+Client-side only. No backend, no router, no external state library. App.tsx is the root orchestrator, composing state from custom hooks and drilling props to components.
+
+Key patterns:
+
+- State in hooks, logic in services, UI in components
+- Props-only components (no context providers)
+- Path alias @/\* maps to project root
+- Services are pure functions with no React dependency
+
+Data Model
+
+Core entities: Workspace > Folder > Diagram. Diagrams contain Mermaid code, comments, nodeLinks, and codeLinks.
+
+CodeGraph is a separate entity: CodeGraph > GraphNode (hierarchical D0-D3) > GraphRelation. Includes ViewLens for perspective switching, GraphFlow for sequence diagrams, and SyncLock for drift detection.
+
+---
 
 Success Metrics
-Product Metrics
-    • Time to first diagram: < 5 minutes for new users
-    • Diagram update frequency: Target 2-3x increase vs. traditional tools
-    • Code review time reduction: 20-30% decrease for complex PRs
-    • Diagram-code sync accuracy: > 90% detection rate for divergences
-    • Collaboration engagement: Average 3+ comments per shared diagram
-User Satisfaction
-    • NPS (Net Promoter Score): Target 40+
-    • Weekly active users (WAU): Target 70% of registered users
-    • Feature satisfaction: 4+ stars on key features (multi-level nav, sync, collaboration)
-Technical Performance
-    • Page load time: < 2 seconds
-    • Diagram render time: < 500ms for diagrams with <100 nodes
-    • Code parsing time: < 5 seconds for typical repositories (10,000 LOC)
-    • Sync latency: < 200ms for real-time collaboration
-Risks & Mitigation Strategies
-Risk
-Impact
-Mitigation
-Browser compatibility (File System Access API)
-Limited Firefox/Safari support reduces addressable market
-Provide manual file upload fallback; consider browser extension for full support
-Performance with large codebases
-Slow parsing causes poor UX for large projects (100k+ LOC)
-Implement Web Workers; add progressive scanning; cache parse results; allow scope limiting
-Complexity of CRDT implementation
-Bugs in collaboration could cause data loss or conflicts
-Use battle-tested Yjs library; extensive testing phase; gradual rollout to users
-AI accuracy and cost
-Inaccurate suggestions erode trust; high API costs unsustainable
-Heuristic fallback; BYOK model; hybrid approach (rules + AI); clear confidence indicators
-User adoption challenges
-Developers resist changing documentation workflows
-Focus on compelling use cases; seamless onboarding; templates; demonstrate immediate value
-Open Questions
-    1. Hosting & Infrastructure: What platform should host the collaboration server? (Vercel + Supabase, AWS, self-hosted, other?)
-    2. Monetization Model: Free tier with paid features? Open-source core with enterprise features? Freemium with LLM usage limits?
-    3. IDE Extension Priority: Should we develop VSCode/IDE extensions in Phase 2 or defer to Phase 5?
-    4. Export Format: Should exports include just .mermaid code or full JSON with metadata (links, hierarchy, comments)?
-    5. Additional Language Support: After Python and TypeScript/JavaScript, which languages should we prioritize? (Java, Go, Rust, C#?)
-— End of Document —
+
+- Time to first diagram: < 5 minutes
+- CodeGraph generation: < 30 seconds for a 50-file project
+- Diagram render time: < 500ms for diagrams with < 100 nodes
+- Code parsing time: < 5 seconds for typical repositories
+- Divergence detection accuracy: > 90% for structural changes
+- Build size: production build loads in < 2 seconds
+
+---
+
+Risks & Mitigation
+
+| Risk                                         | Mitigation                                                                      |
+| -------------------------------------------- | ------------------------------------------------------------------------------- |
+| File System Access API is Chromium-only      | Manual file upload fallback possible; documented as requirement                 |
+| Performance with large codebases (100k+ LOC) | Progressive scanning, scope limiting, configurable scan patterns                |
+| AI accuracy varies by provider/model         | Heuristic fallbacks for all AI features; clear confidence indicators            |
+| Regex parser misses edge cases               | Sufficient for architecture-level analysis; Tree-sitter WASM is a future option |
+
+---
+
+Resolved Questions
+
+- Export format: .blueprint JSON format preserving all metadata. Legacy formats also supported.
+- Code parser: Regex-based (not Tree-sitter). Covers TS/JS/Python. Adequate for symbol extraction at architecture level.
+- IDE extension: Deferred. Browser-based File System Access API covers the primary use case.
+
+--- End of Document ---

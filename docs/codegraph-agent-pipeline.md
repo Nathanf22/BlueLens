@@ -1,28 +1,45 @@
-# CodeGraph — Pipeline LLM pour le groupement architectural
+# CodeGraph — Graph Creation Pipeline
 
-## Probleme
+## Overview
 
-Le CodeGraph groupe les fichiers par **repertoire** : `components/`, `hooks/`, `services/`.
-C'est la meme chose qu'un explorateur de fichiers — ca ne montre pas l'architecture.
+CodeGraph is a hierarchical model of a codebase, generated automatically from source files.
+It produces Mermaid on-the-fly via ViewLens (Component, Flow, Domain).
 
-Des fichiers de 3 repertoires differents qui implementent la meme feature devraient apparaitre ensemble.
+Creation happens in 4 stages:
+1. **Scan** — read files, extract symbols and imports
+2. **Grouping** — functional grouping of files (AI or heuristic)
+3. **Parsing** — build the D0-D3 graph with relations
+4. **Flows** — generate flows (sequence diagrams) via AI
 
-## Methode : 2 agents LLM en sequence
+A **Progress Log Panel** displays detailed progress for each stage in real-time.
+
+---
+
+## Functional Grouping
+
+### Problem
+
+Raw scanning groups files by **directory**: `components/`, `hooks/`, `services/`.
+This is the same as a file explorer — it doesn't show the architecture.
+
+Files from 3 different directories implementing the same feature should appear together.
+
+### Method: 2 LLM Agents in Sequence
 
 ```
-Fichiers du repo
+Repository files
       |
       v
- +-----------+     +-----------+     +------------------+
- | Agent 1   | --> | Agent 2   | --> | Modules fonctionnels
- | Analyste  |     | Architecte|     | dans le CodeGraph
- +-----------+     +-----------+     +------------------+
-  par batch de 10    appel unique
+ +-----------+     +-----------+     +---------------------+
+ | Agent 1   | --> | Agent 2   | --> | Functional modules
+ | Analyst   |     | Architect |     | in the CodeGraph
+ +-----------+     +-----------+     +---------------------+
+  batches of 10     single call
 ```
 
-### Agent 1 — Analyste de fichiers
+#### Agent 1 — File Analyst
 
-**Entree** : metadonnees deja extraites (pas de re-lecture de fichiers)
+**Input**: metadata already extracted (no file re-reading)
 
 ```
 File: services/llmService.ts
@@ -31,7 +48,7 @@ Imports: @google/genai, openai, ../types
 Exports: llmService, getDefaultSettings
 ```
 
-**Sortie** : but + role de chaque fichier
+**Output**: purpose + role for each file
 
 ```json
 {
@@ -41,17 +58,17 @@ Exports: llmService, getDefaultSettings
 }
 ```
 
-**Batching** : 10 fichiers par appel LLM. Un projet de 40 fichiers = 4 appels.
+**Batching**: 10 files per LLM call. A 40-file project = 4 calls.
 
-**Tolerances** :
-- Les chemins retournes par le LLM sont normalises (`./foo.ts` → `foo.ts`)
-- Les roles invalides sont inferes depuis le nom de fichier
-- On accepte le resultat si au moins 50% des fichiers sont couverts
-- Les fichiers manquants sont completes avec un fallback par nom
+**Tolerances**:
+- Paths returned by the LLM are normalized (`./foo.ts` → `foo.ts`)
+- Invalid roles are inferred from the filename
+- Result is accepted if at least 50% of files are covered
+- Missing files are filled in with a name-based fallback
 
-### Agent 2 — Architecte
+#### Agent 2 — Architect
 
-**Entree** : toutes les analyses de l'Agent 1 + les aretes d'import entre fichiers
+**Input**: all Agent 1 analyses + import edges between files
 
 ```
 FILE SUMMARIES:
@@ -64,14 +81,14 @@ hooks/useChatHandlers.ts → services/llmService.ts
 components/AIChatPanel.tsx → hooks/useChatHandlers.ts
 ```
 
-**Sortie** : modules nommes + relations
+**Output**: named modules + relationships + descriptions
 
 ```json
 {
   "modules": [
     {
       "name": "AI Intelligence",
-      "description": "LLM chat, generation, analysis",
+      "description": "LLM chat, generation, and intelligent analysis",
       "files": ["services/llmService.ts", "components/AIChatPanel.tsx", "hooks/useChatHandlers.ts"]
     }
   ],
@@ -81,80 +98,156 @@ components/AIChatPanel.tsx → hooks/useChatHandlers.ts
 }
 ```
 
-**Contrainte cle dans le prompt** : le system prompt inclut la liste exacte des chemins valides,
-avec l'instruction de les copier tels quels. Ca evite que le LLM modifie les chemins.
+**Key constraint in the prompt**: the system prompt includes the exact list of valid paths,
+with instructions to copy them as-is. This prevents the LLM from modifying paths.
 
-**Tolerances** :
-- Resolution flexible des chemins (normalisation, sans extension, par basename)
-- Un module avec 0 fichier valide est ignore (pas rejet de tout le blueprint)
-- Les noms de module dupliques recoivent un suffixe
-- Les fichiers non assignes vont dans un module "Other"
-- Minimum 1 module (pas 2) pour accepter le resultat
+**Tolerances**:
+- Flexible path resolution (normalization, without extension, by basename)
+- A module with 0 valid files is skipped (does not reject the entire blueprint)
+- Duplicate module names receive a suffix
+- Unassigned files go into an "Other" module
+- Minimum 1 module (not 2) to accept the result
 
-## Chaine de fallback
+### Heuristic Fallback
+
+When AI is not configured or fails, the **heuristic grouper** (`codeGraphHeuristicGrouper.ts`) takes over.
+It produces functional modules (not directories) via:
+
+1. **Pattern matching** — table of ~15 regexps mapping filenames to groups:
+   - `useCodeGraph.ts`, `CodeGraphPanel.tsx` → "Code Graph"
+   - `llmService.ts`, `AIChatPanel.tsx` → "AI Intelligence"
+   - `useDiagramHandlers.ts`, `Editor.tsx` → "Diagram Editor"
+   - etc.
+
+2. **Import affinity** — unmatched files are assigned to the group that receives the most of their imports
+
+3. **Merge** — groups with < 2 files merge with their closest import neighbor
+
+4. **Dependencies** — cross-group imports become module relationships
+
+### Fallback Chain
 
 ```
-LLM configure ?
+LLM configured?
   |
-  oui --> Pipeline AI
+  yes --> AI Pipeline (Agent 1 + Agent 2)
   |         |
-  |         succes --> Modules fonctionnels (ex: "AI Intelligence", "Diagram Editor")
+  |         success --> Functional modules (e.g., "AI Intelligence", "Diagram Editor")
   |         |
-  |         echec (3 tentatives) --> Groupement par repertoire
+  |         failure (3 attempts) --> Heuristic functional grouping
   |
-  non --> Groupement par repertoire (comportement original)
+  no --> Heuristic functional grouping
 ```
 
-Chaque agent a droit a 3 tentatives (1 initiale + 2 retries).
-Si le JSON est invalide, le retry inclut un message d'erreur dans le prompt.
+Each agent gets 3 attempts (1 initial + 2 retries).
+If the JSON is invalid, the retry includes an error message in the prompt.
 
-## Flux de code
+---
+
+## Flow Generation
+
+After graph construction, the pipeline generates **flows** (sequence diagrams) via AI.
+
+**Pipeline** (`codeGraphFlowService.ts`):
+1. `buildGraphSummary()` — extracts D1 modules, D2 edges, entry points
+2. `generateFlowsWithLLM()` — single LLM call, JSON schema output, 2 retries, validates node IDs
+3. `generateFlows()` — orchestrator, returns empty if no AI
+
+Flows are **contextual to zoom level**:
+- Focus on root → end-to-end flows (cross-module)
+- Focus on a module → module-internal flows
+
+**No heuristic fallback for flows** — heuristic flows were not relevant.
+If generation fails, existing flows are preserved (no loss).
+
+---
+
+## Progress Log
+
+The entire pipeline emits log entries via a callback `onLogEntry(category, message, detail?)`.
+
+**Categories**: `scan`, `ai-analyze`, `ai-architect`, `parse`, `resolve`, `hierarchy`, `flow`, `info`
+
+The **ProgressLogPanel** displays these entries in real-time in a panel at the bottom of the workspace:
+- Compact bar (28px) with the latest message
+- Expanded view (~200px, resizable) with timestamps and category icons
+- Auto-scroll, pauses if the user scrolls up
+
+Example log:
+```
+[0:00.1] Search   Scanning codebase...
+[0:02.3] Info     Starting AI analysis pipeline
+[0:02.4] Brain    Analyzing batch 1/4 (10 files)
+[0:05.1] Brain    Batch 1 complete: 10 file analyses
+[0:12.1] Brain    Building functional architecture...
+[0:18.4] Brain    Architecture: 6 modules, 8 rels
+[0:18.5] Branch   Creating 6 modules
+[0:19.8] Branch   Processing files (42/42)
+[0:20.1] Link     Resolving dependencies (42/42)
+[0:21.3] Layers   Analyzing class hierarchy (42/42)
+[0:22.0] Play     Generating flows with AI
+[0:28.1] Play     Generated 8 flows
+[0:28.2] Info     Graph creation complete (186 nodes)
+```
+
+---
+
+## Code Flow
 
 ```
 App.tsx
-  handleCreateGraph(repoId)           -- injecte llmSettings
-    |
+  handleCreateGraph(repoId)
+    |  injects llmSettings + progressLog.addEntry
     v
 useCodeGraph.ts
-  createGraph(repoId, llmSettings?)
+  createGraph(repoId, llmSettings?, onLogEntry?)
     |
-    +--> codebaseAnalyzerService.analyzeCodebase(handle)   -- scan brut des fichiers
+    +--> codebaseAnalyzerService.analyzeCodebase(handle)
+    |      raw file scan
     |
-    +--> analyzeCodebaseWithAI(analysis, llmSettings)      -- re-groupe par cohesion
+    +--> analyzeCodebaseWithAI(analysis, llmSettings, onLogEntry)
     |      |
     |      +--> Agent 1: analyzeFilesBatch() x N batches
     |      +--> Agent 2: buildArchitecture()
-    |      +--> Retourne CodebaseAnalysis avec modules re-groupes
+    |      +--> Failure? → groupByFunctionalHeuristics(analysis)
+    |      +--> Returns CodebaseAnalysis with regrouped modules
     |
-    +--> parseCodebaseToGraph(analysis, ...)                -- construit le graph D0-D3
+    +--> parseCodebaseToGraph(analysis, ..., onLogEntry)
+    |      builds D0-D3 graph, propagates module.description to D1
+    |
+    +--> generateFlows(graph, llmSettings, onLogEntry)
+           AI-only, returns empty if no AI
 ```
 
-Le `parseCodebaseToGraph` recoit l'analyse deja re-groupee.
-Il cree les noeuds D1 (modules) depuis `analysis.modules`, donc si les modules
-sont fonctionnels, le graph D1 montre des modules fonctionnels.
+---
 
-## Fichiers impliques
+## Files Involved
 
-| Fichier | Role |
+| File | Role |
 |---|---|
-| `services/codeGraphAgentService.ts` | Pipeline LLM (Agent 1 + Agent 2 + orchestrateur) |
+| `services/codeGraphAgentService.ts` | LLM pipeline (Agent 1 + Agent 2 + orchestrator) |
+| `services/codeGraphHeuristicGrouper.ts` | Functional grouping via patterns + import affinity |
+| `services/codeGraphFlowService.ts` | Flow generation (AI-only) |
 | `services/codeToGraphParserService.ts` | CodebaseAnalysis → CodeGraph (D0-D3) |
-| `hooks/useCodeGraph.ts` | Appelle le pipeline si LLM configure |
-| `App.tsx` | Injecte llmSettings dans createGraph |
-| `components/Sidebar.tsx` | Affiche la progression pendant l'analyse AI |
+| `hooks/useCodeGraph.ts` | Orchestrates the pipeline, manages graph state |
+| `hooks/useProgressLog.ts` | Log state (entries, active, expanded) |
+| `components/ProgressLogPanel.tsx` | Log UI at the bottom of the workspace |
+| `App.tsx` | Injects llmSettings and addEntry into createGraph |
 
-## Cout token
+## Token Cost
 
-| Taille projet | Agent 1 | Agent 2 | Total | Cout (Gemini Flash) |
-|---|---|---|---|---|
-| ~30 fichiers | 3 batches | 1 appel | ~65K tokens | ~$0.01 |
-| ~200 fichiers | 20 batches | 1 appel | ~410K tokens | ~$0.10 |
+| Project size | Agent 1 | Agent 2 | Flows | Total | Cost (Gemini Flash) |
+|---|---|---|---|---|---|
+| ~30 files | 3 batches | 1 call | 1 call | ~75K tokens | ~$0.01 |
+| ~200 files | 20 batches | 1 call | 1 call | ~420K tokens | ~$0.10 |
 
-## Debug
+## Debugging
 
-Ouvrir la console du navigateur. Les logs `[CodeGraph]` montrent :
+Open the browser console. `[CodeGraph]` logs show:
 - `[CodeGraph] Agent 1 complete: N file analyses`
 - `[CodeGraph] Import edges resolved: N`
 - `[CodeGraph Agent 2] Created N modules with N relationships`
-- `[CodeGraph Agent 2] Module "X" had 0 valid files, skipping` (si probleme de chemins)
-- `[CodeGraph] AI pipeline failed, returning directory-based grouping` (fallback)
+- `[CodeGraph Agent 2] Module "X" had 0 valid files, skipping` (path mismatch issue)
+- `[CodeGraph] AI architecture failed, falling back to heuristic grouping`
+
+The **Progress Log Panel** in the UI provides the same visibility without opening the console.
