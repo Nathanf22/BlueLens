@@ -211,8 +211,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       style={{ paddingLeft: `${(depth + 1) * 12}px` }}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <FileText className="w-3.5 h-3.5 flex-shrink-0" />
-        <span className="truncate text-sm">{diagram.name}</span>
+        <FileText className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 self-start" />
+        <div className="min-w-0">
+          <span className="truncate text-sm block">{diagram.name}</span>
+          {diagram.description && (
+            <span className="truncate text-xs text-gray-600 block leading-tight">{diagram.description}</span>
+          )}
+        </div>
         {diagram.nodeLinks && diagram.nodeLinks.length > 0 && (
           <span 
             className="text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-full font-medium" 

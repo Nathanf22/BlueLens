@@ -22,17 +22,21 @@ export interface Folder {
 export interface Diagram {
   id: string;
   name: string;
+  description?: string;
   code: string;
   comments?: Comment[];
   lastModified: number;
   folderId: string | null;
   workspaceId: string;
-  
+
   // Node-level navigation
   nodeLinks: NodeLink[];
 
   // Code integration
   codeLinks?: CodeLink[];
+
+  // If generated from a CodeGraph flow, tracks the source graph ID
+  sourceGraphId?: string;
 }
 
 export interface NodeLink {

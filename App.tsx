@@ -30,6 +30,13 @@ import { useCodeGraph } from './hooks/useCodeGraph';
 import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
 import { useProgressLog } from './hooks/useProgressLog';
 import { codeGraphStorageService } from './services/codeGraphStorageService';
+import {
+  buildExportPlan,
+  detectExistingExport,
+  materializePlan,
+} from './services/codeGraphExportService';
+import { FlowExportModal } from './components/FlowExportModal';
+import { CodeGraph } from './types';
 
 export default function App() {
   // --- State Management ---
@@ -156,21 +163,78 @@ export default function App() {
   const codeGraph = useCodeGraph(activeWorkspaceId);
   const codeGraphHandlers = useCodeGraphHandlers(codeGraph.activeGraph, codeGraph.updateGraph);
 
+  // --- Flow export state ---
+  const [pendingFlowExport, setPendingFlowExport] = useState<{ graph: CodeGraph } | null>(null);
+
+  /** Core export logic: builds plan and inserts folders + diagrams. */
+  const doExportFlows = useCallback((graph: CodeGraph, mode: 'overwrite' | 'new') => {
+    const flows = Object.values(graph.flows).filter(f => !!f.sequenceDiagram);
+    if (flows.length === 0) return;
+
+    const plan = buildExportPlan(graph);
+    const { existingFolder, existingDiagrams } = detectExistingExport(graph, folders, diagrams);
+
+    if (mode === 'overwrite' && existingFolder) {
+      // Remove old exported diagrams, keep the folder tree (matched by name)
+      const oldIds = new Set(existingDiagrams.map(d => d.id));
+      setDiagrams(prev => prev.filter(d => !oldIds.has(d.id)));
+      // Remove old sub-folders (children of existingFolder)
+      const oldSubFolderIds = new Set(
+        folders.filter(f => f.parentId === existingFolder.id).map(f => f.id)
+      );
+      setFolders(prev => prev.filter(f => !oldSubFolderIds.has(f.id)));
+
+      // Re-use the existing parent folder ID
+      const resolvedIds = new Map([[plan.foldersToCreate[0].tempId, existingFolder.id]]);
+      const { folders: newFolders, diagrams: newDiagrams } = materializePlan(
+        plan, activeWorkspaceId, resolvedIds
+      );
+      // Skip the first folder (parent — already exists)
+      setFolders(prev => [...prev, ...newFolders.slice(1)]);
+      setDiagrams(prev => [...prev, ...newDiagrams]);
+    } else {
+      // New folder (possibly with version suffix)
+      if (mode === 'new' && existingFolder) {
+        // Rename parent folder in plan to avoid collision
+        plan.foldersToCreate[0].name = `${plan.parentFolderName} (${Date.now()})`;
+      }
+      const { folders: newFolders, diagrams: newDiagrams } = materializePlan(plan, activeWorkspaceId);
+      setFolders(prev => [...prev, ...newFolders]);
+      setDiagrams(prev => [...prev, ...newDiagrams]);
+    }
+  }, [folders, diagrams, setFolders, setDiagrams, activeWorkspaceId]);
+
+  /** Trigger export after graph creation/regeneration. */
+  const triggerFlowExport = useCallback((graph: CodeGraph) => {
+    const flows = Object.values(graph.flows).filter(f => !!f.sequenceDiagram);
+    if (flows.length === 0) return;
+
+    const { existingFolder } = detectExistingExport(graph, folders, diagrams);
+    if (existingFolder) {
+      setPendingFlowExport({ graph });
+    } else {
+      doExportFlows(graph, 'new');
+    }
+  }, [folders, diagrams, doExportFlows]);
+
   const handleCreateGraph = useCallback(async (repoId: string) => {
     progressLog.startLog();
     try {
       const result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry);
+      if (result) triggerFlowExport(result);
       return result;
     } finally {
       progressLog.endLog();
     }
-  }, [codeGraph.createGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog]);
+  }, [codeGraph.createGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport]);
 
   const handleRegenerateFlows = useCallback(
-    (options?: { scopeNodeId?: string; customPrompt?: string }) => {
-      codeGraph.regenerateFlows(llmSettings, options);
+    async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
+      await codeGraph.regenerateFlows(llmSettings, options);
+      // After regeneration, activeGraph is updated — read fresh from store
+      if (codeGraph.activeGraph) triggerFlowExport(codeGraph.activeGraph);
     },
-    [codeGraph.regenerateFlows, llmSettings]
+    [codeGraph.regenerateFlows, codeGraph.activeGraph, llmSettings, triggerFlowExport]
   );
 
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {
@@ -547,6 +611,17 @@ export default function App() {
         codeGraphRepoId={codeGraph.activeGraph?.repoId || ''}
         codeGraphId={codeGraph.activeGraph?.id || ''}
       />
+
+      {/* Flow export confirmation modal */}
+      {pendingFlowExport && (
+        <FlowExportModal
+          graph={pendingFlowExport.graph}
+          flowCount={Object.values(pendingFlowExport.graph.flows as Record<string, import('./types').GraphFlow>).filter(f => !!f.sequenceDiagram).length}
+          onOverwrite={() => { doExportFlows(pendingFlowExport.graph, 'overwrite'); setPendingFlowExport(null); }}
+          onCreateNew={() => { doExportFlows(pendingFlowExport.graph, 'new'); setPendingFlowExport(null); }}
+          onClose={() => setPendingFlowExport(null)}
+        />
+      )}
     </div>
   );
 }
