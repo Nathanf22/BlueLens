@@ -1,4 +1,4 @@
-# Blueprint
+# BlueLens
 
 **Living Architecture Diagrams That Sync With Reality**
 
@@ -153,8 +153,7 @@ Blueprint/
 
 ### Planned
 
-- **Phase 4 — Collaboration**: Real-time editing with Yjs/CRDT, presence cursors, comment threads, permissions, offline-first sync
-- **Phase 5 — Polish**: Semantic search, version history, diagram templates, advanced exports (PDF, HTML)
+- **Phase 4 — Polish**: Semantic search, version history, diagram templates, advanced exports (PDF, HTML)
 
 ---
 
@@ -172,4 +171,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, architecture note
 
 ---
 
-**Blueprint** — Architecture diagrams that actually stay up to date.
+**BlueLens** — Architecture diagrams that actually stay up to date.
