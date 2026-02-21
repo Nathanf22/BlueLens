@@ -40,13 +40,10 @@ export const useDiagramHandlers = (
     const workspaceDiagrams = diagrams.filter(d => d.workspaceId === activeWorkspaceId);
     if (workspaceDiagrams.length <= 1) return;
 
-    if (window.confirm('Are you sure you want to delete this diagram?')) {
-      setDiagrams(diagrams.filter(d => d.id !== id));
-      
-      if (id === activeId) {
-        const remaining = diagrams.filter(d => d.workspaceId === activeWorkspaceId && d.id !== id);
-        if (remaining.length > 0) setActiveId(remaining[0].id);
-      }
+    setDiagrams(diagrams.filter(d => d.id !== id));
+    if (id === activeId) {
+      const remaining = diagrams.filter(d => d.workspaceId === activeWorkspaceId && d.id !== id);
+      if (remaining.length > 0) setActiveId(remaining[0].id);
     }
   };
 

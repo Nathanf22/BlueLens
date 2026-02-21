@@ -1,15 +1,21 @@
-# BlueLens
+<p align="center">
+  <img src="bluelens-logos/bluelens-full-color-dark.svg" alt="BlueLens" width="80" height="80" />
+</p>
 
-**Living Architecture Diagrams That Sync With Reality**
+<h1 align="center">BlueLens</h1>
 
-Blueprint is an open-source platform for creating, visualizing, and maintaining architecture diagrams that stay synchronized with your codebase. It transforms static diagrams into dynamic, navigable maps of your system — from 30,000-foot views down to individual functions.
+<p align="center"><strong>Living Architecture Diagrams That Sync With Reality</strong></p>
 
-![License](https://img.shields.io/badge/license-MIT-green)
-![React](https://img.shields.io/badge/React-19-blue)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
-![Mermaid](https://img.shields.io/badge/Mermaid.js-v11-orange)
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
+  <img src="https://img.shields.io/badge/React-19-blue" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-strict-blue" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Mermaid.js-v11-orange" alt="Mermaid" />
+</p>
 
-> **Blueprint Cloud** — A hosted version with collaboration, cloud storage, and team features is coming soon. This repository is the open-source core.
+BlueLens is an open-source platform for creating, visualizing, and maintaining architecture diagrams that stay synchronized with your codebase. It transforms static diagrams into dynamic, navigable maps of your system — from 30,000-foot views down to individual functions.
+
+> **BlueLens Cloud** — A hosted version with collaboration, cloud storage, and team features is coming soon. This repository is the open-source core.
 
 ---
 
@@ -66,8 +72,8 @@ Blueprint is an open-source platform for creating, visualizing, and maintaining 
 ### Installation
 
 ```bash
-git clone https://github.com/Nathanf22/Blueprint.git
-cd Blueprint
+git clone https://github.com/Nathanf22/BlueLens.git
+cd BlueLens
 npm install
 npm run dev
 ```
@@ -76,15 +82,13 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### AI Features (optional)
 
-AI-powered features (chat, code scanning, flow generation, smart grouping) require an API key from one of:
+AI-powered features (chat, code scanning, flow generation, smart grouping) require an API key. Copy `.env.example` to `.env` and fill in your key, or configure via the **AI Settings** panel in the app.
 
 | Provider | Setup |
 |----------|-------|
 | Google Gemini | API key from [Google AI Studio](https://aistudio.google.com/) |
 | OpenAI | API key from [OpenAI Platform](https://platform.openai.com/) |
 | Anthropic | API key + CORS proxy (browser cannot call the API directly) |
-
-Configure via the **AI Settings** panel in the app.
 
 ---
 
@@ -107,7 +111,7 @@ This is a client-side-only React app. No backend, no router, no external state l
 ### Project Structure
 
 ```
-Blueprint/
+BlueLens/
   App.tsx                    # Root orchestrator — composes hooks, passes props
   types.ts                   # All TypeScript interfaces
   components/                # React components (stateless — props only)
@@ -160,6 +164,10 @@ Blueprint/
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, architecture notes, and guidelines.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy.
 
 ## License
 

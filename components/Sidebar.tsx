@@ -6,6 +6,9 @@ import {
   GitBranch
 } from 'lucide-react';
 import { Diagram, Folder, Workspace, CodeGraph, RepoConfig } from '../types';
+import { ToastType } from '../hooks/useToast';
+import { ConfirmModal } from './ConfirmModal';
+import { InputModal } from './InputModal';
 import { BlueprintImportResult, exportDiagram, exportWorkspace, exportAll, importBlueprint, downloadJson } from '../services/exportService';
 import { fileSystemService } from '../services/fileSystemService';
 import JSZip from 'jszip';
@@ -43,6 +46,7 @@ interface SidebarProps {
   onDeleteGraph?: (graphId: string) => void;
   onLoadDemoGraph?: () => void;
   graphCreationProgress?: { step: string; current: number; total: number } | null;
+  showToast?: (message: string, type?: ToastType) => void;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -79,11 +83,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteGraph,
   onLoadDemoGraph,
   graphCreationProgress,
+  showToast,
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+
+  type ConfirmDialog = { message: string; confirmLabel?: string; onConfirm: () => void } | null;
+  type InputDialog = {
+    title: string; placeholder?: string; defaultValue?: string;
+    options?: { value: string; label: string }[]; confirmLabel?: string;
+    onSubmit: (value: string) => void;
+  } | null;
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
+  const [inputDialog, setInputDialog] = useState<InputDialog>(null);
   const [isCreatingGraph, setIsCreatingGraph] = useState(false);
   const [isRepoPickerOpen, setIsRepoPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,7 +156,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onImportBlueprint(result);
           } catch (e) {
             console.error("Error importing blueprint", e);
-            alert(`Could not import blueprint file: ${file.name}`);
+            showToast?.(`Could not import blueprint file: ${file.name}`, 'error');
           }
           continue;
         }
@@ -172,7 +186,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             await Promise.all(promises);
           } catch (e) {
             console.error("Error unzipping", e);
-            alert(`Could not read zip file: ${file.name}`);
+            showToast?.(`Could not read zip file: ${file.name}`, 'error');
           }
         } else {
           const text = await file.text();
@@ -191,7 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (newDiagrams.length > 0) onImport(newDiagrams);
     } catch (error) {
       console.error("Import error", error);
-      alert("Failed to import files.");
+      showToast?.('Failed to import files.', 'error');
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -241,11 +255,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            const targetFolderId = prompt('Enter folder name to move to (or leave empty for root):');
-            if (targetFolderId !== null) {
-              const folder = folders.find(f => f.name === targetFolderId);
-              onMoveDiagram(diagram.id, folder ? folder.id : null);
-            }
+            setInputDialog({
+              title: 'Move to folder',
+              confirmLabel: 'Move',
+              options: folders
+                .filter(f => f.workspaceId === activeWorkspaceId)
+                .map(f => ({ value: f.id, label: f.name })),
+              onSubmit: (folderId) => onMoveDiagram(diagram.id, folderId || null),
+            });
           }}
           className="p-1 rounded hover:bg-dark-700 text-gray-500 hover:text-gray-300"
           title="Move to folder..."
@@ -257,7 +274,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           disabled={diagrams.length <= 1 && workspaces.length === 1}
           onClick={(e) => {
             e.stopPropagation();
-            onDelete(diagram.id, e);
+            setConfirmDialog({
+              message: `Delete "${diagram.name}"? This cannot be undone.`,
+              confirmLabel: 'Delete',
+              onConfirm: () => onDelete(diagram.id, e),
+            });
           }}
           className={`p-1 rounded transition-colors hover:bg-red-900/50 hover:text-red-400 text-gray-500`}
           title="Delete diagram"
@@ -295,8 +316,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const name = prompt('Subfolder name:');
-                if (name) onCreateFolder(name, folder.id);
+                setInputDialog({
+                  title: 'New subfolder',
+                  placeholder: 'Subfolder name',
+                  onSubmit: (name) => onCreateFolder(name, folder.id),
+                });
               }}
               className="p-1 rounded hover:bg-dark-700 text-gray-500 hover:text-gray-300"
               title="New subfolder"
@@ -306,8 +330,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const name = prompt('New folder name:', folder.name);
-                if (name) onRenameFolder(folder.id, name);
+                setInputDialog({
+                  title: 'Rename folder',
+                  placeholder: 'Folder name',
+                  defaultValue: folder.name,
+                  confirmLabel: 'Rename',
+                  onSubmit: (name) => onRenameFolder(folder.id, name),
+                });
               }}
               className="p-1 rounded hover:bg-dark-700 text-gray-500 hover:text-gray-300"
               title="Rename folder"
@@ -315,7 +344,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Edit2 className="w-3 h-3" />
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmDialog({
+                  message: `Delete folder "${folder.name}"? Diagrams inside will be moved to root.`,
+                  confirmLabel: 'Delete',
+                  onConfirm: () => onDeleteFolder(folder.id),
+                });
+              }}
               className="p-1 rounded hover:bg-red-900/50 hover:text-red-400 text-gray-500"
               title="Delete folder"
             >
@@ -422,8 +458,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const name = prompt('Rename workspace:', w.name);
-                        if (name) onRenameWorkspace(w.id, name);
+                        setInputDialog({
+                          title: 'Rename workspace',
+                          placeholder: 'Workspace name',
+                          defaultValue: w.name,
+                          confirmLabel: 'Rename',
+                          onSubmit: (name) => onRenameWorkspace(w.id, name),
+                        });
                       }}
                       className="p-1 hover:text-brand-400 text-gray-500"
                     >
@@ -433,7 +474,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onDeleteWorkspace(w.id);
+                          setConfirmDialog({
+                            message: `Delete workspace "${w.name}" and all its diagrams? This cannot be undone.`,
+                            confirmLabel: 'Delete',
+                            onConfirm: () => onDeleteWorkspace(w.id),
+                          });
                         }}
                         className="p-1 hover:text-red-400 text-gray-500"
                       >
@@ -447,11 +492,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="p-2 border-t border-gray-700">
               <button
                 onClick={() => {
-                  const name = prompt('Workspace name:');
-                  if (name) {
-                    onCreateWorkspace(name);
-                    setIsWorkspaceDropdownOpen(false);
-                  }
+                  setInputDialog({
+                    title: 'New workspace',
+                    placeholder: 'Workspace name',
+                    confirmLabel: 'Create',
+                    onSubmit: (name) => {
+                      onCreateWorkspace(name);
+                      setIsWorkspaceDropdownOpen(false);
+                    },
+                  });
                 }}
                 className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-gray-300 hover:text-brand-400 hover:bg-dark-700 rounded transition-colors"
               >
@@ -473,8 +522,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center gap-1">
           <button 
             onClick={() => {
-              const name = prompt('Folder name:');
-              if (name) onCreateFolder(name, null);
+              setInputDialog({
+                title: 'New folder',
+                placeholder: 'Folder name',
+                confirmLabel: 'Create',
+                onSubmit: (name) => onCreateFolder(name, null),
+              });
             }}
             className="p-1.5 text-gray-500 hover:text-brand-400 transition-colors rounded hover:bg-dark-800"
             title="New Folder"
@@ -728,6 +781,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Confirm dialog */}
+      {confirmDialog && (
+        <ConfirmModal
+          message={confirmDialog.message}
+          confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
+          onCancel={() => setConfirmDialog(null)}
+        />
+      )}
+
+      {/* Input dialog */}
+      {inputDialog && (
+        <InputModal
+          title={inputDialog.title}
+          placeholder={inputDialog.placeholder}
+          defaultValue={inputDialog.defaultValue}
+          options={inputDialog.options}
+          confirmLabel={inputDialog.confirmLabel}
+          onSubmit={(val) => { inputDialog.onSubmit(val); setInputDialog(null); }}
+          onCancel={() => setInputDialog(null)}
+        />
       )}
     </div>
   );

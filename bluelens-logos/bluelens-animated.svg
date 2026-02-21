@@ -1,0 +1,47 @@
+<svg width="280" height="280" viewBox="0 0 280 280" fill="none" xmlns="http://www.w3.org/2000/svg" id="animated-logo">
+                    <ellipse cx="140" cy="140" rx="120" ry="50" fill="url(#glow-gradient)" opacity="0.2" style="animation: pulse-glow 3s ease-in-out infinite;"/>
+                    <path d="M 40 140 Q 140 80 240 140 Q 140 200 40 140 Z" stroke="url(#main-gradient)" stroke-width="4" fill="none" stroke-dasharray="220" stroke-dashoffset="0" style="animation: scan 4s ease-in-out infinite;"/>
+                    <g style="animation: rotate-slow 20s linear infinite; transform-origin: 140px 140px;">
+                        <line x1="80" y1="140" x2="200" y2="140" stroke="url(#main-gradient)" stroke-width="0.5" opacity="0.2"/>
+                        <line x1="140" y1="80" x2="140" y2="200" stroke="url(#main-gradient)" stroke-width="0.5" opacity="0.2"/>
+                        <circle cx="140" cy="140" r="60" stroke="url(#main-gradient)" stroke-width="0.5" opacity="0.15" fill="none"/>
+                    </g>
+                    <circle cx="140" cy="140" r="35" fill="url(#iris-gradient)" opacity="0.25">
+                        <animate attributeName="r" values="35;30;35" dur="3s" repeatCount="indefinite"/>
+                    </circle>
+                    <circle cx="140" cy="140" r="35" stroke="url(#main-gradient)" stroke-width="2.5" fill="none"/>
+                    <circle cx="140" cy="140" r="20" fill="url(#pupil-gradient)" style="animation: blink 5s ease-in-out infinite;"/>
+                    <circle cx="130" cy="130" r="8" fill="#ffffff" opacity="0.9"/>
+                    <circle cx="134" cy="134" r="4" fill="#ffffff" opacity="0.6"/>
+                    <g opacity="0.4">
+                        <line x1="90" y1="110" x2="110" y2="110" stroke="url(#main-gradient)" stroke-width="1.5" stroke-dasharray="2,2">
+                            <animate attributeName="stroke-dashoffset" from="0" to="4" dur="1s" repeatCount="indefinite"/>
+                        </line>
+                        <line x1="170" y1="110" x2="190" y2="110" stroke="url(#main-gradient)" stroke-width="1.5" stroke-dasharray="2,2">
+                            <animate attributeName="stroke-dashoffset" from="0" to="4" dur="1s" repeatCount="indefinite"/>
+                        </line>
+                    </g>
+                    <line x1="80" y1="140" x2="200" y2="140" stroke="#06b6d4" stroke-width="2" opacity="0.6">
+                        <animate attributeName="y1" values="100;180;100" dur="3s" repeatCount="indefinite"/>
+                        <animate attributeName="y2" values="100;180;100" dur="3s" repeatCount="indefinite"/>
+                        <animate attributeName="opacity" values="0.3;0.8;0.3" dur="3s" repeatCount="indefinite"/>
+                    </line>
+                    <defs>
+                        <linearGradient id="main-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:1"/>
+                            <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1"/>
+                        </linearGradient>
+                        <linearGradient id="iris-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:1"/>
+                            <stop offset="100%" style="stop-color:#a78bfa;stop-opacity:1"/>
+                        </linearGradient>
+                        <radialGradient id="pupil-gradient">
+                            <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:1"/>
+                            <stop offset="100%" style="stop-color:#0a1221;stop-opacity:1"/>
+                        </radialGradient>
+                        <radialGradient id="glow-gradient">
+                            <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:0.5"/>
+                            <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:0"/>
+                        </radialGradient>
+                    </defs>
+                </svg>

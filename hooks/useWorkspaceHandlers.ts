@@ -23,13 +23,11 @@ export const useWorkspaceHandlers = (
 
   const handleDeleteWorkspace = (id: string) => {
     if (workspaces.length <= 1) return;
-    if (window.confirm('Delete this workspace and all its diagrams?')) {
-      setDiagrams(prev => prev.filter(d => d.workspaceId !== id));
-      setFolders(prev => prev.filter(f => f.workspaceId !== id));
-      setWorkspaces(prev => prev.filter(w => w.id !== id));
-      if (activeWorkspaceId === id) {
-        setActiveWorkspaceId(workspaces.find(w => w.id !== id)!.id);
-      }
+    setDiagrams(prev => prev.filter(d => d.workspaceId !== id));
+    setFolders(prev => prev.filter(f => f.workspaceId !== id));
+    setWorkspaces(prev => prev.filter(w => w.id !== id));
+    if (activeWorkspaceId === id) {
+      setActiveWorkspaceId(workspaces.find(w => w.id !== id)!.id);
     }
   };
 

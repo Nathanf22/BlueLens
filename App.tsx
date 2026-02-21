@@ -29,6 +29,8 @@ import { useCodebaseImport } from './hooks/useCodebaseImport';
 import { useCodeGraph } from './hooks/useCodeGraph';
 import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
 import { useProgressLog } from './hooks/useProgressLog';
+import { useToast } from './hooks/useToast';
+import { ToastContainer } from './components/ToastContainer';
 import { codeGraphStorageService } from './services/codeGraphStorageService';
 import {
   buildExportPlan,
@@ -39,6 +41,9 @@ import { FlowExportModal } from './components/FlowExportModal';
 import { CodeGraph } from './types';
 
 export default function App() {
+  // --- Toast Notifications ---
+  const { toasts, showToast, dismissToast } = useToast();
+
   // --- State Management ---
   const {
     workspaces,
@@ -127,7 +132,7 @@ export default function App() {
     useNodeLinkHandlers(activeDiagram, updateActiveDiagram);
 
   const { handleAddRepo, handleRemoveRepo, handleReopenRepo } =
-    useRepoHandlers(repos, setRepos, activeWorkspaceId);
+    useRepoHandlers(repos, setRepos, activeWorkspaceId, showToast);
 
   const { handleAddCodeLink, handleRemoveCodeLink } =
     useCodeLinkHandlers(activeDiagram, updateActiveDiagram);
@@ -278,7 +283,7 @@ export default function App() {
       if (fallbackRepo) handle = fileSystemService.getHandle(fallbackRepo.id);
     }
     if (!handle) {
-      alert('Repository is disconnected. Please reopen it from the Repo Manager.');
+      showToast('Repository is disconnected. Please reopen it from the Repo Manager.', 'warning');
       setIsRepoManagerOpen(true);
       return;
     }
@@ -298,9 +303,9 @@ export default function App() {
       setIsCodePanelOpen(true);
     } catch (e) {
       console.error('Failed to read file:', e);
-      alert('Failed to read file. The repository may need to be reopened.');
+      showToast('Failed to read file. The repository may need to be reopened.', 'error');
     }
-  }, [codeGraph.activeGraph, setActiveCodeFile, setIsCodePanelOpen, setIsRepoManagerOpen]);
+  }, [codeGraph.activeGraph, setActiveCodeFile, setIsCodePanelOpen, setIsRepoManagerOpen, showToast]);
 
   const handleCodeGraphAnalyzeDomain = useCallback(() => {
     codeGraph.analyzeDomain(llmSettings);
@@ -391,7 +396,7 @@ export default function App() {
       if (fallbackRepo) handle = fileSystemService.getHandle(fallbackRepo.id);
     }
     if (!handle) {
-      alert('Repository is disconnected. Please reopen it from the Repo Manager.');
+      showToast('Repository is disconnected. Please reopen it from the Repo Manager.', 'warning');
       setIsRepoManagerOpen(true);
       return;
     }
@@ -412,7 +417,7 @@ export default function App() {
       setIsAIChatOpen(false); // Mutually exclusive with chat panel
     } catch (e) {
       console.error('Failed to read file:', e);
-      alert('Failed to read file. The repository may need to be reopened.');
+      showToast('Failed to read file. The repository may need to be reopened.', 'error');
     }
   };
 
@@ -427,6 +432,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-dark-900 text-gray-200">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* Header */}
       <AppHeader
@@ -475,6 +481,7 @@ export default function App() {
             onDeleteGraph={codeGraph.deleteGraph}
             onLoadDemoGraph={codeGraph.loadDemoGraph}
             graphCreationProgress={codeGraph.graphCreationProgress}
+            showToast={showToast}
           />
         </div>
 

@@ -1,17 +1,19 @@
 import React from 'react';
 import { RepoConfig } from '../types';
 import { fileSystemService } from '../services/fileSystemService';
+import { ToastType } from './useToast';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 export const useRepoHandlers = (
   repos: RepoConfig[],
   setRepos: React.Dispatch<React.SetStateAction<RepoConfig[]>>,
-  activeWorkspaceId: string
+  activeWorkspaceId: string,
+  showToast?: (message: string, type?: ToastType) => void
 ) => {
   const handleAddRepo = async () => {
     if (!fileSystemService.isSupported()) {
-      alert('File System Access API is not supported in this browser. Please use Chrome or Edge.');
+      showToast?.('File System Access API is not supported in this browser. Please use Chrome or Edge.', 'error');
       return;
     }
 

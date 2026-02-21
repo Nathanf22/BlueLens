@@ -1,12 +1,12 @@
-# Contributing to Blueprint
+# Contributing to BlueLens
 
-Thanks for your interest in contributing! Blueprint is a living architecture diagram platform built with React and TypeScript.
+Thanks for your interest in contributing! BlueLens is a living architecture diagram platform built with React and TypeScript.
 
 ## Getting Started
 
 ```bash
-git clone https://github.com/Nathanf22/Blueprint.git
-cd Blueprint
+git clone https://github.com/Nathanf22/BlueLens.git
+cd BlueLens
 npm install
 npm run dev        # http://localhost:3000
 ```
@@ -24,12 +24,12 @@ AI-powered features (chat, code scanning, flow generation, smart grouping) requi
 - OpenAI
 - Anthropic (requires a CORS proxy)
 
-Configure via the AI Settings panel in the app.
+Copy `.env.example` to `.env` and add your key, or configure via the AI Settings panel in the app.
 
 ## Project Structure
 
 ```
-Blueprint/
+BlueLens/
   App.tsx                  # Root orchestrator — composes hooks, passes props
   types.ts                 # All TypeScript types and interfaces
   components/              # React components (no state — props only)
@@ -93,6 +93,10 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - `refactor:` — code restructuring (no behavior change)
 - `docs:` — documentation only
 - `chore:` — build, deps, config
+
+## Security
+
+Please read [SECURITY.md](SECURITY.md) before reporting vulnerabilities. Do **not** open public issues for security bugs.
 
 ## Questions?
 
