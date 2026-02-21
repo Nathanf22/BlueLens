@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Menu, Layout, Settings, FolderGit2 } from 'lucide-react';
+import { Sparkles, Menu, Settings, FolderGit2 } from 'lucide-react';
 import { Button } from './Button';
 
 interface AppHeaderProps {
@@ -28,11 +28,23 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         >
           <Menu className="w-5 h-5" />
         </button>
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center shadow-lg shadow-brand-500/20">
-          <Layout className="w-5 h-5 text-white" />
-        </div>
+        <svg width="32" height="32" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+          <path d="M 35 100 Q 100 50 165 100 Q 100 150 35 100 Z" stroke="url(#header-grad)" strokeWidth="3.5" fill="none"/>
+          <circle cx="100" cy="100" r="40" fill="url(#header-grad)" opacity="0.2"/>
+          <circle cx="100" cy="100" r="40" stroke="url(#header-grad)" strokeWidth="2.5" fill="none"/>
+          <circle cx="100" cy="100" r="22" fill="url(#header-grad)"/>
+          <circle cx="92" cy="92" r="7" fill="#ffffff" opacity="0.9"/>
+          <line x1="60" y1="100" x2="140" y2="100" stroke="url(#header-grad)" strokeWidth="1" opacity="0.3"/>
+          <line x1="100" y1="60" x2="100" y2="140" stroke="url(#header-grad)" strokeWidth="1" opacity="0.3"/>
+          <defs>
+            <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#06b6d4" stopOpacity={1} />
+              <stop offset="100%" stopColor="#7c3aed" stopOpacity={1} />
+            </linearGradient>
+          </defs>
+        </svg>
         <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-100 to-gray-400 hidden sm:block">
-          Blueprint
+          BlueLens
         </h1>
       </div>
 
