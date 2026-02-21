@@ -88,8 +88,7 @@ Check the [PRD](PRD) and [PROGRESS.md](PROGRESS.md) for the full roadmap. Areas 
 
 | Area | Details |
 |------|---------|
-| **Phase 4 — Collaboration** | Real-time editing with Yjs/CRDT, presence cursors, comment threads, permissions |
-| **Phase 5 — Polish** | Semantic search, version history, diagram templates, PDF/HTML export |
+| **Phase 4 — Polish** | Semantic search, version history, diagram templates, PDF/HTML export |
 | **Bug fixes** | Anything listed in [KNOWN_ISSUES.md](KNOWN_ISSUES.md) or reproducible bugs |
 | **Performance** | Force graph rendering, Mermaid re-render cycles |
 | **Tests** | No test framework exists yet — adding one with initial coverage is valuable |
