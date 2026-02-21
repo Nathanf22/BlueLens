@@ -84,15 +84,7 @@ PRD specifies encrypted IndexedDB storage. Currently API keys are stored in plai
 ### Dead Code
 - `services/geminiService.ts` still exists but is no longer imported by any code (replaced by `llmService`). Can be deleted.
 
-## Phase 4: Collaboration — NOT STARTED
-- Yjs CRDT real-time editing
-- WebSocket server
-- Presence/cursors
-- Element-specific comment threads
-- Permissions
-- Offline-first sync
-
-## Phase 5: Polish & Advanced — NOT STARTED
+## Phase 4: Polish & Advanced — NOT STARTED
 - Semantic search
 - Auto-tagging
 - Version history

@@ -22,8 +22,7 @@ assignees: ""
 
 <!-- Check the phase this relates to, if any. See PRD or README for the full roadmap. -->
 
-- [ ] Phase 4 — Collaboration (Yjs/CRDT, presence, permissions)
-- [ ] Phase 5 — Polish (search, version history, templates, exports)
+- [ ] Phase 4 — Polish (search, version history, templates, exports)
 - [ ] Other / not on the roadmap
 
 ## Additional context

@@ -79,8 +79,7 @@ Blueprint aims to be a living architecture diagram platform that syncs with code
 - **Phase 1 — Foundation (MVP):** COMPLETE. Mermaid editor with live preview, multi-level zoom navigation with badges, breadcrumb navigation, workspace/folder management, import/export.
 - **Phase 2 — Code Integration:** UP NEXT. File System Access API, Tree-sitter WASM parsing (Python, TS/JS), manual code linking, Monaco Editor for code viewing, split diagram+code view, multi-repo support.
 - **Phase 3 — Intelligence Layer:** On-demand code scanning, divergence detection, AI chat panel for diagram modifications, visual diff, three sync modes (manual/semi-auto/auto).
-- **Phase 4 — Collaboration:** Yjs CRDT real-time editing, WebSocket server, presence/cursors, element-specific comment threads, permissions, offline-first sync.
-- **Phase 5 — Polish & Advanced:** Semantic search, auto-tagging, version history, diagram templates, advanced exports (PDF/HTML with comments).
+- **Phase 4 — Polish & Advanced:** Semantic search, auto-tagging, version history, diagram templates, advanced exports (PDF/HTML with comments).
 
 ## Git Conventions
 
