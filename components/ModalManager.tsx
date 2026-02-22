@@ -1,5 +1,5 @@
 import React from 'react';
-import { AIGeneratorModal } from './AIGeneratorModal';
+import { GlobalAIChatModal } from './GlobalAIChatModal';
 import { NodeLinkManager } from './NodeLinkManager';
 import { RepoManager } from './RepoManager';
 import { CodeLinkManager } from './CodeLinkManager';
@@ -9,12 +9,17 @@ import { DiffViewModal } from './DiffViewModal';
 import { DiagramAnalysisPanel } from './DiagramAnalysisPanel';
 import { CodebaseImportModal } from './CodebaseImportModal';
 import { CodeGraphConfigModal } from './CodeGraphConfigModal';
-import { Diagram, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult, SyncSuggestion, SyncMode, ScanConfig, DiagramAnalysis, CodebaseImportProgress, CodeGraphConfig } from '../types';
+import { Diagram, ChatMessage, RepoConfig, LLMSettings, LLMProvider, LLMProviderConfig, ScanResult, SyncSuggestion, SyncMode, ScanConfig, DiagramAnalysis, CodebaseImportProgress, CodeGraphConfig } from '../types';
 
 interface ModalManagerProps {
-  isAIModalOpen: boolean;
-  onCloseAIModal: () => void;
-  onGenerate: (newCode: string) => void;
+  isGlobalAIOpen: boolean;
+  onCloseGlobalAI: () => void;
+  globalChatMessages: ChatMessage[];
+  isGlobalAILoading: boolean;
+  onGlobalSend: (text: string) => void;
+  onClearGlobalMessages: () => void;
+  onApplyGlobalToDiagram: (code: string) => void;
+  hasActiveDiagram: boolean;
   llmSettings: LLMSettings;
   isNodeLinkManagerOpen: boolean;
   onCloseNodeLinkManager: () => void;
@@ -81,9 +86,14 @@ interface ModalManagerProps {
 }
 
 export const ModalManager: React.FC<ModalManagerProps> = ({
-  isAIModalOpen,
-  onCloseAIModal,
-  onGenerate,
+  isGlobalAIOpen,
+  onCloseGlobalAI,
+  globalChatMessages,
+  isGlobalAILoading,
+  onGlobalSend,
+  onClearGlobalMessages,
+  onApplyGlobalToDiagram,
+  hasActiveDiagram,
   llmSettings,
   isNodeLinkManagerOpen,
   onCloseNodeLinkManager,
@@ -141,12 +151,17 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
 }) => {
   return (
     <>
-      {/* AI Generator Modal */}
-      <AIGeneratorModal
-        isOpen={isAIModalOpen}
-        onClose={onCloseAIModal}
-        onGenerate={onGenerate}
-        llmSettings={llmSettings}
+      {/* Global AI Chat Modal */}
+      <GlobalAIChatModal
+        isOpen={isGlobalAIOpen}
+        onClose={onCloseGlobalAI}
+        messages={globalChatMessages}
+        isLoading={isGlobalAILoading}
+        onSend={onGlobalSend}
+        onClearMessages={onClearGlobalMessages}
+        onApplyToDiagram={onApplyGlobalToDiagram}
+        hasActiveDiagram={hasActiveDiagram}
+        activeProvider={llmSettings.activeProvider}
       />
 
       {/* Node Link Manager Modal */}

@@ -1,10 +1,9 @@
 import React from 'react';
 import { Sparkles, Menu, Settings, FolderGit2 } from 'lucide-react';
-import { Button } from './Button';
 
 interface AppHeaderProps {
   onToggleSidebar: () => void;
-  onOpenAIModal: () => void;
+  onOpenGlobalAI: () => void;
   onOpenAISettings: () => void;
   onOpenRepoManager: () => void;
   isSidebarOpen: boolean;
@@ -13,7 +12,7 @@ interface AppHeaderProps {
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleSidebar,
-  onOpenAIModal,
+  onOpenGlobalAI,
   onOpenAISettings,
   onOpenRepoManager,
   isSidebarOpen,
@@ -50,6 +49,13 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
       <div className="flex items-center gap-2">
         <button
+          onClick={onOpenAISettings}
+          className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+          title="AI Provider Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
+        <button
           onClick={onOpenRepoManager}
           className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-green-600 bg-dark-900 hover:bg-green-900/20 text-gray-400 hover:text-green-400 transition-colors text-sm"
           title="Manage Repositories"
@@ -67,19 +73,17 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           )}
         </button>
         <button
-          onClick={onOpenAISettings}
-          className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
-          title="AI Provider Settings"
+          onClick={onOpenGlobalAI}
+          style={{
+            background: 'linear-gradient(#1e1e1e, #1e1e1e) padding-box, linear-gradient(135deg, #06b6d4, #7c3aed) border-box',
+            border: '1px solid transparent',
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 hover:shadow-[0_0_14px_rgba(6,182,212,0.3)] hover:brightness-110"
+          title="Ask AI"
         >
-          <Settings className="w-5 h-5" />
+          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-purple-400">Ask AI</span>
         </button>
-        <Button
-          onClick={onOpenAIModal}
-          icon={<Sparkles className="w-4 h-4" />}
-          className="bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 border-none h-9"
-        >
-          Ask AI
-        </Button>
       </div>
     </header>
   );

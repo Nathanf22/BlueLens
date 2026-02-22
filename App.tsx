@@ -5,10 +5,12 @@ import { AppFooter } from './components/AppFooter';
 import { WorkspaceView } from './components/WorkspaceView';
 import { ModalManager } from './components/ModalManager';
 import { BlueprintImportResult } from './services/exportService';
+import { llmService } from './services/llmService';
+import { aiChatService } from './services/aiChatService';
 import { fileSystemService } from './services/fileSystemService';
 import { diagramAnalyzerService } from './services/diagramAnalyzerService';
 import { scaffoldService } from './services/scaffoldService';
-import { CodeFile, DiagramAnalysis, ScanConfig } from './types';
+import { ChatMessage, CodeFile, DiagramAnalysis, ScanConfig } from './types';
 
 // Custom Hooks
 import { useAppState } from './hooks/useAppState';
@@ -60,8 +62,8 @@ export default function App() {
     setRepos,
     error,
     setError,
-    isAIModalOpen,
-    setIsAIModalOpen,
+    isGlobalAIOpen,
+    setIsGlobalAIOpen,
     isNodeLinkManagerOpen,
     setIsNodeLinkManagerOpen,
     isRepoManagerOpen,
@@ -168,6 +170,59 @@ export default function App() {
   // --- CodeGraph ---
   const codeGraph = useCodeGraph(activeWorkspaceId);
   const codeGraphHandlers = useCodeGraphHandlers(codeGraph.activeGraph, codeGraph.updateGraph);
+
+  // --- Global AI Chat ---
+  const [globalChatMessages, setGlobalChatMessages] = useState<ChatMessage[]>([]);
+  const [isGlobalAILoading, setIsGlobalAILoading] = useState(false);
+  const globalMsgCounterRef = useRef(0);
+
+  const handleGlobalSend = useCallback(async (text: string) => {
+    const userMsg: ChatMessage = {
+      id: `global-${Date.now()}-${++globalMsgCounterRef.current}`,
+      role: 'user',
+      content: text.trim(),
+      timestamp: Date.now(),
+    };
+    setGlobalChatMessages(prev => [...prev, userMsg]);
+    setIsGlobalAILoading(true);
+
+    try {
+      const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+      const context = {
+        workspaceName: activeWorkspace?.name,
+        activeDiagram: activeDiagram ? { name: activeDiagram.name, code: activeDiagram.code } : undefined,
+        activeCodeGraph: codeGraph.activeGraph ? {
+          name: codeGraph.activeGraph.name,
+          nodeCount: Object.keys(codeGraph.activeGraph.nodes).length,
+          lenses: codeGraph.activeGraph.lenses.map((l: import('./types').ViewLens) => l.name),
+        } : undefined,
+      };
+
+      const systemPrompt = aiChatService.buildGlobalSystemPrompt(context);
+      const allMessages = [...globalChatMessages, userMsg];
+      const llmMessages = aiChatService.chatMessagesToLLMMessages(allMessages);
+      const response = await llmService.sendMessage(llmMessages, systemPrompt, llmSettings);
+
+      const assistantMsg: ChatMessage = {
+        id: `global-${Date.now()}-${++globalMsgCounterRef.current}`,
+        role: 'assistant',
+        content: response.content,
+        timestamp: Date.now(),
+        diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(response.content) || undefined,
+      };
+      setGlobalChatMessages(prev => [...prev, assistantMsg]);
+    } catch (err: any) {
+      const errorMsg: ChatMessage = {
+        id: `global-${Date.now()}-${++globalMsgCounterRef.current}`,
+        role: 'assistant',
+        content: `Error: ${err.message || 'Failed to get response'}`,
+        timestamp: Date.now(),
+      };
+      setGlobalChatMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsGlobalAILoading(false);
+    }
+  }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, codeGraph.activeGraph]);
 
   // --- Flow export state ---
   const [pendingFlowExport, setPendingFlowExport] = useState<{ graph: CodeGraph } | null>(null);
@@ -384,11 +439,6 @@ export default function App() {
     if (error) setError(null);
   };
 
-  const handleAIGenerate = (newCode: string) => {
-    updateActiveDiagram({ code: newCode });
-    setIsAIModalOpen(false);
-  };
-
   const handleImportBlueprint = (data: BlueprintImportResult) => {
     setWorkspaces(prev => [...prev, ...data.workspaces]);
     setFolders(prev => [...prev, ...data.folders]);
@@ -460,7 +510,7 @@ export default function App() {
       {/* Header */}
       <AppHeader
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        onOpenAIModal={() => setIsAIModalOpen(true)}
+        onOpenGlobalAI={() => setIsGlobalAIOpen(true)}
         onOpenAISettings={() => setIsAISettingsOpen(true)}
         onOpenRepoManager={() => setIsRepoManagerOpen(true)}
         isSidebarOpen={isSidebarOpen}
@@ -610,9 +660,14 @@ export default function App() {
 
       {/* Modals */}
       <ModalManager
-        isAIModalOpen={isAIModalOpen}
-        onCloseAIModal={() => setIsAIModalOpen(false)}
-        onGenerate={handleAIGenerate}
+        isGlobalAIOpen={isGlobalAIOpen}
+        onCloseGlobalAI={() => setIsGlobalAIOpen(false)}
+        globalChatMessages={globalChatMessages}
+        isGlobalAILoading={isGlobalAILoading}
+        onGlobalSend={handleGlobalSend}
+        onClearGlobalMessages={() => setGlobalChatMessages([])}
+        onApplyGlobalToDiagram={(code) => updateActiveDiagram({ code })}
+        hasActiveDiagram={!!activeDiagram}
         llmSettings={llmSettings}
         isNodeLinkManagerOpen={isNodeLinkManagerOpen}
         onCloseNodeLinkManager={() => setIsNodeLinkManagerOpen(false)}

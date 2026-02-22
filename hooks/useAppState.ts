@@ -21,7 +21,7 @@ export const useAppState = () => {
 
   // --- State: UI ---
   const [error, setError] = useState<string | null>(null);
-  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [isGlobalAIOpen, setIsGlobalAIOpen] = useState(false);
   const [isNodeLinkManagerOpen, setIsNodeLinkManagerOpen] = useState(false);
   const [isRepoManagerOpen, setIsRepoManagerOpen] = useState(false);
   const [isCodeLinkManagerOpen, setIsCodeLinkManagerOpen] = useState(false);
@@ -104,8 +104,8 @@ export const useAppState = () => {
     // UI State
     error,
     setError,
-    isAIModalOpen,
-    setIsAIModalOpen,
+    isGlobalAIOpen,
+    setIsGlobalAIOpen,
     isNodeLinkManagerOpen,
     setIsNodeLinkManagerOpen,
     isRepoManagerOpen,
