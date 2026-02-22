@@ -2,9 +2,9 @@
 
 ## Reporting a Vulnerability
 
-**Do not open a public GitHub issue for security vulnerabilities.**
+**Do not open a public GitHub issue or Discussion for security vulnerabilities.**
 
-Public issues are visible to everyone, including potential attackers. Please report security issues by contacting the maintainer privately:
+Public issues and Discussions are visible to everyone, including potential attackers. Please report security issues by contacting the maintainer privately:
 
 **Nathan Kamokoue** — [LinkedIn](https://www.linkedin.com/in/nathan-kamokoue-1289121b8/)
 

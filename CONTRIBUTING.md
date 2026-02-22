@@ -94,7 +94,7 @@ Check the [PRD](PRD) and [PROGRESS.md](PROGRESS.md) for the full roadmap. Areas 
 | **Tests** | No test framework exists yet — adding one with initial coverage is valuable |
 | **Documentation** | Improving this file, README, or inline code documentation |
 
-If you are not sure whether your idea fits the project, open an issue first to discuss it before writing code.
+If you are not sure whether your idea fits the project, start a [Discussion](https://github.com/Nathanf22/BlueLens/discussions) before opening an issue or writing code.
 
 ---
 
@@ -218,6 +218,12 @@ security: redact API key from error log messages
 
 ## Questions?
 
-Open an issue on GitHub or reach out to the maintainer:
+| Channel | Use for |
+|---------|---------|
+| [Discussions](https://github.com/Nathanf22/BlueLens/discussions/categories/q-a) | Usage questions, setup help, general support |
+| [Ideas](https://github.com/Nathanf22/BlueLens/discussions/categories/ideas) | Feature brainstorming before opening a formal issue |
+| [Issues](https://github.com/Nathanf22/BlueLens/issues) | Confirmed bugs and well-defined feature requests |
+
+Or reach out to the maintainer directly:
 
 **Nathan Kamokoue** — [LinkedIn](https://www.linkedin.com/in/nathan-kamokoue-1289121b8/) / [X](https://x.com/KamokoueNathan)
