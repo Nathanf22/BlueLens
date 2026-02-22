@@ -16,7 +16,8 @@ const DEFAULT_MODELS: Record<LLMProvider, string> = {
 async function sendGemini(
   messages: LLMMessage[],
   systemPrompt: string,
-  config: LLMProviderConfig
+  config: LLMProviderConfig,
+  signal?: AbortSignal
 ): Promise<LLMResponse> {
   const ai = new GoogleGenAI({ apiKey: config.apiKey });
   const model = config.model || DEFAULT_MODELS.gemini;
@@ -34,7 +35,7 @@ async function sendGemini(
       systemInstruction: systemPrompt,
       temperature: 0.3,
     },
-  });
+  }, signal ? { signal } : undefined);
 
   const text = response.text;
   if (!text) throw new Error('No response from Gemini');
@@ -45,7 +46,8 @@ async function sendGemini(
 async function sendOpenAI(
   messages: LLMMessage[],
   systemPrompt: string,
-  config: LLMProviderConfig
+  config: LLMProviderConfig,
+  signal?: AbortSignal
 ): Promise<LLMResponse> {
   const client = new OpenAI({
     apiKey: config.apiKey,
@@ -64,7 +66,7 @@ async function sendOpenAI(
       })),
     ],
     temperature: 0.3,
-  });
+  }, { signal });
 
   const text = response.choices[0]?.message?.content;
   if (!text) throw new Error('No response from OpenAI');
@@ -75,7 +77,8 @@ async function sendOpenAI(
 async function sendAnthropic(
   messages: LLMMessage[],
   systemPrompt: string,
-  config: LLMProviderConfig
+  config: LLMProviderConfig,
+  signal?: AbortSignal
 ): Promise<LLMResponse> {
   const model = config.model || DEFAULT_MODELS.anthropic;
   const baseUrl = config.proxyUrl || 'https://api.anthropic.com';
@@ -93,6 +96,7 @@ async function sendAnthropic(
       system: systemPrompt,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -140,7 +144,8 @@ export const llmService = {
   async sendMessage(
     messages: LLMMessage[],
     systemPrompt: string,
-    settings: LLMSettings
+    settings: LLMSettings,
+    signal?: AbortSignal
   ): Promise<LLMResponse> {
     const config = settings.providers[settings.activeProvider];
     if (!config || !config.apiKey) {
@@ -149,11 +154,11 @@ export const llmService = {
 
     switch (settings.activeProvider) {
       case 'gemini':
-        return sendGemini(messages, systemPrompt, config);
+        return sendGemini(messages, systemPrompt, config, signal);
       case 'openai':
-        return sendOpenAI(messages, systemPrompt, config);
+        return sendOpenAI(messages, systemPrompt, config, signal);
       case 'anthropic':
-        return sendAnthropic(messages, systemPrompt, config);
+        return sendAnthropic(messages, systemPrompt, config, signal);
       default:
         throw new Error(`Unknown provider: ${settings.activeProvider}`);
     }

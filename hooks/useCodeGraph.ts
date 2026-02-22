@@ -3,7 +3,7 @@
  * node selection, and domain analysis.
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { CodeGraph, GraphDepth, ViewLens, CodeGraphAnomaly, LLMSettings, GraphFlow } from '../types';
 import { codeGraphStorageService } from '../services/codeGraphStorageService';
 import { codeGraphModelService } from '../services/codeGraphModelService';
@@ -36,6 +36,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const [graphCreationProgress, setGraphCreationProgress] = useState<{
     step: string; current: number; total: number;
   } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Load graphs for current workspace on mount / workspace switch
   useEffect(() => {
@@ -88,88 +89,113 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     codeGraphStorageService.saveCodeGraph(updated);
   }, []);
 
+  const cancelCreateGraph = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
   const createGraph = useCallback(async (
     repoId: string,
     llmSettings?: LLMSettings,
     onLogEntry?: LogEntryFn,
   ) => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const { signal } = controller;
+
     const handle = fileSystemService.getHandle(repoId);
     if (!handle) return null;
 
-    setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
-    onLogEntry?.('scan', 'Scanning codebase...');
+    try {
+      setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
+      onLogEntry?.('scan', 'Scanning codebase...');
 
-    let analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
-    onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
+      let analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
+      onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
-    // Try AI-powered grouping if LLM is configured
-    if (llmSettings) {
-      const config = llmSettings.providers[llmSettings.activeProvider];
-      if (config?.apiKey) {
-        onLogEntry?.('info', 'Starting AI analysis pipeline');
-        try {
-          analysis = await analyzeCodebaseWithAI(
-            analysis,
-            llmSettings,
-            (step, current, total) => setGraphCreationProgress({ step, current, total }),
-            onLogEntry,
-          );
-        } catch {
-          onLogEntry?.('info', 'AI analysis failed, using heuristic grouping');
+      // Try AI-powered grouping if LLM is configured
+      if (llmSettings) {
+        const config = llmSettings.providers[llmSettings.activeProvider];
+        if (config?.apiKey) {
+          onLogEntry?.('info', 'Starting AI analysis pipeline');
+          try {
+            analysis = await analyzeCodebaseWithAI(
+              analysis,
+              llmSettings,
+              (step, current, total) => setGraphCreationProgress({ step, current, total }),
+              onLogEntry,
+              signal,
+            );
+          } catch (err: any) {
+            if (err.name === 'AbortError') throw err;
+            onLogEntry?.('info', 'AI analysis failed, using heuristic grouping');
+            analysis = groupByFunctionalHeuristics(analysis);
+          }
+        } else {
+          onLogEntry?.('info', 'No API key configured, using heuristic grouping');
           analysis = groupByFunctionalHeuristics(analysis);
         }
       } else {
-        onLogEntry?.('info', 'No API key configured, using heuristic grouping');
+        onLogEntry?.('info', 'No AI configured, using heuristic grouping');
         analysis = groupByFunctionalHeuristics(analysis);
       }
-    } else {
-      onLogEntry?.('info', 'No AI configured, using heuristic grouping');
-      analysis = groupByFunctionalHeuristics(analysis);
-    }
 
-    setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
+      setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
 
-    let graph = await codeToGraphParserService.parseCodebaseToGraph(
-      analysis,
-      repoId,
-      handle.name,
-      activeWorkspaceId,
-      handle,
-      undefined,
-      (message, current, total) => setGraphCreationProgress({ step: message, current, total }),
-      onLogEntry,
-    );
-
-    // Generate flows (AI only — skips if no LLM configured)
-    setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
-    setIsGeneratingFlows(true);
-    try {
-      const flowResult = await generateFlows(
-        graph,
-        llmSettings,
-        (step, current, total) => setGraphCreationProgress({ step, current, total }),
+      let graph = await codeToGraphParserService.parseCodebaseToGraph(
+        analysis,
+        repoId,
+        handle.name,
+        activeWorkspaceId,
+        handle,
         undefined,
+        (message, current, total) => setGraphCreationProgress({ step: message, current, total }),
         onLogEntry,
       );
-      if (Object.keys(flowResult.flows).length > 0) {
-        graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+
+      // Generate flows (AI only — skips if no LLM configured)
+      setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
+      setIsGeneratingFlows(true);
+      try {
+        const flowResult = await generateFlows(
+          graph,
+          llmSettings,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          undefined,
+          onLogEntry,
+          signal,
+        );
+        if (Object.keys(flowResult.flows).length > 0) {
+          graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        // Non-fatal: graph works without flows
+        console.warn('[CodeGraph] Flow generation failed');
+        onLogEntry?.('flow', 'Flow generation failed (non-fatal)');
+      } finally {
+        setIsGeneratingFlows(false);
       }
-    } catch {
-      // Non-fatal: graph works without flows
-      console.warn('[CodeGraph] Flow generation failed');
-      onLogEntry?.('flow', 'Flow generation failed (non-fatal)');
+
+      const nodeCount = Object.keys(graph.nodes).length;
+      onLogEntry?.('info', `Graph creation complete (${nodeCount} nodes)`);
+
+      setCodeGraphs(prev => [...prev, graph]);
+      codeGraphStorageService.saveCodeGraph(graph);
+      setActiveGraphId(graph.id);
+      setGraphCreationProgress(null);
+      return graph;
+
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        onLogEntry?.('info', 'Graph creation cancelled');
+      } else {
+        throw err;
+      }
+      return null;
     } finally {
+      setGraphCreationProgress(null);
       setIsGeneratingFlows(false);
     }
-
-    const nodeCount = Object.keys(graph.nodes).length;
-    onLogEntry?.('info', `Graph creation complete (${nodeCount} nodes)`);
-
-    setCodeGraphs(prev => [...prev, graph]);
-    codeGraphStorageService.saveCodeGraph(graph);
-    setActiveGraphId(graph.id);
-    setGraphCreationProgress(null);
-    return graph;
   }, [activeWorkspaceId]);
 
   const deleteGraph = useCallback((graphId: string) => {
@@ -385,6 +411,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     activeFlowId,
 
     createGraph,
+    cancelCreateGraph,
     deleteGraph,
     loadDemoGraph,
     selectGraph,
