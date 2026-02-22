@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useMemo, useCallback, useState } from 'react';
 import * as d3 from 'd3';
 import { createRoot } from 'react-dom/client';
-import { ZoomIn, ZoomOut, Eye, Server, Box, Network, FileText, Terminal, Cpu, ShieldCheck, Layers, Code2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Eye, Server, Box, Network, FileText, Terminal, Cpu, ShieldCheck, Layers, Code2, ExternalLink } from 'lucide-react';
 import mermaid from 'mermaid';
 import { CodeGraph, ViewLens, GraphNodeKind, RelationType, GraphFlow } from '../types';
 import { codeGraphModelService } from '../services/codeGraphModelService';
@@ -62,6 +62,7 @@ interface CodeGraphVisualizerProps {
   onNodeClick: (nodeId: string) => void;
   onNodeDoubleClick: (nodeId: string) => void;
   onBackgroundClick: () => void;
+  onOpenInEditor?: (flow: GraphFlow) => void;
 }
 
 export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
@@ -73,6 +74,7 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
   onNodeClick,
   onNodeDoubleClick,
   onBackgroundClick,
+  onOpenInEditor,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -376,6 +378,16 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
             <p className="text-[10px] text-gray-500 truncate">{activeFlow.description}</p>
           </div>
           <span className="text-[10px] text-gray-600 flex-shrink-0">{activeFlow.steps.length} steps</span>
+          {onOpenInEditor && activeFlow.sequenceDiagram && (
+            <button
+              onClick={() => onOpenInEditor(activeFlow)}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-gray-400 hover:text-cyan-400 hover:bg-gray-800 transition-colors flex-shrink-0"
+              title="Open in diagram editor"
+            >
+              <ExternalLink size={11} />
+              Open in editor
+            </button>
+          )}
         </div>
         <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
           {seqSvg

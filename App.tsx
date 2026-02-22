@@ -322,6 +322,18 @@ export default function App() {
     codeGraph.analyzeDomain(llmSettings);
   }, [codeGraph.analyzeDomain, llmSettings]);
 
+  const handleOpenFlowInEditor = useCallback((flow: import('./types').GraphFlow) => {
+    const existing = diagrams.find(
+      d => d.sourceGraphId === codeGraph.activeGraphId && d.name === flow.name
+    );
+    if (existing) {
+      setActiveId(existing.id);
+      codeGraph.selectGraph(null);
+    } else {
+      showToast('Flow not yet exported. Use "Export Flows" to create the diagram first.', 'info');
+    }
+  }, [diagrams, codeGraph.activeGraphId, codeGraph.selectGraph, setActiveId, showToast]);
+
   // --- Diagram Analysis ---
   const [diagramAnalysis, setDiagramAnalysis] = useState<DiagramAnalysis | null>(null);
 
@@ -468,7 +480,10 @@ export default function App() {
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={(id) => {
+              setActiveId(id);
+              if (codeGraph.activeGraphId) codeGraph.selectGraph(null);
+            }}
             onCreate={handleCreateDiagram}
             onDelete={handleDeleteDiagram}
             onImport={handleImportDiagrams}
@@ -569,6 +584,7 @@ export default function App() {
           codeGraphActiveFlowId={codeGraph.activeFlowId}
           onCodeGraphSelectFlow={codeGraph.selectFlow}
           onCodeGraphDeselectFlow={codeGraph.deselectFlow}
+          onCodeGraphOpenFlowInEditor={handleOpenFlowInEditor}
           codeGraphIsGeneratingFlows={codeGraph.isGeneratingFlows}
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
           progressLogEntries={progressLog.entries}

@@ -245,7 +245,7 @@ export const Preview: React.FC<PreviewProps> = ({
   };
 
   return (
-    <div ref={outerRef} className="relative w-full h-full bg-dark-800 overflow-hidden flex flex-col rounded-lg border border-gray-700 group">
+    <div ref={outerRef} className="relative w-full h-full bg-black overflow-hidden flex flex-col rounded-lg border border-gray-700 group">
       
       {/* Breadcrumb Navigation */}
       {breadcrumbPath.length > 0 && (

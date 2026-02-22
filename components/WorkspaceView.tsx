@@ -80,6 +80,7 @@ interface WorkspaceViewProps {
   codeGraphActiveFlowId?: string | null;
   onCodeGraphSelectFlow?: (flowId: string) => void;
   onCodeGraphDeselectFlow?: () => void;
+  onCodeGraphOpenFlowInEditor?: (flow: GraphFlow) => void;
   // CodeGraph flow generation
   codeGraphIsGeneratingFlows?: boolean;
   onCodeGraphRegenerateFlows?: (options?: { scopeNodeId?: string; customPrompt?: string }) => void;
@@ -160,6 +161,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   codeGraphActiveFlowId = null,
   onCodeGraphSelectFlow,
   onCodeGraphDeselectFlow,
+  onCodeGraphOpenFlowInEditor,
   codeGraphIsGeneratingFlows = false,
   onCodeGraphRegenerateFlows,
   progressLogEntries = [],
@@ -277,6 +279,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onNodeClick={onCodeGraphSelectNode || (() => {})}
                 onNodeDoubleClick={onCodeGraphFocusNode || (() => {})}
                 onBackgroundClick={onCodeGraphDeselectNode || (() => {})}
+                onOpenInEditor={onCodeGraphOpenFlowInEditor}
               />
             </div>
           ) : (
