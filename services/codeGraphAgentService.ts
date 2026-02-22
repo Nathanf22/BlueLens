@@ -165,6 +165,7 @@ function validateFileAnalyses(
 async function analyzeFilesBatch(
   files: FileSummary[],
   llmSettings: LLMSettings,
+  signal?: AbortSignal,
 ): Promise<FileAnalysis[]> {
   const expectedPaths = new Set(files.map(f => f.path));
   const prompt = buildFileAnalystPrompt(files);
@@ -179,6 +180,7 @@ async function analyzeFilesBatch(
         [{ role: 'user', content: userContent }],
         FILE_ANALYST_SYSTEM,
         llmSettings,
+        signal,
       );
 
       const jsonStr = extractJSON(response.content);
@@ -359,6 +361,7 @@ async function buildArchitecture(
   fileAnalyses: FileAnalysis[],
   importEdges: Array<{ from: string; to: string }>,
   llmSettings: LLMSettings,
+  signal?: AbortSignal,
 ): Promise<ArchitectureBlueprint | null> {
   const allFilePaths = new Set(fileAnalyses.map(f => f.filePath));
   const systemPrompt = buildArchitectSystem([...allFilePaths]);
@@ -374,6 +377,7 @@ async function buildArchitecture(
         [{ role: 'user', content: userContent }],
         systemPrompt,
         llmSettings,
+        signal,
       );
 
       const jsonStr = extractJSON(response.content);
@@ -416,6 +420,7 @@ export async function analyzeCodebaseWithAI(
   llmSettings: LLMSettings,
   onProgress?: (step: string, current: number, total: number) => void,
   onLogEntry?: LogEntryFn,
+  signal?: AbortSignal,
 ): Promise<CodebaseAnalysis> {
   const allFiles = analysis.modules.flatMap(m => m.files);
   if (allFiles.length === 0) return analysis;
@@ -442,7 +447,7 @@ export async function analyzeCodebaseWithAI(
     onProgress?.('Analyzing files', i + 1, totalSteps);
     const batchFileNames = batches[i].map(f => f.path.split('/').pop()).join(', ');
     onLogEntry?.('ai-analyze', `Analyzing batch ${i + 1}/${batches.length} (${batches[i].length} files)`, batchFileNames);
-    const batchResults = await analyzeFilesBatch(batches[i], llmSettings);
+    const batchResults = await analyzeFilesBatch(batches[i], llmSettings, signal);
     allAnalyses.push(...batchResults);
     onLogEntry?.('ai-analyze', `Batch ${i + 1} complete: ${batchResults.length} file analyses`);
   }
@@ -480,7 +485,7 @@ export async function analyzeCodebaseWithAI(
   // Agent 2: Build architecture
   onProgress?.('Building architecture', batches.length + 1, totalSteps);
   onLogEntry?.('ai-architect', 'Building functional architecture...');
-  const blueprint = await buildArchitecture(allAnalyses, importEdges, llmSettings);
+  const blueprint = await buildArchitecture(allAnalyses, importEdges, llmSettings, signal);
 
   if (!blueprint) {
     onLogEntry?.('ai-architect', 'AI architecture failed, falling back to heuristic grouping');

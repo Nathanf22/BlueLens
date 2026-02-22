@@ -386,6 +386,7 @@ async function generateFlowsWithLLM(
   summary: GraphSummary,
   llmSettings: LLMSettings,
   customPrompt?: string,
+  signal?: AbortSignal,
 ): Promise<Record<string, GraphFlow> | null> {
   const validNodeIds = new Set<string>([
     summary.rootNodeId,
@@ -427,6 +428,7 @@ async function generateFlowsWithLLM(
         [{ role: 'user', content: userContent }],
         systemPrompt,
         llmSettings,
+        signal,
       );
 
       const jsonStr = extractJSON(response.content);
@@ -466,6 +468,7 @@ export async function generateFlows(
   onProgress?: (step: string, current: number, total: number) => void,
   options?: FlowGenerationOptions,
   onLogEntry?: LogEntryFn,
+  signal?: AbortSignal,
 ): Promise<FlowGenerationResult> {
   const warnings: string[] = [];
   const { scopeNodeId, customPrompt } = options || {};
@@ -497,7 +500,7 @@ export async function generateFlows(
 
   onProgress?.('Generating flows with AI', 1, 2);
   onLogEntry?.('flow', 'Generating flows with AI');
-  const llmFlows = await generateFlowsWithLLM(graph, summary, llmSettings, customPrompt);
+  const llmFlows = await generateFlowsWithLLM(graph, summary, llmSettings, customPrompt, signal);
 
   if (llmFlows && Object.keys(llmFlows).length > 0) {
     if (scopeNodeId) {
