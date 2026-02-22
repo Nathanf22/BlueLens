@@ -1,5 +1,5 @@
-import React from 'react';
-import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch } from 'lucide-react';
+import React, { useState } from 'react';
+import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2 } from 'lucide-react';
 import { RepoConfig } from '../types';
 import { fileSystemService } from '../services/fileSystemService';
 
@@ -9,7 +9,6 @@ interface RepoManagerProps {
   onRemoveRepo: (repoId: string) => void;
   onReopenRepo: (repoId: string) => void;
   onClose: () => void;
-  onGenerateDiagrams?: () => void;
   onCreateGraph?: (repoId: string) => Promise<any>;
 }
 
@@ -19,9 +18,9 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
   onRemoveRepo,
   onReopenRepo,
   onClose,
-  onGenerateDiagrams,
   onCreateGraph
 }) => {
+  const [creatingGraphForRepo, setCreatingGraphForRepo] = useState<string | null>(null);
   const isSupported = fileSystemService.isSupported();
 
   return (
@@ -98,26 +97,26 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
                     </div>
 
                     {/* Bottom row: actions for connected repos */}
-                    {isConnected && (onGenerateDiagrams || onCreateGraph) && (
+                    {isConnected && onCreateGraph && (
                       <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-700/60 bg-dark-900/40">
-                        {onGenerateDiagrams && (
-                          <button
-                            onClick={() => { onClose(); onGenerateDiagrams!(); }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700/80 hover:bg-green-600 text-white rounded text-xs font-medium transition-colors"
-                          >
-                            <GitBranch className="w-3.5 h-3.5" />
-                            Generate Diagrams
-                          </button>
-                        )}
-                        {onCreateGraph && (
-                          <button
-                            onClick={() => { onClose(); onCreateGraph!(repo.id); }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white rounded text-xs font-medium transition-colors"
-                          >
-                            <GitBranch className="w-3.5 h-3.5" />
-                            Create Code Graph
-                          </button>
-                        )}
+                        <button
+                          disabled={creatingGraphForRepo !== null}
+                          onClick={async () => {
+                            setCreatingGraphForRepo(repo.id);
+                            try {
+                              onClose();
+                              await onCreateGraph!(repo.id);
+                            } finally {
+                              setCreatingGraphForRepo(null);
+                            }
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/80 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded text-xs font-medium transition-colors"
+                        >
+                          {creatingGraphForRepo === repo.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <GitBranch className="w-3.5 h-3.5" />}
+                          {creatingGraphForRepo === repo.id ? 'Creating…' : 'Create Code Graph'}
+                        </button>
                       </div>
                     )}
                   </div>

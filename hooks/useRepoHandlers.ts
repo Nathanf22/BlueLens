@@ -20,6 +20,23 @@ export const useRepoHandlers = (
     const result = await fileSystemService.openDirectory();
     if (!result) return; // User cancelled
 
+    // Check if this directory was previously registered (even after removal).
+    // Re-using the original ID preserves all CodeGraph and codeLink references.
+    const existingId = await fileSystemService.findPersistedIdForDirectory(result.handle);
+    if (existingId) {
+      fileSystemService.storeHandle(existingId, result.handle);
+      await fileSystemService.persistHandle(existingId, result.handle);
+      setRepos(prev => {
+        const alreadyPresent = prev.some(r => r.id === existingId);
+        if (alreadyPresent) {
+          return prev.map(r => r.id === existingId ? { ...r, name: result.name } : r);
+        }
+        return [...prev, { id: existingId, name: result.name, workspaceId: activeWorkspaceId, addedAt: Date.now() }];
+      });
+      showToast?.(`Reconnected to ${result.name}`, 'success');
+      return;
+    }
+
     const id = generateId();
     fileSystemService.storeHandle(id, result.handle);
     await fileSystemService.persistHandle(id, result.handle);

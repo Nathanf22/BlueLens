@@ -125,7 +125,36 @@ export const fileSystemService = {
 
   removeHandle(repoId: string): void {
     repoHandleStore.delete(repoId);
-    idbDelete(repoId);
+    // Intentionally keep the IndexedDB entry so that re-adding the same
+    // directory can recover the original ID (see findPersistedIdForDirectory).
+  },
+
+  async getAllPersistedIds(): Promise<string[]> {
+    try {
+      const db = await openHandleDB();
+      return new Promise((resolve, reject) => {
+        const req = db.transaction(HANDLE_STORE, 'readonly').objectStore(HANDLE_STORE).getAllKeys();
+        req.onsuccess = () => resolve(req.result as string[]);
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      return [];
+    }
+  },
+
+  /** Returns the stored repo ID whose persisted handle points to the same
+   *  directory as `handle`, or null if no match is found. */
+  async findPersistedIdForDirectory(handle: FileSystemDirectoryHandle): Promise<string | null> {
+    const keys = await fileSystemService.getAllPersistedIds();
+    for (const key of keys) {
+      const persisted = await idbGet(key);
+      try {
+        if (persisted && await persisted.isSameEntry(handle)) return key;
+      } catch {
+        // isSameEntry can throw on some browsers — skip this entry
+      }
+    }
+    return null;
   },
 
   hasHandle(repoId: string): boolean {

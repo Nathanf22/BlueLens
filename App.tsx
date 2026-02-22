@@ -632,7 +632,6 @@ export default function App() {
         codebaseImportProgress={codebaseImportProgress}
         isCodebaseImporting={isCodebaseImporting}
         onResetCodebaseImport={resetCodebaseImport}
-        onOpenCodebaseImport={() => setIsCodebaseImportOpen(true)}
         onCreateGraph={handleCreateGraph}
         isCodeGraphConfigOpen={isCodeGraphConfigOpen}
         onCloseCodeGraphConfig={() => setIsCodeGraphConfigOpen(false)}
