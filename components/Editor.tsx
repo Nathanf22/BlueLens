@@ -46,7 +46,7 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   return (
-    <div className={`flex flex-col h-full bg-dark-900 border-r border-gray-700 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-12' : 'flex-1'}`}>
+    <div className={`flex flex-col h-full bg-black border-r border-gray-700 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-12' : 'flex-1'}`}>
       {isCollapsed ? (
         // Collapsed view - vertical tab
         <div className="flex flex-col items-center justify-center h-full gap-4 py-8">
@@ -75,7 +75,7 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
             type="text" 
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
-            className="bg-transparent border-none outline-none text-sm font-medium text-gray-300 focus:text-white placeholder-gray-600 w-full hover:bg-dark-900/50 rounded px-1 -ml-1 transition-colors"
+            className="bg-transparent border-none outline-none text-sm font-medium text-gray-300 focus:text-white placeholder-gray-600 w-full hover:bg-black/50 rounded px-1 -ml-1 transition-colors"
             placeholder="Diagram Name"
           />
         </div>
@@ -83,7 +83,7 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
         <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={onToggleCollapse}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-400 hover:text-brand-400 bg-dark-900 hover:bg-dark-700 border border-gray-700 hover:border-brand-500/50 rounded transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-400 hover:text-brand-400 bg-black hover:bg-dark-700 border border-gray-700 hover:border-brand-500/50 rounded transition-all"
             title="Collapse editor"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
@@ -113,7 +113,7 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
         {/* Line Numbers Column */}
         <div 
           ref={lineNumbersRef}
-          className="hidden sm:block flex-shrink-0 w-12 bg-dark-900 border-r border-gray-800 text-right text-gray-600 font-mono text-sm leading-6 py-4 pr-3 select-none overflow-hidden"
+          className="hidden sm:block flex-shrink-0 w-12 bg-black border-r border-gray-800 text-right text-gray-600 font-mono text-sm leading-6 py-4 pr-3 select-none overflow-hidden"
           style={{ fontFamily: "'JetBrains Mono', monospace" }}
           aria-hidden="true"
         >
@@ -128,7 +128,7 @@ export const Editor: React.FC<EditorProps> = ({ code, name, onCodeChange, onName
           value={code}
           onChange={(e) => onCodeChange(e.target.value)}
           onScroll={handleScroll}
-          className="flex-1 w-full h-full py-4 pl-3 pr-4 bg-dark-900 text-gray-300 font-mono text-sm leading-6 resize-none outline-none border-none focus:ring-0 whitespace-pre overflow-auto"
+          className="flex-1 w-full h-full py-4 pl-3 pr-4 bg-black text-gray-300 font-mono text-sm leading-6 resize-none outline-none border-none focus:ring-0 whitespace-pre overflow-auto"
           spellCheck={false}
           style={{ fontFamily: "'JetBrains Mono', monospace" }}
           placeholder="Enter Mermaid code here..."
