@@ -119,20 +119,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleDownloadDiagram = (diagram: Diagram) => {
     const json = exportDiagram(diagram, activeWorkspace);
     const safeName = diagram.name.replace(/[^a-z0-9_\-\s]/gi, '').trim().replace(/\s+/g, '-') || 'diagram';
-    downloadJson(json, `${safeName}.blueprint`);
+    downloadJson(json, `${safeName}.bluelens`);
     setIsDownloadModalOpen(false);
   };
 
   const handleDownloadWorkspace = () => {
     const json = exportWorkspace(activeWorkspace, diagrams, folders);
     const safeName = activeWorkspace.name.toLowerCase().replace(/\s+/g, '-');
-    downloadJson(json, `${safeName}.blueprint`);
+    downloadJson(json, `${safeName}.bluelens`);
     setIsDownloadModalOpen(false);
   };
 
   const handleDownloadAllWorkspaces = () => {
     const json = exportAll(workspaces, allDiagrams, allFolders);
-    downloadJson(json, `blueprint-backup-${new Date().toISOString().split('T')[0]}.blueprint`);
+    downloadJson(json, `blueprint-backup-${new Date().toISOString().split('T')[0]}.bluelens`);
     setIsDownloadModalOpen(false);
   };
 
@@ -148,7 +148,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        if (file.name.endsWith('.blueprint')) {
+        if (file.name.endsWith('.bluelens')) {
           const text = await file.text();
           try {
             const result = importBlueprint(text);
@@ -379,7 +379,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onChange={handleFileSelect}
         className="hidden"
         multiple
-        accept=".mmd,.txt,.mermaid,.zip,.blueprint"
+        accept=".mmd,.txt,.mermaid,.zip,.bluelens"
       />
 
       {/* Collapse Toggle Button */}
@@ -784,7 +784,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {/* Footer */}
             <div className="px-6 py-4 border-t border-gray-700">
               <p className="text-xs text-gray-600 text-center">
-                Exports as <span className="text-gray-500 font-medium">.blueprint</span> with all metadata preserved
+                Exports as <span className="text-gray-500 font-medium">.bluelens</span> with all metadata preserved
               </p>
             </div>
           </div>

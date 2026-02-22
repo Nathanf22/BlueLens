@@ -5,6 +5,12 @@
 
 import { ChatMessage, LLMMessage } from '../types';
 
+export interface GlobalAIContext {
+  workspaceName?: string;
+  activeDiagram?: { name: string; code: string };
+  activeCodeGraph?: { name: string; nodeCount: number; lenses: string[] };
+}
+
 export const aiChatService = {
   buildDiagramChatSystemPrompt(currentCode: string): string {
     return `You are an expert diagram assistant working with Mermaid.js diagrams.
@@ -82,6 +88,41 @@ RULES:
 4. Use idiomatic ${language} patterns and conventions.
 5. Return the code inside a \`\`\`${language} code block.
 6. Include proper type annotations and structure.`;
+  },
+
+  buildGlobalSystemPrompt(context: GlobalAIContext): string {
+    const parts: string[] = [
+      `You are an expert AI assistant for BlueLens, an architecture diagram platform.
+You help users create and understand software architecture diagrams using Mermaid.js, answer architecture questions, and reason about codebases.`,
+    ];
+
+    if (context.workspaceName) {
+      parts.push(`\nActive workspace: "${context.workspaceName}"`);
+    }
+
+    if (context.activeDiagram) {
+      parts.push(`\nThe user currently has this diagram open ("${context.activeDiagram.name}"):
+\`\`\`mermaid
+${context.activeDiagram.code}
+\`\`\``);
+    }
+
+    if (context.activeCodeGraph) {
+      const { name, nodeCount, lenses } = context.activeCodeGraph;
+      parts.push(`\nThe user is viewing a CodeGraph named "${name}" with ${nodeCount} nodes.${lenses.length > 0 ? ` Available lenses: ${lenses.join(', ')}.` : ''}`);
+    }
+
+    parts.push(`
+CAPABILITIES:
+- Answer architecture and design questions
+- Generate new Mermaid diagrams (wrap code in \`\`\`mermaid blocks)
+- Modify the active diagram when asked (return the COMPLETE updated code in a \`\`\`mermaid block)
+- Explain code structure, dependencies, and design patterns
+- Suggest improvements to diagrams or architecture
+
+When generating or modifying a diagram, always return the full Mermaid code inside a \`\`\`mermaid code block.`);
+
+    return parts.join('');
   },
 
   extractMermaidFromResponse(text: string): string | null {

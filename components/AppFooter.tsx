@@ -16,7 +16,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({ diagramCount, saveStatus }
           {saveStatus === 'saving' ? 'Saving to browser...' : 'Saved to browser'}
         </span>
         <span className="opacity-50">|</span>
-        <span>Mermaid.js v11 • Gemini 2.0 Flash</span>
+        <span>Mermaid.js v11</span>
       </div>
     </footer>
   );
