@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { AppHeader } from './components/AppHeader';
 import { AppFooter } from './components/AppFooter';
@@ -171,6 +171,8 @@ export default function App() {
 
   // --- Flow export state ---
   const [pendingFlowExport, setPendingFlowExport] = useState<{ graph: CodeGraph } | null>(null);
+  const [isCreatingGraph, setIsCreatingGraph] = useState(false);
+  const graphCreationCancelledRef = useRef(false);
 
   /** Core export logic: builds plan and inserts folders + diagrams.
    *  scopeFilter: if set, only flows with that scopeNodeId are exported/updated. */
@@ -238,15 +240,24 @@ export default function App() {
   }, [folders, diagrams, doExportFlows]);
 
   const handleCreateGraph = useCallback(async (repoId: string) => {
+    graphCreationCancelledRef.current = false;
+    setIsCreatingGraph(true);
     progressLog.startLog();
     try {
       const result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry);
       if (result) triggerFlowExport(result);
+      else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
       return result;
     } finally {
       progressLog.endLog();
+      setIsCreatingGraph(false);
     }
-  }, [codeGraph.createGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport]);
+  }, [codeGraph.createGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast]);
+
+  const handleCancelCreateGraph = useCallback(() => {
+    graphCreationCancelledRef.current = true;
+    codeGraph.cancelCreateGraph();
+  }, [codeGraph.cancelCreateGraph]);
 
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
@@ -480,6 +491,8 @@ export default function App() {
             onCreateGraph={handleCreateGraph}
             onDeleteGraph={codeGraph.deleteGraph}
             onLoadDemoGraph={codeGraph.loadDemoGraph}
+            isCreatingGraph={isCreatingGraph}
+            onCancelCreateGraph={handleCancelCreateGraph}
             graphCreationProgress={codeGraph.graphCreationProgress}
             showToast={showToast}
           />

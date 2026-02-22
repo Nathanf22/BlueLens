@@ -3,7 +3,7 @@
  * node selection, and domain analysis.
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { CodeGraph, GraphDepth, ViewLens, CodeGraphAnomaly, LLMSettings, GraphFlow } from '../types';
 import { codeGraphStorageService } from '../services/codeGraphStorageService';
 import { codeGraphModelService } from '../services/codeGraphModelService';
@@ -36,6 +36,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const [graphCreationProgress, setGraphCreationProgress] = useState<{
     step: string; current: number; total: number;
   } | null>(null);
+  const cancelRequestedRef = useRef(false);
 
   // Load graphs for current workspace on mount / workspace switch
   useEffect(() => {
@@ -88,19 +89,33 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     codeGraphStorageService.saveCodeGraph(updated);
   }, []);
 
+  const cancelCreateGraph = useCallback(() => {
+    cancelRequestedRef.current = true;
+  }, []);
+
   const createGraph = useCallback(async (
     repoId: string,
     llmSettings?: LLMSettings,
     onLogEntry?: LogEntryFn,
   ) => {
+    cancelRequestedRef.current = false;
+
     const handle = fileSystemService.getHandle(repoId);
     if (!handle) return null;
+
+    const isCancelled = () => cancelRequestedRef.current;
 
     setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
     onLogEntry?.('scan', 'Scanning codebase...');
 
     let analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
     onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
+
+    if (isCancelled()) {
+      setGraphCreationProgress(null);
+      onLogEntry?.('info', 'Graph creation cancelled');
+      return null;
+    }
 
     // Try AI-powered grouping if LLM is configured
     if (llmSettings) {
@@ -127,6 +142,12 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       analysis = groupByFunctionalHeuristics(analysis);
     }
 
+    if (isCancelled()) {
+      setGraphCreationProgress(null);
+      onLogEntry?.('info', 'Graph creation cancelled');
+      return null;
+    }
+
     setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
 
     let graph = await codeToGraphParserService.parseCodebaseToGraph(
@@ -139,6 +160,12 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       (message, current, total) => setGraphCreationProgress({ step: message, current, total }),
       onLogEntry,
     );
+
+    if (isCancelled()) {
+      setGraphCreationProgress(null);
+      onLogEntry?.('info', 'Graph creation cancelled');
+      return null;
+    }
 
     // Generate flows (AI only — skips if no LLM configured)
     setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
@@ -160,6 +187,12 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       onLogEntry?.('flow', 'Flow generation failed (non-fatal)');
     } finally {
       setIsGeneratingFlows(false);
+    }
+
+    if (isCancelled()) {
+      setGraphCreationProgress(null);
+      onLogEntry?.('info', 'Graph creation cancelled');
+      return null;
     }
 
     const nodeCount = Object.keys(graph.nodes).length;
@@ -385,6 +418,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     activeFlowId,
 
     createGraph,
+    cancelCreateGraph,
     deleteGraph,
     loadDemoGraph,
     selectGraph,

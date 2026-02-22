@@ -45,6 +45,8 @@ interface SidebarProps {
   onCreateGraph?: (repoId: string) => Promise<CodeGraph | null>;
   onDeleteGraph?: (graphId: string) => void;
   onLoadDemoGraph?: () => void;
+  isCreatingGraph?: boolean;
+  onCancelCreateGraph?: () => void;
   graphCreationProgress?: { step: string; current: number; total: number } | null;
   showToast?: (message: string, type?: ToastType) => void;
 }
@@ -82,6 +84,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCreateGraph,
   onDeleteGraph,
   onLoadDemoGraph,
+  isCreatingGraph: isCreatingGraphProp = false,
+  onCancelCreateGraph,
   graphCreationProgress,
   showToast,
 }) => {
@@ -98,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   } | null;
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
   const [inputDialog, setInputDialog] = useState<InputDialog>(null);
-  const [isCreatingGraph, setIsCreatingGraph] = useState(false);
+  const isCreatingGraph = isCreatingGraphProp;
   const [isRepoPickerOpen, setIsRepoPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -106,13 +110,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleCreateGraph = async (repoId: string) => {
     if (!onCreateGraph || isCreatingGraph) return;
-    setIsCreatingGraph(true);
     setIsRepoPickerOpen(false);
-    try {
-      await onCreateGraph(repoId);
-    } finally {
-      setIsCreatingGraph(false);
-    }
+    await onCreateGraph(repoId);
   };
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
@@ -615,9 +614,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="px-3 mb-2">
               <div className="flex items-center gap-2 text-xs text-green-400">
                 <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
-                <span className="truncate">{graphCreationProgress.step}</span>
+                <span className="truncate flex-1">{graphCreationProgress.step}</span>
                 {graphCreationProgress.total > 1 && (
                   <span className="text-gray-500">{graphCreationProgress.current}/{graphCreationProgress.total}</span>
+                )}
+                {onCancelCreateGraph && (
+                  <button
+                    onClick={onCancelCreateGraph}
+                    className="ml-1 text-gray-500 hover:text-red-400 transition-colors"
+                    title="Cancel graph creation"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
                 )}
               </div>
             </div>
