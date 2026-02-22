@@ -161,6 +161,11 @@ BlueLens/
 
 ---
 
+## Community
+
+- [Discussions](https://github.com/Nathanf22/BlueLens/discussions) — questions, ideas, show and tell
+- [Issues](https://github.com/Nathanf22/BlueLens/issues) — bugs and feature requests
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, architecture notes, and guidelines.
