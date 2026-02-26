@@ -141,7 +141,9 @@ export async function loadGithubDemoGraph(
 
   let treeRes: Response;
   try {
-    treeRes = await fetch(treeUrl, { headers });
+    // credentials: 'omit' prevents the browser from sending stored GitHub
+    // session cookies or Basic Auth credentials, which would cause a 401.
+    treeRes = await fetch(treeUrl, { headers, credentials: 'omit' });
   } catch (e: any) {
     throw new Error(`Network error: could not reach GitHub API. Check your internet connection. (${e?.message ?? e})`);
   }
@@ -182,7 +184,7 @@ export async function loadGithubDemoGraph(
     const rawUrl = `${DEMO_RAW_BASE}/${item.path}`;
     let content = '';
     try {
-      const res = await fetch(rawUrl);
+      const res = await fetch(rawUrl, { credentials: 'omit' });
       if (!res.ok) continue;
       content = await res.text();
     } catch {
