@@ -8,6 +8,7 @@ import { BlueprintImportResult } from './services/exportService';
 import { llmService } from './services/llmService';
 import { aiChatService } from './services/aiChatService';
 import { fileSystemService } from './services/fileSystemService';
+import { DEMO_REPO_ID, DEMO_RAW_BASE } from './services/githubDemoService';
 import { diagramAnalyzerService } from './services/diagramAnalyzerService';
 import { scaffoldService } from './services/scaffoldService';
 import { ChatMessage, CodeFile, DiagramAnalysis, ScanConfig } from './types';
@@ -332,6 +333,30 @@ export default function App() {
     const node = codeGraph.activeGraph.nodes[nodeId];
     if (!node?.sourceRef) return;
 
+    // GitHub demo graph — fetch from raw.githubusercontent.com
+    if (codeGraph.activeGraph.repoId === DEMO_REPO_ID) {
+      try {
+        const rawUrl = `${DEMO_RAW_BASE}/${node.sourceRef.filePath}`;
+        const res = await fetch(rawUrl);
+        if (!res.ok) throw new Error(res.statusText);
+        const content = await res.text();
+        const language = fileSystemService.getLanguage(node.sourceRef.filePath);
+        setActiveCodeFile({
+          repoId: DEMO_REPO_ID,
+          filePath: node.sourceRef.filePath,
+          content,
+          language,
+          lineStart: node.sourceRef.lineStart,
+          lineEnd: node.sourceRef.lineEnd,
+        });
+        setIsCodePanelOpen(true);
+      } catch (e) {
+        console.error('Failed to fetch demo file:', e);
+        showToast('Failed to fetch file from GitHub.', 'error');
+      }
+      return;
+    }
+
     let handle = fileSystemService.getHandle(codeGraph.activeGraph.repoId);
     if (!handle) {
       // Handle lost (page refresh) — try to reconnect silently from IndexedDB.
@@ -555,7 +580,12 @@ export default function App() {
             onSelectGraph={codeGraph.selectGraph}
             onCreateGraph={handleCreateGraph}
             onDeleteGraph={codeGraph.deleteGraph}
-            onLoadDemoGraph={codeGraph.loadDemoGraph}
+            onLoadDemoGraph={() => {
+                progressLog.startLog();
+                codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry).finally(() => progressLog.endLog());
+              }}
+            isDemoLoading={codeGraph.isDemoLoading}
+            demoError={codeGraph.demoError}
             isCreatingGraph={isCreatingGraph}
             onCancelCreateGraph={handleCancelCreateGraph}
             graphCreationProgress={codeGraph.graphCreationProgress}

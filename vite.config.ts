@@ -8,6 +8,33 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        proxy: {
+          '/proxy/github-api': {
+            target: 'https://api.github.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/proxy\/github-api/, ''),
+          },
+          '/proxy/github-raw': {
+            target: 'https://raw.githubusercontent.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/proxy\/github-raw/, ''),
+          },
+        },
+      },
+      preview: {
+        port: 3000,
+        proxy: {
+          '/proxy/github-api': {
+            target: 'https://api.github.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/proxy\/github-api/, ''),
+          },
+          '/proxy/github-raw': {
+            target: 'https://raw.githubusercontent.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/proxy\/github-raw/, ''),
+          },
+        },
       },
       plugins: [react()],
       define: {

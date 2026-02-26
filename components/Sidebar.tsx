@@ -45,6 +45,8 @@ interface SidebarProps {
   onCreateGraph?: (repoId: string) => Promise<CodeGraph | null>;
   onDeleteGraph?: (graphId: string) => void;
   onLoadDemoGraph?: () => void;
+  isDemoLoading?: boolean;
+  demoError?: string | null;
   isCreatingGraph?: boolean;
   onCancelCreateGraph?: () => void;
   graphCreationProgress?: { step: string; current: number; total: number } | null;
@@ -84,6 +86,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCreateGraph,
   onDeleteGraph,
   onLoadDemoGraph,
+  isDemoLoading = false,
+  demoError,
   isCreatingGraph: isCreatingGraphProp = false,
   onCancelCreateGraph,
   graphCreationProgress,
@@ -674,12 +678,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   : 'Click + to create a Code Graph'}
               </p>
               {onLoadDemoGraph && (
-                <button
-                  onClick={onLoadDemoGraph}
-                  className="text-xs text-green-500 hover:text-green-400 underline underline-offset-2 transition-colors"
-                >
-                  Load demo graph (RealWorld)
-                </button>
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => onLoadDemoGraph()}
+                    disabled={isDemoLoading}
+                    className="text-xs text-green-500 hover:text-green-400 underline underline-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    {isDemoLoading && (
+                      <svg className="animate-spin h-3 w-3 text-green-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                    )}
+                    {isDemoLoading ? 'Loading demo…' : 'Load demo (BlueLens repo)'}
+                  </button>
+                  {demoError && (
+                    <p className="text-xs text-red-400">{demoError}</p>
+                  )}
+                </div>
               )}
             </div>
           )}
