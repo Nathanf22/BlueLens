@@ -95,10 +95,14 @@ export interface ScanConfig {
 
 export interface RepoConfig {
   id: string;
-  name: string;             // Directory name
+  name: string;             // Directory name (or repo name for GitHub repos)
   workspaceId: string;      // Scoped to workspace
   addedAt: number;
   scanConfig?: ScanConfig;
+  // If set, this is a public GitHub repo (no local filesystem handle needed)
+  githubOwner?: string;
+  githubRepo?: string;
+  githubBranch?: string;    // defaults to 'main'
 }
 
 export interface CodeFile {
