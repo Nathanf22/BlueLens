@@ -8,7 +8,7 @@ import { BlueprintImportResult } from './services/exportService';
 import { llmService } from './services/llmService';
 import { aiChatService } from './services/aiChatService';
 import { fileSystemService } from './services/fileSystemService';
-import { DEMO_REPO_ID, DEMO_RAW_BASE } from './services/githubDemoService';
+import { DEMO_REPO_ID, DEMO_RAW_BASE, buildRawBase } from './services/githubDemoService';
 import { diagramAnalyzerService } from './services/diagramAnalyzerService';
 import { scaffoldService } from './services/scaffoldService';
 import { ChatMessage, CodeFile, DiagramAnalysis, ScanConfig } from './types';
@@ -134,7 +134,7 @@ export default function App() {
   const { handleAddNodeLink, handleRemoveNodeLink } =
     useNodeLinkHandlers(activeDiagram, updateActiveDiagram);
 
-  const { handleAddRepo, handleRemoveRepo, handleReopenRepo } =
+  const { handleAddRepo, handleAddGithubRepo, handleRemoveRepo, handleReopenRepo } =
     useRepoHandlers(repos, setRepos, activeWorkspaceId, showToast);
 
   const { handleAddCodeLink, handleRemoveCodeLink } =
@@ -296,11 +296,24 @@ export default function App() {
   }, [folders, diagrams, doExportFlows]);
 
   const handleCreateGraph = useCallback(async (repoId: string) => {
+    const repo = workspaceRepos.find(r => r.id === repoId);
     graphCreationCancelledRef.current = false;
     setIsCreatingGraph(true);
     progressLog.startLog();
     try {
-      const result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry);
+      let result: CodeGraph | null;
+      if (repo?.githubOwner) {
+        result = await codeGraph.createGithubGraph(
+          repoId,
+          repo.githubOwner,
+          repo.githubRepo!,
+          repo.githubBranch || 'main',
+          llmSettings,
+          progressLog.addEntry,
+        );
+      } else {
+        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry);
+      }
       if (result) triggerFlowExport(result);
       else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
       return result;
@@ -308,7 +321,7 @@ export default function App() {
       progressLog.endLog();
       setIsCreatingGraph(false);
     }
-  }, [codeGraph.createGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast]);
+  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
@@ -333,16 +346,21 @@ export default function App() {
     const node = codeGraph.activeGraph.nodes[nodeId];
     if (!node?.sourceRef) return;
 
-    // GitHub demo graph — fetch from raw.githubusercontent.com
-    if (codeGraph.activeGraph.repoId === DEMO_REPO_ID) {
+    // GitHub-backed graph (demo or user-added public repo) — fetch via proxy
+    const activeRepo = workspaceRepos.find(r => r.id === codeGraph.activeGraph!.repoId);
+    const isGithubGraph = codeGraph.activeGraph.repoId === DEMO_REPO_ID || !!activeRepo?.githubOwner;
+    if (isGithubGraph) {
+      const rawBase = activeRepo?.githubOwner
+        ? buildRawBase(activeRepo.githubOwner, activeRepo.githubRepo!, activeRepo.githubBranch || 'main')
+        : DEMO_RAW_BASE;
       try {
-        const rawUrl = `${DEMO_RAW_BASE}/${node.sourceRef.filePath}`;
+        const rawUrl = `${rawBase}/${node.sourceRef.filePath}`;
         const res = await fetch(rawUrl);
         if (!res.ok) throw new Error(res.statusText);
         const content = await res.text();
         const language = fileSystemService.getLanguage(node.sourceRef.filePath);
         setActiveCodeFile({
-          repoId: DEMO_REPO_ID,
+          repoId: codeGraph.activeGraph!.repoId,
           filePath: node.sourceRef.filePath,
           content,
           language,
@@ -409,10 +427,26 @@ export default function App() {
     if (existing) {
       setActiveId(existing.id);
       codeGraph.selectGraph(null);
-    } else {
-      showToast('Flow not yet exported. Use "Export Flows" to create the diagram first.', 'info');
+    } else if (codeGraph.activeGraph && flow.sequenceDiagram) {
+      // Create the diagram on-the-fly so the user can open it immediately
+      const generateId = () => Math.random().toString(36).substr(2, 9);
+      const newDiagram: import('./types').Diagram = {
+        id: generateId(),
+        name: flow.name,
+        description: flow.description,
+        code: flow.sequenceDiagram,
+        lastModified: Date.now(),
+        folderId: null,
+        workspaceId: activeWorkspaceId,
+        nodeLinks: [],
+        sourceGraphId: codeGraph.activeGraphId!,
+        sourceScopeNodeId: flow.scopeNodeId,
+      };
+      setDiagrams(prev => [...prev, newDiagram]);
+      setActiveId(newDiagram.id);
+      codeGraph.selectGraph(null);
     }
-  }, [diagrams, codeGraph.activeGraphId, codeGraph.selectGraph, setActiveId, showToast]);
+  }, [diagrams, codeGraph.activeGraph, codeGraph.activeGraphId, codeGraph.selectGraph, setActiveId, setDiagrams, activeWorkspaceId]);
 
   // --- Diagram Analysis ---
   const [diagramAnalysis, setDiagramAnalysis] = useState<DiagramAnalysis | null>(null);
@@ -580,9 +614,12 @@ export default function App() {
             onSelectGraph={codeGraph.selectGraph}
             onCreateGraph={handleCreateGraph}
             onDeleteGraph={codeGraph.deleteGraph}
+            onAddGithubRepo={handleAddGithubRepo}
             onLoadDemoGraph={() => {
                 progressLog.startLog();
-                codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry).finally(() => progressLog.endLog());
+                codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
+                  .then(graph => { if (graph) triggerFlowExport(graph); })
+                  .finally(() => progressLog.endLog());
               }}
             isDemoLoading={codeGraph.isDemoLoading}
             demoError={codeGraph.demoError}
