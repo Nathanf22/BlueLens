@@ -14,7 +14,7 @@ import { codeGraphDomainService } from '../services/codeGraphDomainService';
 import { analyzeCodebaseWithAI, type LogEntryFn } from '../services/codeGraphAgentService';
 import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGrouper';
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
-import { generateDemoGraph } from '../services/demoGraphService';
+import { loadGithubDemoGraph, DemoProgressCallback } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
 
 interface BreadcrumbEntry {
@@ -36,6 +36,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const [graphCreationProgress, setGraphCreationProgress] = useState<{
     step: string; current: number; total: number;
   } | null>(null);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Load graphs for current workspace on mount / workspace switch
@@ -209,12 +211,26 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     }
   }, [activeGraphId]);
 
-  const loadDemoGraph = useCallback(() => {
-    const graph = generateDemoGraph(activeWorkspaceId);
-    setCodeGraphs(prev => [...prev, graph]);
-    codeGraphStorageService.saveCodeGraph(graph);
-    setActiveGraphId(graph.id);
-    return graph;
+  const loadDemoGraph = useCallback(async (githubToken?: string) => {
+    setIsDemoLoading(true);
+    setDemoError(null);
+    try {
+      const onProgress: DemoProgressCallback = (step, current, total) =>
+        setGraphCreationProgress({ step, current, total });
+
+      const graph = await loadGithubDemoGraph(activeWorkspaceId, githubToken, onProgress);
+      setCodeGraphs(prev => [...prev, graph]);
+      // Not saved to localStorage automatically — caller should prompt the user
+      setActiveGraphId(graph.id);
+      return graph;
+    } catch (err: any) {
+      const message = err?.message ?? 'Failed to load demo graph';
+      setDemoError(message);
+      return null;
+    } finally {
+      setIsDemoLoading(false);
+      setGraphCreationProgress(null);
+    }
   }, [activeWorkspaceId]);
 
   const selectGraph = useCallback((graphId: string | null) => {
@@ -409,6 +425,9 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     contextualFlows,
     activeFlow,
     activeFlowId,
+
+    isDemoLoading,
+    demoError,
 
     createGraph,
     cancelCreateGraph,
