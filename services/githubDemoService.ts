@@ -133,7 +133,7 @@ export async function loadGithubDemoGraph(
   onProgress?: DemoProgressCallback,
 ): Promise<CodeGraph> {
   const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
-  if (githubToken) headers['Authorization'] = `token ${githubToken}`;
+  if (githubToken && typeof githubToken === 'string') headers['Authorization'] = `token ${githubToken}`;
 
   // 1. Fetch file tree
   onProgress?.('Fetching repository structure', 0, 1);

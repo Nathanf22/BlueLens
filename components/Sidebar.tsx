@@ -680,7 +680,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {onLoadDemoGraph && (
                 <div className="flex flex-col gap-1">
                   <button
-                    onClick={onLoadDemoGraph}
+                    onClick={() => onLoadDemoGraph()}
                     disabled={isDemoLoading}
                     className="text-xs text-green-500 hover:text-green-400 underline underline-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
