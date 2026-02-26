@@ -8,6 +8,8 @@ Public issues and Discussions are visible to everyone, including potential attac
 
 **Nathan Kamokoue** — [LinkedIn](https://www.linkedin.com/in/nathan-kamokoue-1289121b8/)
 
+**Johann Kengne** — [LinkedIn](https://www.linkedin.com/in/johann-kengne)
+
 Include in your report:
 - A clear description of the vulnerability
 - Steps to reproduce it
