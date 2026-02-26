@@ -11,12 +11,21 @@ import { CodeGraph, CodebaseAnalysis, AnalyzedFile, ScannedEntity, FileImport } 
 import { codeParserService } from './codeParserService';
 import { codeToGraphParserService } from './codeToGraphParserService';
 import { groupByFunctionalHeuristics } from './codeGraphHeuristicGrouper';
+import type { LogEntryFn } from './codeGraphAgentService';
 
 export const DEMO_OWNER = 'Nathanf22';
 export const DEMO_REPO = 'BlueLens';
 export const DEMO_BRANCH = 'main';
 export const DEMO_REPO_ID = '__github_bluelens_demo__';
-export const DEMO_RAW_BASE = `https://raw.githubusercontent.com/${DEMO_OWNER}/${DEMO_REPO}/${DEMO_BRANCH}`;
+
+// Routes through Vite's proxy to avoid browser extensions injecting bad auth headers.
+// In dev: vite dev server proxies /proxy/github-* → api.github.com / raw.githubusercontent.com
+// In preview: same proxy is configured under vite.config.ts `preview.proxy`
+const GITHUB_API_BASE = '/proxy/github-api';
+const GITHUB_RAW_BASE = `/proxy/github-raw/${DEMO_OWNER}/${DEMO_REPO}/${DEMO_BRANCH}`;
+
+// Also export for use in App.tsx View Code handler
+export const DEMO_RAW_BASE = GITHUB_RAW_BASE;
 
 const INCLUDED_EXTENSIONS = new Set(['.ts', '.tsx']);
 
@@ -129,34 +138,34 @@ function resolveImport(source: string, currentFile: string, allFiles: string[]):
 
 export async function loadGithubDemoGraph(
   workspaceId: string,
-  githubToken?: string,
   onProgress?: DemoProgressCallback,
+  onLogEntry?: LogEntryFn,
 ): Promise<CodeGraph> {
-  const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
-  if (githubToken && typeof githubToken === 'string') headers['Authorization'] = `token ${githubToken}`;
+  // Requests go through Vite's local proxy so the browser never talks directly
+  // to api.github.com — this bypasses browser extensions that inject invalid
+  // Authorization headers (causing 401 errors).
+  const treeUrl = `${GITHUB_API_BASE}/repos/${DEMO_OWNER}/${DEMO_REPO}/git/trees/${DEMO_BRANCH}?recursive=1`;
 
   // 1. Fetch file tree
   onProgress?.('Fetching repository structure', 0, 1);
-  const treeUrl = `https://api.github.com/repos/${DEMO_OWNER}/${DEMO_REPO}/git/trees/${DEMO_BRANCH}?recursive=1`;
+  onLogEntry?.('scan', `Fetching ${DEMO_OWNER}/${DEMO_REPO} file tree…`);
 
   let treeRes: Response;
   try {
-    // credentials: 'omit' prevents the browser from sending stored GitHub
-    // session cookies or Basic Auth credentials, which would cause a 401.
-    treeRes = await fetch(treeUrl, { headers, credentials: 'omit' });
+    treeRes = await fetch(treeUrl);
   } catch (e: any) {
-    throw new Error(`Network error: could not reach GitHub API. Check your internet connection. (${e?.message ?? e})`);
+    throw new Error(`Network error: could not reach GitHub API. (${e?.message ?? e})`);
   }
 
   if (treeRes.status === 403 || treeRes.status === 429) {
-    throw new Error('GitHub API rate limit exceeded (60 req/hour for unauthenticated). Please wait a minute and try again.');
+    throw new Error('GitHub API rate limit exceeded (60 req/hour). Please wait a minute and try again.');
   }
   if (!treeRes.ok) {
     let detail = `HTTP ${treeRes.status}`;
     try {
       const body = await treeRes.json();
       if (body?.message) detail += ` — ${body.message}`;
-    } catch { /* ignore parse errors */ }
+    } catch { /* ignore */ }
     throw new Error(`Failed to fetch repository tree: ${detail}`);
   }
 
@@ -172,6 +181,8 @@ export async function loadGithubDemoGraph(
     return true;
   });
 
+  onLogEntry?.('scan', `Found ${sourceFiles.length} source files (.ts/.tsx)`);
+
   // 3. Fetch each file and analyze
   const analyzedFiles: AnalyzedFile[] = [];
   const externalDeps = new Set<string>();
@@ -180,11 +191,14 @@ export async function loadGithubDemoGraph(
   for (let i = 0; i < sourceFiles.length; i++) {
     const item = sourceFiles[i];
     onProgress?.('Fetching files', i + 1, sourceFiles.length);
+    if (i % 10 === 0 || i === sourceFiles.length - 1) {
+      onLogEntry?.('scan', `Fetching files (${i + 1}/${sourceFiles.length})`, item.path);
+    }
 
-    const rawUrl = `${DEMO_RAW_BASE}/${item.path}`;
+    const rawUrl = `${GITHUB_RAW_BASE}/${item.path}`;
     let content = '';
     try {
-      const res = await fetch(rawUrl, { credentials: 'omit' });
+      const res = await fetch(rawUrl);
       if (!res.ok) continue;
       content = await res.text();
     } catch {
@@ -227,12 +241,16 @@ export async function loadGithubDemoGraph(
     if (ENTRY_POINT_NAMES.has(fileName)) entryPoints.push(item.path);
   }
 
+  onLogEntry?.('scan', `Scan complete: ${analyzedFiles.length} files, ${analyzedFiles.reduce((s, f) => s + f.symbols.length, 0)} symbols`);
+
   // 4. Build CodebaseAnalysis and apply heuristic grouping
   onProgress?.('Building graph', 0, 1);
+  onLogEntry?.('info', 'Grouping files by functional heuristics');
   const rawAnalysis = buildAnalysis(analyzedFiles, entryPoints, externalDeps);
   const analysis = groupByFunctionalHeuristics(rawAnalysis);
+  onLogEntry?.('info', `Grouped into ${analysis.modules.length} modules`);
 
-  // 5. Parse to CodeGraph (no FileSystemDirectoryHandle — GitHub raw for View Code)
+  // 5. Parse to CodeGraph
   const graph = await codeToGraphParserService.parseCodebaseToGraph(
     analysis,
     DEMO_REPO_ID,
@@ -241,8 +259,10 @@ export async function loadGithubDemoGraph(
     undefined,
     undefined,
     onProgress,
+    onLogEntry,
   );
 
+  onLogEntry?.('info', `Demo graph ready — ${Object.keys(graph.nodes).length} nodes`);
   return graph;
 }
 

@@ -580,7 +580,10 @@ export default function App() {
             onSelectGraph={codeGraph.selectGraph}
             onCreateGraph={handleCreateGraph}
             onDeleteGraph={codeGraph.deleteGraph}
-            onLoadDemoGraph={codeGraph.loadDemoGraph}
+            onLoadDemoGraph={() => {
+                progressLog.startLog();
+                codeGraph.loadDemoGraph(progressLog.addEntry).finally(() => progressLog.endLog());
+              }}
             isDemoLoading={codeGraph.isDemoLoading}
             demoError={codeGraph.demoError}
             isCreatingGraph={isCreatingGraph}

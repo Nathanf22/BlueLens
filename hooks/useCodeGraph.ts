@@ -14,7 +14,7 @@ import { codeGraphDomainService } from '../services/codeGraphDomainService';
 import { analyzeCodebaseWithAI, type LogEntryFn } from '../services/codeGraphAgentService';
 import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGrouper';
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
-import { loadGithubDemoGraph, DemoProgressCallback } from '../services/githubDemoService';
+import { loadGithubDemoGraph } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
 
 interface BreadcrumbEntry {
@@ -211,14 +211,15 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     }
   }, [activeGraphId]);
 
-  const loadDemoGraph = useCallback(async (githubToken?: string) => {
+  const loadDemoGraph = useCallback(async (onLogEntry?: LogEntryFn) => {
     setIsDemoLoading(true);
     setDemoError(null);
     try {
-      const onProgress: DemoProgressCallback = (step, current, total) =>
-        setGraphCreationProgress({ step, current, total });
-
-      const graph = await loadGithubDemoGraph(activeWorkspaceId, githubToken, onProgress);
+      const graph = await loadGithubDemoGraph(
+        activeWorkspaceId,
+        (step, current, total) => setGraphCreationProgress({ step, current, total }),
+        onLogEntry,
+      );
       setCodeGraphs(prev => [...prev, graph]);
       // Not saved to localStorage automatically — caller should prompt the user
       setActiveGraphId(graph.id);
