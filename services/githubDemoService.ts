@@ -138,13 +138,24 @@ export async function loadGithubDemoGraph(
   // 1. Fetch file tree
   onProgress?.('Fetching repository structure', 0, 1);
   const treeUrl = `https://api.github.com/repos/${DEMO_OWNER}/${DEMO_REPO}/git/trees/${DEMO_BRANCH}?recursive=1`;
-  const treeRes = await fetch(treeUrl, { headers });
+
+  let treeRes: Response;
+  try {
+    treeRes = await fetch(treeUrl, { headers });
+  } catch (e: any) {
+    throw new Error(`Network error: could not reach GitHub API. Check your internet connection. (${e?.message ?? e})`);
+  }
 
   if (treeRes.status === 403 || treeRes.status === 429) {
-    throw new Error('GitHub API rate limit exceeded. Please wait a minute and try again.');
+    throw new Error('GitHub API rate limit exceeded (60 req/hour for unauthenticated). Please wait a minute and try again.');
   }
   if (!treeRes.ok) {
-    throw new Error(`Failed to fetch repository tree: ${treeRes.statusText}`);
+    let detail = `HTTP ${treeRes.status}`;
+    try {
+      const body = await treeRes.json();
+      if (body?.message) detail += ` — ${body.message}`;
+    } catch { /* ignore parse errors */ }
+    throw new Error(`Failed to fetch repository tree: ${detail}`);
   }
 
   const treeData: GithubTreeResponse = await treeRes.json();
