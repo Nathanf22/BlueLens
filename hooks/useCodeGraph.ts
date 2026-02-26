@@ -14,7 +14,7 @@ import { codeGraphDomainService } from '../services/codeGraphDomainService';
 import { analyzeCodebaseWithAI, type LogEntryFn } from '../services/codeGraphAgentService';
 import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGrouper';
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
-import { loadGithubDemoGraph } from '../services/githubDemoService';
+import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
 
 interface BreadcrumbEntry {
@@ -211,26 +211,105 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     }
   }, [activeGraphId]);
 
-  const loadDemoGraph = useCallback(async (onLogEntry?: LogEntryFn) => {
+  const loadDemoGraph = useCallback(async (
+    llmSettings?: LLMSettings,
+    onLogEntry?: LogEntryFn,
+  ) => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const { signal } = controller;
+
     setIsDemoLoading(true);
     setDemoError(null);
     try {
-      const graph = await loadGithubDemoGraph(
-        activeWorkspaceId,
+      // Step 1: fetch GitHub repo — equivalent of codebaseAnalyzerService.analyzeCodebase(handle)
+      setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
+      let analysis = await fetchGithubAnalysis(
         (step, current, total) => setGraphCreationProgress({ step, current, total }),
         onLogEntry,
       );
+
+      // Step 2: AI grouping or heuristics — same logic as createGraph
+      if (llmSettings) {
+        const config = llmSettings.providers[llmSettings.activeProvider];
+        if (config?.apiKey) {
+          onLogEntry?.('info', 'Starting AI analysis pipeline');
+          try {
+            analysis = await analyzeCodebaseWithAI(
+              analysis,
+              llmSettings,
+              (step, current, total) => setGraphCreationProgress({ step, current, total }),
+              onLogEntry,
+              signal,
+            );
+          } catch (err: any) {
+            if (err.name === 'AbortError') throw err;
+            onLogEntry?.('info', 'AI analysis failed, using heuristic grouping');
+            analysis = groupByFunctionalHeuristics(analysis);
+          }
+        } else {
+          onLogEntry?.('info', 'No API key configured, using heuristic grouping');
+          analysis = groupByFunctionalHeuristics(analysis);
+        }
+      } else {
+        onLogEntry?.('info', 'No AI configured, using heuristic grouping');
+        analysis = groupByFunctionalHeuristics(analysis);
+      }
+
+      // Step 3: parse to graph — same as createGraph (no handle = no contentHash, fine for demo)
+      setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
+      let graph = await codeToGraphParserService.parseCodebaseToGraph(
+        analysis,
+        DEMO_REPO_ID,
+        `${DEMO_OWNER}/${DEMO_REPO}`,
+        activeWorkspaceId,
+        undefined,
+        undefined,
+        (message, current, total) => setGraphCreationProgress({ step: message, current, total }),
+        onLogEntry,
+      );
+
+      // Step 4: generate flows — same as createGraph (AI only, skips if no LLM)
+      setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
+      setIsGeneratingFlows(true);
+      try {
+        const flowResult = await generateFlows(
+          graph,
+          llmSettings,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          undefined,
+          onLogEntry,
+          signal,
+        );
+        if (Object.keys(flowResult.flows).length > 0) {
+          graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        onLogEntry?.('flow', 'Flow generation failed (non-fatal)');
+      } finally {
+        setIsGeneratingFlows(false);
+      }
+
+      onLogEntry?.('info', `Demo graph ready (${Object.keys(graph.nodes).length} nodes) — not saved yet`);
+
       setCodeGraphs(prev => [...prev, graph]);
-      // Not saved to localStorage automatically — caller should prompt the user
+      // Not persisted automatically — user must save explicitly
       setActiveGraphId(graph.id);
       return graph;
+
     } catch (err: any) {
-      const message = err?.message ?? 'Failed to load demo graph';
-      setDemoError(message);
+      if (err.name === 'AbortError') {
+        onLogEntry?.('info', 'Demo graph load cancelled');
+      } else {
+        const message = err?.message ?? 'Failed to load demo graph';
+        setDemoError(message);
+      }
       return null;
     } finally {
       setIsDemoLoading(false);
       setGraphCreationProgress(null);
+      setIsGeneratingFlows(false);
     }
   }, [activeWorkspaceId]);
 

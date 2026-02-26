@@ -582,7 +582,7 @@ export default function App() {
             onDeleteGraph={codeGraph.deleteGraph}
             onLoadDemoGraph={() => {
                 progressLog.startLog();
-                codeGraph.loadDemoGraph(progressLog.addEntry).finally(() => progressLog.endLog());
+                codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry).finally(() => progressLog.endLog());
               }}
             isDemoLoading={codeGraph.isDemoLoading}
             demoError={codeGraph.demoError}
