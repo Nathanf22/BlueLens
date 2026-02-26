@@ -227,3 +227,5 @@ security: redact API key from error log messages
 Or reach out to the maintainer directly:
 
 **Nathan Kamokoue** — [LinkedIn](https://www.linkedin.com/in/nathan-kamokoue-1289121b8/) / [X](https://x.com/KamokoueNathan)
+
+**Johann Kengne** — [LinkedIn](https://www.linkedin.com/in/johann-kengne)
