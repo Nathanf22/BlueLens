@@ -34,11 +34,17 @@ export const DEMO_RAW_BASE = buildRawBase(DEMO_OWNER, DEMO_REPO, DEMO_BRANCH);
 
 export type DemoProgressCallback = (step: string, current: number, total: number) => void;
 
-const INCLUDED_EXTENSIONS = new Set(['.ts', '.tsx']);
+const INCLUDED_EXTENSIONS = new Set([
+  '.ts', '.tsx',
+  '.py',
+  '.cpp', '.cc', '.cxx', '.c', '.h', '.hpp',
+]);
 
 const ENTRY_POINT_NAMES = new Set([
   'index.ts', 'index.tsx', 'App.tsx', 'App.ts',
   'main.ts', 'main.tsx', 'main.js',
+  'main.py', 'app.py', '__main__.py', 'setup.py',
+  'main.cpp', 'main.cc', 'main.c',
 ]);
 
 interface GithubTreeItem {
@@ -54,6 +60,9 @@ interface GithubTreeResponse {
 function getLanguage(filePath: string): string {
   const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
   if (ext === '.ts' || ext === '.tsx') return 'typescript';
+  if (ext === '.py') return 'python';
+  if (ext === '.cpp' || ext === '.cc' || ext === '.cxx' || ext === '.h' || ext === '.hpp') return 'cpp';
+  if (ext === '.c') return 'c';
   return 'plaintext';
 }
 
