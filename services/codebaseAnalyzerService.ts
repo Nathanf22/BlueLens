@@ -22,6 +22,7 @@ const ENTRY_POINT_NAMES = new Set([
   'server.ts', 'server.js', 'server.py',
   'mod.rs', 'lib.rs', 'main.rs',
   'setup.py', '__main__.py',
+  'main.cpp', 'main.cc', 'main.c',
 ]);
 
 function matchesGlob(path: string, pattern: string): boolean {

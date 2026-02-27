@@ -23,6 +23,22 @@ const PYTHON_PATTERNS: PatternDef[] = [
   { regex: /^(?:async\s+)?def\s+(\w+)/gm, kind: 'function' },
 ];
 
+// C++ patterns: class/struct definitions and function definitions/declarations.
+// The function regex uses a lazy prefix to capture the last identifier before `(`
+// as the function name, and excludes control-flow keywords via a negative lookahead.
+const CPP_PATTERNS: PatternDef[] = [
+  { regex: /^(?:template\s*<[^>]*>\s*)?(?:class|struct)\s+(\w+)/gm, kind: 'class' },
+  // Function definitions (ending with `{`)
+  { regex: /^(?!\s*(?:if|for|while|switch|else|do|return|throw|delete|new)\b)[\w:*&<>~\t ]+?\b(\w+)\s*\([^)]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?\s*\{/gm, kind: 'function' },
+  // Function declarations in headers (ending with `;`)
+  { regex: /^(?:(?:virtual|static|inline|explicit|constexpr)\s+)*(?:[\w:*&<>~]+\s+)+(\w+)\s*\([^)]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:= *0\s*)?\s*;/gm, kind: 'function' },
+];
+
+const C_PATTERNS: PatternDef[] = [
+  { regex: /^(?:struct|typedef\s+struct)\s+(\w+)/gm, kind: 'class' },
+  { regex: /^(?!\s*(?:if|for|while|switch|else|do|return)\b)[\w*\t ]+?\b(\w+)\s*\([^)]*\)\s*\{/gm, kind: 'function' },
+];
+
 function getPatterns(language: string): PatternDef[] {
   switch (language) {
     case 'typescript':
@@ -30,6 +46,10 @@ function getPatterns(language: string): PatternDef[] {
       return TS_JS_PATTERNS;
     case 'python':
       return PYTHON_PATTERNS;
+    case 'cpp':
+      return CPP_PATTERNS;
+    case 'c':
+      return C_PATTERNS;
     default:
       return [];
   }
@@ -119,6 +139,27 @@ function extractPythonImports(code: string): FileImport[] {
   return imports;
 }
 
+function extractCppImports(code: string): FileImport[] {
+  const imports: FileImport[] = [];
+  let m: RegExpExecArray | null;
+
+  // #include <system_header>
+  const sysRe = /^#include\s*<([^>]+)>/gm;
+  while ((m = sysRe.exec(code)) !== null) {
+    const name = m[1].split('/').pop()?.replace(/\.\w+$/, '') || m[1];
+    imports.push({ name, source: m[1], isDefault: true, isExternal: true });
+  }
+
+  // #include "local_header"
+  const localRe = /^#include\s*"([^"]+)"/gm;
+  while ((m = localRe.exec(code)) !== null) {
+    const name = m[1].split('/').pop()?.replace(/\.\w+$/, '') || m[1];
+    imports.push({ name, source: m[1], isDefault: true, isExternal: false });
+  }
+
+  return imports;
+}
+
 interface ClassHierarchyEntry {
   name: string;
   extends?: string;
@@ -172,6 +213,26 @@ function extractPythonClassHierarchy(code: string): ClassHierarchyEntry[] {
   return results;
 }
 
+function extractCppClassHierarchy(code: string): ClassHierarchyEntry[] {
+  const results: ClassHierarchyEntry[] = [];
+  // class Foo : public Bar, protected Baz { or struct Foo : Bar {
+  const re = /^(?:class|struct)\s+(\w+)\s*(?:final\s*)?:\s*([\w\s,]+?)(?:\s*\{|$)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(code)) !== null) {
+    const charsBefore = code.substring(0, m.index);
+    const lineStart = charsBefore.split('\n').length;
+    const bases = m[2]
+      .split(',')
+      .map(s => s.trim().replace(/^(?:public|private|protected)\s+/, '').trim())
+      .filter(Boolean);
+    const entry: ClassHierarchyEntry = { name: m[1], lineStart, implements: [] };
+    if (bases.length > 0) entry.extends = bases[0];
+    if (bases.length > 1) entry.implements = bases.slice(1);
+    results.push(entry);
+  }
+  return results;
+}
+
 function extractCallRefsFromCode(code: string, language: string, knownSymbols: string[]): Array<{ caller: string; callee: string }> {
   if (knownSymbols.length === 0) return [];
 
@@ -187,7 +248,9 @@ function extractCallRefsFromCode(code: string, language: string, knownSymbols: s
   let currentScope: string | null = null;
   const scopeRe = language === 'python'
     ? /^(?:class|(?:async\s+)?def)\s+(\w+)/
-    : /^(?:export\s+)?(?:(?:async\s+)?function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=|(?:abstract\s+)?class\s+(\w+))/;
+    : (language === 'cpp' || language === 'c')
+      ? /^(?!\s*(?:if|for|while|switch|else|do|return|throw)\b)(?:[\w:*&<>~\t ]+?\b)(\w+)\s*\([^)]*\)\s*(?:const\s*)?(?:noexcept\s*)?\s*\{/
+      : /^(?:export\s+)?(?:(?:async\s+)?function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=|(?:abstract\s+)?class\s+(\w+))/;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -227,6 +290,9 @@ export const codeParserService = {
         return extractTSJSImports(code);
       case 'python':
         return extractPythonImports(code);
+      case 'cpp':
+      case 'c':
+        return extractCppImports(code);
       default:
         return [];
     }
@@ -266,6 +332,15 @@ export const codeParserService = {
         const names = allMatch[1].match(/['"](\w+)['"]/g);
         if (names) {
           exports.push(...names.map(n => n.replace(/['"]/g, '')));
+        }
+      }
+    } else if (language === 'cpp' || language === 'c') {
+      // Public function declarations at file scope (headers)
+      const declRe = /^(?:(?:extern|static|inline)\s+)*(?:[\w:*&<>~]+\s+)+(\w+)\s*\([^)]*\)\s*(?:const\s*)?\s*;/gm;
+      while ((m = declRe.exec(code)) !== null) {
+        const name = m[1];
+        if (!['if', 'for', 'while', 'switch', 'return', 'throw', 'delete', 'new'].includes(name)) {
+          exports.push(name);
         }
       }
     }
@@ -308,6 +383,9 @@ export const codeParserService = {
         return extractTSJSClassHierarchy(code);
       case 'python':
         return extractPythonClassHierarchy(code);
+      case 'cpp':
+      case 'c':
+        return extractCppClassHierarchy(code);
       default:
         return [];
     }
