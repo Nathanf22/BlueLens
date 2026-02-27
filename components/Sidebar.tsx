@@ -110,7 +110,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isRepoPickerOpen, setIsRepoPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const connectedRepos = repos.filter(r => fileSystemService.hasHandle(r.id));
+  // Include both locally-connected repos and GitHub repos (no local handle needed for those)
+  const connectedRepos = repos.filter(r => fileSystemService.hasHandle(r.id) || !!r.githubOwner);
 
   const handleCreateGraph = async (repoId: string) => {
     if (!onCreateGraph || isCreatingGraph) return;
@@ -605,7 +606,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         }}
                         className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-dark-700 hover:text-green-400 transition-colors text-left"
                       >
-                        <FolderOpen className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+                        {repo.githubOwner
+                          ? <Globe className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                          : <FolderOpen className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />}
                         <span className="truncate">{repo.name}</span>
                       </button>
                     ))}
@@ -646,10 +649,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       ? 'bg-green-900/30 text-green-400'
                       : 'text-gray-400 hover:bg-dark-800 hover:text-gray-200'}
                   `}
+                  title={graph.name}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <GitBranch className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="truncate text-sm">{graph.name}</span>
+                    <span className="truncate text-sm">{graph.name.split('/').pop() || graph.name}</span>
                     <span className="text-[10px] bg-green-800/50 text-green-300 px-1.5 py-0.5 rounded-full font-medium">
                       {Object.keys(graph.nodes).length}
                     </span>

@@ -51,6 +51,37 @@ export const useRepoHandlers = (
     setRepos(prev => [...prev, newRepo]);
   };
 
+  const handleAddGithubRepo = (url: string): boolean => {
+    // Accept: https://github.com/owner/repo, https://github.com/owner/repo/tree/branch, etc.
+    const match = url.trim().match(/github\.com\/([^/]+)\/([^/?#]+?)(?:\.git)?(?:\/tree\/([^/?#]+))?(?:[/?#].*)?$/);
+    if (!match) {
+      showToast?.('Invalid GitHub URL. Use: https://github.com/owner/repo', 'error');
+      return false;
+    }
+    const [, owner, repo, branch = 'main'] = match;
+
+    const id = generateId();
+    const newRepo: import('../types').RepoConfig = {
+      id,
+      name: `${owner}/${repo}`,
+      workspaceId: activeWorkspaceId,
+      addedAt: Date.now(),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubBranch: branch,
+    };
+
+    setRepos(prev => {
+      const exists = prev.some(r => r.githubOwner === owner && r.githubRepo === repo && r.workspaceId === activeWorkspaceId);
+      if (exists) {
+        showToast?.(`${owner}/${repo} is already connected.`, 'info');
+        return prev;
+      }
+      return [...prev, newRepo];
+    });
+    return true;
+  };
+
   const handleRemoveRepo = (repoId: string) => {
     fileSystemService.removeHandle(repoId);
     setRepos(prev => prev.filter(r => r.id !== repoId));
@@ -82,6 +113,7 @@ export const useRepoHandlers = (
 
   return {
     handleAddRepo,
+    handleAddGithubRepo,
     handleRemoveRepo,
     handleReopenRepo,
   };

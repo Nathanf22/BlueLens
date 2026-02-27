@@ -23,10 +23,14 @@ export const DEMO_BRANCH = 'main';
 export const DEMO_REPO_ID = '__github_bluelens_demo__';
 
 const GITHUB_API_BASE = '/proxy/github-api';
-const GITHUB_RAW_BASE = `/proxy/github-raw/${DEMO_OWNER}/${DEMO_REPO}/${DEMO_BRANCH}`;
 
-// Exported for App.tsx handleViewCode — constructs raw URL for "View Code"
-export const DEMO_RAW_BASE = GITHUB_RAW_BASE;
+/** Build the base URL for raw file fetching for any GitHub repo. */
+export function buildRawBase(owner: string, repo: string, branch: string): string {
+  return `/proxy/github-raw/${owner}/${repo}/${branch}`;
+}
+
+// Exported for App.tsx handleViewCode — constructs raw URL for the demo repo
+export const DEMO_RAW_BASE = buildRawBase(DEMO_OWNER, DEMO_REPO, DEMO_BRANCH);
 
 export type DemoProgressCallback = (step: string, current: number, total: number) => void;
 
@@ -92,18 +96,25 @@ function resolveImport(source: string, currentFile: string, allFiles: string[]):
 }
 
 /**
- * Fetch the Nathanf22/BlueLens repo from GitHub and return a CodebaseAnalysis.
+ * Fetch a public GitHub repo and return a CodebaseAnalysis.
  * This is the GitHub equivalent of codebaseAnalyzerService.analyzeCodebase(handle).
+ * Pass DEMO_OWNER/DEMO_REPO/DEMO_BRANCH/DEMO_REPO_ID for the built-in demo,
+ * or any public repo owner/repo/branch and the user's RepoConfig.id.
  */
 export async function fetchGithubAnalysis(
+  owner: string,
+  repo: string,
+  branch: string,
+  repoId: string,
   onProgress?: DemoProgressCallback,
   onLogEntry?: LogEntryFn,
 ): Promise<CodebaseAnalysis> {
-  const treeUrl = `${GITHUB_API_BASE}/repos/${DEMO_OWNER}/${DEMO_REPO}/git/trees/${DEMO_BRANCH}?recursive=1`;
+  const rawBase = buildRawBase(owner, repo, branch);
+  const treeUrl = `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
 
   // 1. Fetch file tree
   onProgress?.('Fetching repository structure', 0, 1);
-  onLogEntry?.('scan', `Fetching ${DEMO_OWNER}/${DEMO_REPO} file tree…`);
+  onLogEntry?.('scan', `Fetching ${owner}/${repo} file tree…`);
 
   let treeRes: Response;
   try {
@@ -153,7 +164,7 @@ export async function fetchGithubAnalysis(
 
     let content = '';
     try {
-      const res = await fetch(`${GITHUB_RAW_BASE}/${item.path}`);
+      const res = await fetch(`${rawBase}/${item.path}`);
       if (!res.ok) continue;
       content = await res.text();
     } catch {
@@ -181,7 +192,7 @@ export async function fetchGithubAnalysis(
       filePath: item.path,
       lineStart: s.lineStart,
       lineEnd: s.lineEnd,
-      repoId: DEMO_REPO_ID,
+      repoId,
     }));
 
     analyzedFiles.push({

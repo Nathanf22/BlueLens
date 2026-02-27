@@ -32,6 +32,7 @@ interface ModalManagerProps {
   onCloseRepoManager: () => void;
   repos: RepoConfig[];
   onAddRepo: () => void;
+  onAddGithubRepo: (url: string) => boolean;
   onRemoveRepo: (repoId: string) => void;
   onReopenRepo: (repoId: string) => void;
   // Code Link Manager
@@ -105,6 +106,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   onCloseRepoManager,
   repos,
   onAddRepo,
+  onAddGithubRepo,
   onRemoveRepo,
   onReopenRepo,
   isCodeLinkManagerOpen,
@@ -180,6 +182,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         <RepoManager
           repos={repos}
           onAddRepo={onAddRepo}
+          onAddGithubRepo={onAddGithubRepo}
           onRemoveRepo={onRemoveRepo}
           onReopenRepo={onReopenRepo}
           onClose={onCloseRepoManager}

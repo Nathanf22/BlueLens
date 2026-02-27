@@ -14,7 +14,7 @@ import { codeGraphDomainService } from '../services/codeGraphDomainService';
 import { analyzeCodebaseWithAI, type LogEntryFn } from '../services/codeGraphAgentService';
 import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGrouper';
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
-import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO } from '../services/githubDemoService';
+import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
 
 interface BreadcrumbEntry {
@@ -200,6 +200,112 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     }
   }, [activeWorkspaceId]);
 
+  const createGithubGraph = useCallback(async (
+    repoId: string,
+    owner: string,
+    repo: string,
+    branch: string,
+    llmSettings?: LLMSettings,
+    onLogEntry?: LogEntryFn,
+  ) => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const { signal } = controller;
+
+    try {
+      setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
+      onLogEntry?.('scan', `Fetching ${owner}/${repo}…`);
+
+      let analysis = await fetchGithubAnalysis(
+        owner,
+        repo,
+        branch,
+        repoId,
+        (step, current, total) => setGraphCreationProgress({ step, current, total }),
+        onLogEntry,
+      );
+      onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
+
+      if (llmSettings) {
+        const config = llmSettings.providers[llmSettings.activeProvider];
+        if (config?.apiKey) {
+          onLogEntry?.('info', 'Starting AI analysis pipeline');
+          try {
+            analysis = await analyzeCodebaseWithAI(
+              analysis,
+              llmSettings,
+              (step, current, total) => setGraphCreationProgress({ step, current, total }),
+              onLogEntry,
+              signal,
+            );
+          } catch (err: any) {
+            if (err.name === 'AbortError') throw err;
+            onLogEntry?.('info', 'AI analysis failed, using heuristic grouping');
+            analysis = groupByFunctionalHeuristics(analysis);
+          }
+        } else {
+          onLogEntry?.('info', 'No API key configured, using heuristic grouping');
+          analysis = groupByFunctionalHeuristics(analysis);
+        }
+      } else {
+        onLogEntry?.('info', 'No AI configured, using heuristic grouping');
+        analysis = groupByFunctionalHeuristics(analysis);
+      }
+
+      setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
+      let graph = await codeToGraphParserService.parseCodebaseToGraph(
+        analysis,
+        repoId,
+        `${owner}/${repo}`,
+        activeWorkspaceId,
+        undefined,
+        undefined,
+        (message, current, total) => setGraphCreationProgress({ step: message, current, total }),
+        onLogEntry,
+      );
+
+      setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
+      setIsGeneratingFlows(true);
+      try {
+        const flowResult = await generateFlows(
+          graph,
+          llmSettings,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          undefined,
+          onLogEntry,
+          signal,
+        );
+        if (Object.keys(flowResult.flows).length > 0) {
+          graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        onLogEntry?.('flow', 'Flow generation failed (non-fatal)');
+      } finally {
+        setIsGeneratingFlows(false);
+      }
+
+      onLogEntry?.('info', `Graph creation complete (${Object.keys(graph.nodes).length} nodes)`);
+
+      setCodeGraphs(prev => [...prev, graph]);
+      codeGraphStorageService.saveCodeGraph(graph);
+      setActiveGraphId(graph.id);
+      setGraphCreationProgress(null);
+      return graph;
+
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        onLogEntry?.('info', 'Graph creation cancelled');
+      } else {
+        throw err;
+      }
+      return null;
+    } finally {
+      setGraphCreationProgress(null);
+      setIsGeneratingFlows(false);
+    }
+  }, [activeWorkspaceId]);
+
   const deleteGraph = useCallback((graphId: string) => {
     codeGraphStorageService.deleteCodeGraph(graphId);
     setCodeGraphs(prev => prev.filter(g => g.id !== graphId));
@@ -225,6 +331,10 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       // Step 1: fetch GitHub repo — equivalent of codebaseAnalyzerService.analyzeCodebase(handle)
       setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
       let analysis = await fetchGithubAnalysis(
+        DEMO_OWNER,
+        DEMO_REPO,
+        DEMO_BRANCH,
+        DEMO_REPO_ID,
         (step, current, total) => setGraphCreationProgress({ step, current, total }),
         onLogEntry,
       );
@@ -510,6 +620,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     demoError,
 
     createGraph,
+    createGithubGraph,
     cancelCreateGraph,
     deleteGraph,
     loadDemoGraph,
