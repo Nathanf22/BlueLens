@@ -19,6 +19,18 @@ export class LLMConfigError extends Error {
   }
 }
 
+/**
+ * Thrown when the API rate limit or quota is exceeded.
+ * Callers should surface this clearly to the user rather than retrying silently.
+ */
+export class LLMRateLimitError extends Error {
+  readonly name = 'LLMRateLimitError';
+  constructor(provider: string) {
+    super(`${provider} quota or rate limit exceeded. Wait a moment then try again.`);
+    Object.setPrototypeOf(this, LLMRateLimitError.prototype);
+  }
+}
+
 const DEFAULT_MODELS: Record<LLMProvider, string> = {
   gemini: 'gemini-3-flash-preview',
   openai: 'gpt-4o-mini',
@@ -34,25 +46,36 @@ async function sendGemini(
   const ai = new GoogleGenAI({ apiKey: config.apiKey });
   const model = config.model || DEFAULT_MODELS.gemini;
 
-  // Build contents from message history
   const contents = messages.map(m => ({
     role: m.role === 'assistant' ? 'model' as const : 'user' as const,
     parts: [{ text: m.content }],
   }));
 
-  const response = await ai.models.generateContent({
-    model,
-    contents,
-    config: {
-      systemInstruction: systemPrompt,
-      temperature: 0.3,
-    },
-  }, signal ? { signal } : undefined);
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.3,
+      },
+    }, signal ? { signal } : undefined);
 
-  const text = response.text;
-  if (!text) throw new Error('No response from Gemini');
+    const text = response.text;
+    if (!text) throw new Error('No response from Gemini');
 
-  return { content: text, provider: 'gemini', model };
+    return { content: text, provider: 'gemini', model };
+  } catch (err: any) {
+    if (err instanceof LLMConfigError || err instanceof LLMRateLimitError) throw err;
+    const msg: string = err?.message ?? '';
+    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
+      throw new LLMRateLimitError('Gemini');
+    }
+    if (msg.includes('401') || msg.includes('403') || msg.includes('API_KEY_INVALID') || msg.includes('permission')) {
+      throw new LLMConfigError(`Gemini API key is invalid or missing permissions. Open AI Settings.`);
+    }
+    throw err;
+  }
 }
 
 async function sendOpenAI(
@@ -68,22 +91,30 @@ async function sendOpenAI(
 
   const model = config.model || DEFAULT_MODELS.openai;
 
-  const response = await client.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system' as const, content: systemPrompt },
-      ...messages.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-    ],
-    temperature: 0.3,
-  }, { signal });
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system' as const, content: systemPrompt },
+        ...messages.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      ],
+      temperature: 0.3,
+    }, { signal });
 
-  const text = response.choices[0]?.message?.content;
-  if (!text) throw new Error('No response from OpenAI');
+    const text = response.choices[0]?.message?.content;
+    if (!text) throw new Error('No response from OpenAI');
 
-  return { content: text, provider: 'openai', model };
+    return { content: text, provider: 'openai', model };
+  } catch (err: any) {
+    if (err instanceof LLMConfigError || err instanceof LLMRateLimitError) throw err;
+    const status: number | undefined = err?.status;
+    if (status === 429) throw new LLMRateLimitError('OpenAI');
+    if (status === 401 || status === 403) throw new LLMConfigError(`OpenAI API key is invalid. Open AI Settings.`);
+    throw err;
+  }
 }
 
 async function sendAnthropic(
@@ -113,6 +144,10 @@ async function sendAnthropic(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
+    if (response.status === 429) throw new LLMRateLimitError('Anthropic');
+    if (response.status === 401 || response.status === 403) {
+      throw new LLMConfigError(`Anthropic API key is invalid. Open AI Settings.`);
+    }
     if (response.status === 0 || errorText.includes('CORS') || errorText.includes('Failed to fetch')) {
       throw new Error(
         'CORS error: The Anthropic API does not allow direct browser requests. ' +

@@ -5,7 +5,7 @@ import { AppFooter } from './components/AppFooter';
 import { WorkspaceView } from './components/WorkspaceView';
 import { ModalManager } from './components/ModalManager';
 import { BlueprintImportResult } from './services/exportService';
-import { llmService, LLMConfigError } from './services/llmService';
+import { llmService, LLMConfigError, LLMRateLimitError } from './services/llmService';
 import { aiChatService } from './services/aiChatService';
 import { fileSystemService } from './services/fileSystemService';
 import { DEMO_REPO_ID, DEMO_RAW_BASE, buildRawBase } from './services/githubDemoService';
@@ -319,7 +319,9 @@ export default function App() {
       else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
       return result;
     } catch (err: any) {
-      if (err instanceof LLMConfigError) {
+      if (err instanceof LLMRateLimitError) {
+        showToast(err.message, 'error');
+      } else if (err instanceof LLMConfigError) {
         showToast('An AI API key is required to create a Code Graph. Configure one in AI Settings.', 'error');
         setIsAISettingsOpen(true);
       } else {
@@ -344,7 +346,9 @@ export default function App() {
         // Export only flows at the scope that was regenerated
         if (codeGraph.activeGraph) triggerFlowExport(codeGraph.activeGraph, options?.scopeNodeId);
       } catch (err: any) {
-        if (err instanceof LLMConfigError) {
+        if (err instanceof LLMRateLimitError) {
+          showToast(err.message, 'error');
+        } else if (err instanceof LLMConfigError) {
           showToast('An AI API key is required to generate sequence diagrams. Configure one in AI Settings.', 'error');
           setIsAISettingsOpen(true);
         } else {
@@ -638,7 +642,9 @@ export default function App() {
                 codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
                   .then(graph => { if (graph) triggerFlowExport(graph); })
                   .catch((err: any) => {
-                    if (err instanceof LLMConfigError) {
+                    if (err instanceof LLMRateLimitError) {
+                      showToast(err.message, 'error');
+                    } else if (err instanceof LLMConfigError) {
                       showToast('An AI API key is required to load the demo graph. Configure one in AI Settings.', 'error');
                       setIsAISettingsOpen(true);
                     }

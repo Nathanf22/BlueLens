@@ -9,7 +9,7 @@
  */
 
 import { CodebaseAnalysis, CodebaseModule, AnalyzedFile, LLMSettings, ProgressLogCategory } from '../types';
-import { llmService } from './llmService';
+import { llmService, LLMConfigError, LLMRateLimitError } from './llmService';
 import { groupByFunctionalHeuristics } from './codeGraphHeuristicGrouper';
 
 export type LogEntryFn = (category: ProgressLogCategory, message: string, detail?: string) => void;
@@ -202,6 +202,7 @@ async function analyzeFilesBatch(
         return validated;
       }
     } catch (err) {
+      if (err instanceof LLMRateLimitError || err instanceof LLMConfigError) throw err;
       console.warn(`[CodeGraph Agent 1] Batch attempt ${attempt + 1} failed:`, err);
     }
   }
@@ -401,6 +402,7 @@ async function buildArchitecture(
         console.warn(`[CodeGraph Agent 2] Attempt ${attempt + 1}: validation failed`);
       }
     } catch (err) {
+      if (err instanceof LLMRateLimitError || err instanceof LLMConfigError) throw err;
       console.warn(`[CodeGraph Agent 2] Attempt ${attempt + 1} error:`, err);
     }
   }
