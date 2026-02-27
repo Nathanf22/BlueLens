@@ -11,6 +11,7 @@ interface RepoManagerProps {
   onReopenRepo: (repoId: string) => void;
   onClose: () => void;
   onCreateGraph?: (repoId: string) => Promise<any>;
+  hasConfiguredAI?: boolean;
 }
 
 export const RepoManager: React.FC<RepoManagerProps> = ({
@@ -20,7 +21,8 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
   onRemoveRepo,
   onReopenRepo,
   onClose,
-  onCreateGraph
+  onCreateGraph,
+  hasConfiguredAI = false,
 }) => {
   const [creatingGraphForRepo, setCreatingGraphForRepo] = useState<string | null>(null);
   const [showGithubInput, setShowGithubInput] = useState(false);
@@ -116,7 +118,7 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
                     {isConnected && onCreateGraph && (
                       <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-700/60 bg-dark-900/40">
                         <button
-                          disabled={creatingGraphForRepo !== null}
+                          disabled={creatingGraphForRepo !== null || !hasConfiguredAI}
                           onClick={async () => {
                             setCreatingGraphForRepo(repo.id);
                             try {
@@ -126,6 +128,7 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
                               setCreatingGraphForRepo(null);
                             }
                           }}
+                          title={!hasConfiguredAI ? 'An AI API key is required — configure one in AI Settings' : undefined}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700/80 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded text-xs font-medium transition-colors"
                         >
                           {creatingGraphForRepo === repo.id
@@ -133,6 +136,9 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
                             : <GitBranch className="w-3.5 h-3.5" />}
                           {creatingGraphForRepo === repo.id ? 'Creating…' : 'Create Code Graph'}
                         </button>
+                        {!hasConfiguredAI && (
+                          <span className="text-xs text-yellow-500/80">AI key required</span>
+                        )}
                       </div>
                     )}
                   </div>

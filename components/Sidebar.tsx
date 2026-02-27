@@ -51,6 +51,7 @@ interface SidebarProps {
   onCancelCreateGraph?: () => void;
   graphCreationProgress?: { step: string; current: number; total: number } | null;
   showToast?: (message: string, type?: ToastType) => void;
+  hasConfiguredAI?: boolean;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -92,6 +93,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCancelCreateGraph,
   graphCreationProgress,
   showToast,
+  hasConfiguredAI = false,
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -587,7 +589,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   disabled={connectedRepos.length === 0 || isCreatingGraph}
                   className="p-1 rounded hover:bg-dark-700 text-gray-500 hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  title={connectedRepos.length === 0 ? 'Connect a repository first' : 'New Code Graph'}
+                  title={
+                    connectedRepos.length === 0
+                      ? 'Connect a repository first'
+                      : !hasConfiguredAI
+                        ? 'An AI API key is required — click to configure'
+                        : 'New Code Graph'
+                  }
                 >
                   {isCreatingGraph
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin text-green-400" />
@@ -679,8 +687,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <p className="text-xs text-gray-600 italic mb-2">
                 {connectedRepos.length === 0
                   ? 'Connect a repository to create a graph'
-                  : 'Click + to create a Code Graph'}
+                  : !hasConfiguredAI
+                    ? 'An AI API key is required to create a Code Graph'
+                    : 'Click + to create a Code Graph'}
               </p>
+              {!hasConfiguredAI && connectedRepos.length > 0 && (
+                <p className="text-xs text-yellow-600/80 mb-2">
+                  Configure an AI provider in{' '}
+                  <span className="text-yellow-500 underline underline-offset-2 cursor-pointer" onClick={() => showToast?.('Open AI Settings via the ⚙ icon in the header', 'info')}>
+                    AI Settings
+                  </span>
+                  {' '}to get started.
+                </p>
+              )}
               {onLoadDemoGraph && (
                 <div className="flex flex-col gap-1">
                   <button

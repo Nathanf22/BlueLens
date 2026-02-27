@@ -295,7 +295,15 @@ export default function App() {
     }
   }, [folders, diagrams, doExportFlows]);
 
+  const requireAIKey = useCallback((action: string): boolean => {
+    if (hasConfiguredProvider) return true;
+    showToast(`An AI API key is required to ${action}. Configure one in AI Settings.`, 'error');
+    setIsAISettingsOpen(true);
+    return false;
+  }, [hasConfiguredProvider, showToast, setIsAISettingsOpen]);
+
   const handleCreateGraph = useCallback(async (repoId: string) => {
+    if (!requireAIKey('create a Code Graph')) return null;
     const repo = workspaceRepos.find(r => r.id === repoId);
     graphCreationCancelledRef.current = false;
     setIsCreatingGraph(true);
@@ -321,7 +329,7 @@ export default function App() {
       progressLog.endLog();
       setIsCreatingGraph(false);
     }
-  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast]);
+  }, [requireAIKey, workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
@@ -330,11 +338,12 @@ export default function App() {
 
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
+      if (!requireAIKey('generate sequence diagrams')) return;
       await codeGraph.regenerateFlows(llmSettings, options);
       // Export only flows at the scope that was regenerated
       if (codeGraph.activeGraph) triggerFlowExport(codeGraph.activeGraph, options?.scopeNodeId);
     },
-    [codeGraph.regenerateFlows, codeGraph.activeGraph, llmSettings, triggerFlowExport]
+    [requireAIKey, codeGraph.regenerateFlows, codeGraph.activeGraph, llmSettings, triggerFlowExport]
   );
 
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {
@@ -614,7 +623,9 @@ export default function App() {
             onSelectGraph={codeGraph.selectGraph}
             onCreateGraph={handleCreateGraph}
             onDeleteGraph={codeGraph.deleteGraph}
+            hasConfiguredAI={hasConfiguredProvider}
             onLoadDemoGraph={() => {
+                if (!requireAIKey('load the demo graph')) return;
                 progressLog.startLog();
                 codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
                   .then(graph => { if (graph) triggerFlowExport(graph); })
@@ -746,6 +757,7 @@ export default function App() {
         repos={workspaceRepos}
         onAddRepo={handleAddRepo}
         onAddGithubRepo={handleAddGithubRepo}
+        hasConfiguredAI={hasConfiguredProvider}
         onRemoveRepo={handleRemoveRepo}
         onReopenRepo={handleReopenRepo}
         isCodeLinkManagerOpen={isCodeLinkManagerOpen}
