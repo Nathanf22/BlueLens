@@ -5,7 +5,7 @@ import { AppFooter } from './components/AppFooter';
 import { WorkspaceView } from './components/WorkspaceView';
 import { ModalManager } from './components/ModalManager';
 import { BlueprintImportResult } from './services/exportService';
-import { llmService } from './services/llmService';
+import { llmService, LLMConfigError } from './services/llmService';
 import { aiChatService } from './services/aiChatService';
 import { fileSystemService } from './services/fileSystemService';
 import { DEMO_REPO_ID, DEMO_RAW_BASE, buildRawBase } from './services/githubDemoService';
@@ -317,11 +317,19 @@ export default function App() {
       if (result) triggerFlowExport(result);
       else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
       return result;
+    } catch (err: any) {
+      if (err instanceof LLMConfigError) {
+        showToast('An AI API key is required to create a Code Graph. Configure one in AI Settings.', 'error');
+        setIsAISettingsOpen(true);
+      } else {
+        showToast(`Graph creation failed: ${err?.message ?? 'Unknown error'}`, 'error');
+      }
+      return null;
     } finally {
       progressLog.endLog();
       setIsCreatingGraph(false);
     }
-  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast]);
+  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
@@ -330,11 +338,20 @@ export default function App() {
 
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
-      await codeGraph.regenerateFlows(llmSettings, options);
-      // Export only flows at the scope that was regenerated
-      if (codeGraph.activeGraph) triggerFlowExport(codeGraph.activeGraph, options?.scopeNodeId);
+      try {
+        await codeGraph.regenerateFlows(llmSettings, options);
+        // Export only flows at the scope that was regenerated
+        if (codeGraph.activeGraph) triggerFlowExport(codeGraph.activeGraph, options?.scopeNodeId);
+      } catch (err: any) {
+        if (err instanceof LLMConfigError) {
+          showToast('An AI API key is required to generate sequence diagrams. Configure one in AI Settings.', 'error');
+          setIsAISettingsOpen(true);
+        } else {
+          showToast(`Flow generation failed: ${err?.message ?? 'Unknown error'}`, 'error');
+        }
+      }
     },
-    [codeGraph.regenerateFlows, codeGraph.activeGraph, llmSettings, triggerFlowExport]
+    [codeGraph.regenerateFlows, codeGraph.activeGraph, llmSettings, triggerFlowExport, showToast, setIsAISettingsOpen]
   );
 
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {
@@ -614,10 +631,17 @@ export default function App() {
             onSelectGraph={codeGraph.selectGraph}
             onCreateGraph={handleCreateGraph}
             onDeleteGraph={codeGraph.deleteGraph}
+            hasConfiguredAI={hasConfiguredProvider}
             onLoadDemoGraph={() => {
                 progressLog.startLog();
                 codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
                   .then(graph => { if (graph) triggerFlowExport(graph); })
+                  .catch((err: any) => {
+                    if (err instanceof LLMConfigError) {
+                      showToast('An AI API key is required to load the demo graph. Configure one in AI Settings.', 'error');
+                      setIsAISettingsOpen(true);
+                    }
+                  })
                   .finally(() => progressLog.endLog());
               }}
             isDemoLoading={codeGraph.isDemoLoading}
@@ -746,6 +770,7 @@ export default function App() {
         repos={workspaceRepos}
         onAddRepo={handleAddRepo}
         onAddGithubRepo={handleAddGithubRepo}
+        hasConfiguredAI={hasConfiguredProvider}
         onRemoveRepo={handleRemoveRepo}
         onReopenRepo={handleReopenRepo}
         isCodeLinkManagerOpen={isCodeLinkManagerOpen}
