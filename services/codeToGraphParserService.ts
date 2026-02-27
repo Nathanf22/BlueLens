@@ -148,12 +148,14 @@ export async function parseCodebaseToGraph(
         } catch { /* skip */ }
       }
 
-      const sourceRef: SourceReference | null = contentHash ? {
+      // Always populate sourceRef so "View Code" works regardless of whether
+      // a FS handle was available (GitHub repos have no handle, hence no contentHash).
+      const sourceRef: SourceReference = {
         filePath: file.filePath,
         lineStart: 1,
-        lineEnd: file.size > 0 ? 9999 : 1, // Approximate; not critical for file-level nodes
-        contentHash,
-      } : null;
+        lineEnd: file.size > 0 ? 9999 : 1,
+        contentHash, // empty string when no handle; sync service ignores empty-hash entries
+      };
 
       const node: GraphNode = {
         id: fileNodeId,
@@ -175,8 +177,8 @@ export async function parseCodebaseToGraph(
       const containResult = codeGraphModelService.addRelation(graph, moduleNodeId, fileNodeId, 'contains');
       graph = containResult.graph;
 
-      // SyncLock for file node
-      if (sourceRef) {
+      // SyncLock only when we have a real hash (local repos with a connected handle)
+      if (contentHash) {
         graph.syncLock[fileNodeId] = {
           nodeId: fileNodeId,
           sourceRef,
@@ -191,12 +193,12 @@ export async function parseCodebaseToGraph(
         const symKey = `${file.filePath}:${sym.name}`;
         symbolIdMap.set(symKey, symNodeId);
 
-        const symSourceRef: SourceReference | null = contentHash ? {
+        const symSourceRef: SourceReference = {
           filePath: file.filePath,
           lineStart: sym.lineStart,
           lineEnd: sym.lineEnd,
           contentHash: '', // Symbol-level hash computed only during sync
-        } : null;
+        };
 
         const symNode: GraphNode = {
           id: symNodeId,
