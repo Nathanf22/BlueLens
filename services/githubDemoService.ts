@@ -109,18 +109,35 @@ export async function fetchGithubAnalysis(
   onProgress?: DemoProgressCallback,
   onLogEntry?: LogEntryFn,
 ): Promise<CodebaseAnalysis> {
-  const rawBase = buildRawBase(owner, repo, branch);
-  const treeUrl = `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-
-  // 1. Fetch file tree
+  // 1. Fetch file tree — if branch is not found (404), resolve the default branch and retry once
   onProgress?.('Fetching repository structure', 0, 1);
   onLogEntry?.('scan', `Fetching ${owner}/${repo} file tree…`);
 
-  let treeRes: Response;
-  try {
-    treeRes = await fetch(treeUrl);
-  } catch (e: any) {
-    throw new Error(`Network error: could not reach GitHub API. (${e?.message ?? e})`);
+  async function fetchTree(ref: string): Promise<Response> {
+    const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`;
+    try {
+      return await fetch(url);
+    } catch (e: any) {
+      throw new Error(`Network error: could not reach GitHub API. (${e?.message ?? e})`);
+    }
+  }
+
+  let resolvedBranch = branch;
+  let treeRes = await fetchTree(resolvedBranch);
+
+  if (treeRes.status === 404) {
+    // Branch might not exist — fetch the repo's actual default branch and retry
+    try {
+      const repoRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}`);
+      if (repoRes.ok) {
+        const repoData = await repoRes.json();
+        if (repoData.default_branch && repoData.default_branch !== resolvedBranch) {
+          resolvedBranch = repoData.default_branch;
+          onLogEntry?.('scan', `Branch '${branch}' not found, retrying with '${resolvedBranch}'…`);
+          treeRes = await fetchTree(resolvedBranch);
+        }
+      }
+    } catch { /* ignore — let the original error surface below */ }
   }
 
   if (treeRes.status === 403 || treeRes.status === 429) {
@@ -135,6 +152,7 @@ export async function fetchGithubAnalysis(
     throw new Error(`Failed to fetch repository tree: ${detail}`);
   }
 
+  const rawBase = buildRawBase(owner, repo, resolvedBranch);
   const treeData: GithubTreeResponse = await treeRes.json();
 
   // 2. Filter to relevant source files
