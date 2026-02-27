@@ -304,8 +304,8 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
                     activeFlowId === flow.id ? 'text-cyan-400' : 'text-gray-600'
                   }`} />
                   <div className="min-w-0">
-                    <div className="font-medium truncate">{flow.name}</div>
-                    <div className="text-[10px] text-gray-600 truncate mt-0.5">{flow.description}</div>
+                    <div className="font-medium truncate" title={flow.name}>{flow.name}</div>
+                    <div className="text-[10px] text-gray-600 truncate mt-0.5" title={flow.description}>{flow.description}</div>
                   </div>
                 </button>
               ))}

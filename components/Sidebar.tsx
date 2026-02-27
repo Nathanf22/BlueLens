@@ -233,7 +233,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex items-center gap-2 min-w-0">
         <FileText className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 self-start" />
         <div className="min-w-0">
-          <span className="truncate text-sm block">{diagram.name}</span>
+          <span className="truncate text-sm block" title={diagram.name}>{diagram.name}</span>
           {diagram.description && (
             <span className="truncate text-xs text-gray-600 block leading-tight">{diagram.description}</span>
           )}
