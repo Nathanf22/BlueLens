@@ -7,6 +7,18 @@ import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig } from '../types';
 
+/**
+ * Thrown when no valid AI API key is configured.
+ * Callers can catch this specifically to prompt the user to configure AI settings.
+ */
+export class LLMConfigError extends Error {
+  readonly name = 'LLMConfigError';
+  constructor(message = 'No AI API key configured. Open AI Settings to add one.') {
+    super(message);
+    Object.setPrototypeOf(this, LLMConfigError.prototype);
+  }
+}
+
 const DEFAULT_MODELS: Record<LLMProvider, string> = {
   gemini: 'gemini-3-flash-preview',
   openai: 'gpt-4o-mini',
@@ -148,8 +160,10 @@ export const llmService = {
     signal?: AbortSignal
   ): Promise<LLMResponse> {
     const config = settings.providers[settings.activeProvider];
-    if (!config || !config.apiKey) {
-      throw new Error(`No API key configured for ${settings.activeProvider}. Open AI Settings to configure.`);
+    if (!config?.apiKey) {
+      throw new LLMConfigError(
+        `No API key configured for ${settings.activeProvider}. Open AI Settings to configure.`
+      );
     }
 
     switch (settings.activeProvider) {

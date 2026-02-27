@@ -16,6 +16,18 @@ import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGroup
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
 import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
+import { LLMConfigError } from '../services/llmService';
+
+/** Throws LLMConfigError if no API key is configured for the active provider. */
+function requireLLMKey(llmSettings: LLMSettings | undefined): void {
+  if (!llmSettings) throw new LLMConfigError();
+  const config = llmSettings.providers[llmSettings.activeProvider];
+  if (!config?.apiKey) {
+    throw new LLMConfigError(
+      `No API key configured for ${llmSettings.activeProvider}. Open AI Settings to configure.`
+    );
+  }
+}
 
 interface BreadcrumbEntry {
   nodeId: string;
@@ -114,30 +126,20 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       let analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
       onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
-      // Try AI-powered grouping if LLM is configured
-      if (llmSettings) {
-        const config = llmSettings.providers[llmSettings.activeProvider];
-        if (config?.apiKey) {
-          onLogEntry?.('info', 'Starting AI analysis pipeline');
-          try {
-            analysis = await analyzeCodebaseWithAI(
-              analysis,
-              llmSettings,
-              (step, current, total) => setGraphCreationProgress({ step, current, total }),
-              onLogEntry,
-              signal,
-            );
-          } catch (err: any) {
-            if (err.name === 'AbortError') throw err;
-            onLogEntry?.('info', 'AI analysis failed, using heuristic grouping');
-            analysis = groupByFunctionalHeuristics(analysis);
-          }
-        } else {
-          onLogEntry?.('info', 'No API key configured, using heuristic grouping');
-          analysis = groupByFunctionalHeuristics(analysis);
-        }
-      } else {
-        onLogEntry?.('info', 'No AI configured, using heuristic grouping');
+      // AI-powered grouping (required); throws LLMConfigError if no key configured
+      requireLLMKey(llmSettings);
+      onLogEntry?.('info', 'Starting AI analysis pipeline');
+      try {
+        analysis = await analyzeCodebaseWithAI(
+          analysis,
+          llmSettings!,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          onLogEntry,
+          signal,
+        );
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        onLogEntry?.('info', `AI analysis failed (${err.message}), using heuristic grouping`);
         analysis = groupByFunctionalHeuristics(analysis);
       }
 
@@ -226,29 +228,20 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       );
       onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
-      if (llmSettings) {
-        const config = llmSettings.providers[llmSettings.activeProvider];
-        if (config?.apiKey) {
-          onLogEntry?.('info', 'Starting AI analysis pipeline');
-          try {
-            analysis = await analyzeCodebaseWithAI(
-              analysis,
-              llmSettings,
-              (step, current, total) => setGraphCreationProgress({ step, current, total }),
-              onLogEntry,
-              signal,
-            );
-          } catch (err: any) {
-            if (err.name === 'AbortError') throw err;
-            onLogEntry?.('info', 'AI analysis failed, using heuristic grouping');
-            analysis = groupByFunctionalHeuristics(analysis);
-          }
-        } else {
-          onLogEntry?.('info', 'No API key configured, using heuristic grouping');
-          analysis = groupByFunctionalHeuristics(analysis);
-        }
-      } else {
-        onLogEntry?.('info', 'No AI configured, using heuristic grouping');
+      // AI-powered grouping (required); throws LLMConfigError if no key configured
+      requireLLMKey(llmSettings);
+      onLogEntry?.('info', 'Starting AI analysis pipeline');
+      try {
+        analysis = await analyzeCodebaseWithAI(
+          analysis,
+          llmSettings!,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          onLogEntry,
+          signal,
+        );
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        onLogEntry?.('info', `AI analysis failed (${err.message}), using heuristic grouping`);
         analysis = groupByFunctionalHeuristics(analysis);
       }
 
@@ -339,30 +332,20 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         onLogEntry,
       );
 
-      // Step 2: AI grouping or heuristics — same logic as createGraph
-      if (llmSettings) {
-        const config = llmSettings.providers[llmSettings.activeProvider];
-        if (config?.apiKey) {
-          onLogEntry?.('info', 'Starting AI analysis pipeline');
-          try {
-            analysis = await analyzeCodebaseWithAI(
-              analysis,
-              llmSettings,
-              (step, current, total) => setGraphCreationProgress({ step, current, total }),
-              onLogEntry,
-              signal,
-            );
-          } catch (err: any) {
-            if (err.name === 'AbortError') throw err;
-            onLogEntry?.('info', 'AI analysis failed, using heuristic grouping');
-            analysis = groupByFunctionalHeuristics(analysis);
-          }
-        } else {
-          onLogEntry?.('info', 'No API key configured, using heuristic grouping');
-          analysis = groupByFunctionalHeuristics(analysis);
-        }
-      } else {
-        onLogEntry?.('info', 'No AI configured, using heuristic grouping');
+      // Step 2: AI grouping (required); throws LLMConfigError if no key configured
+      requireLLMKey(llmSettings);
+      onLogEntry?.('info', 'Starting AI analysis pipeline');
+      try {
+        analysis = await analyzeCodebaseWithAI(
+          analysis,
+          llmSettings!,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          onLogEntry,
+          signal,
+        );
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        onLogEntry?.('info', `AI analysis failed (${err.message}), using heuristic grouping`);
         analysis = groupByFunctionalHeuristics(analysis);
       }
 
@@ -411,6 +394,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     } catch (err: any) {
       if (err.name === 'AbortError') {
         onLogEntry?.('info', 'Demo graph load cancelled');
+      } else if (err instanceof LLMConfigError) {
+        throw err; // Let App.tsx handle opening AI Settings
       } else {
         const message = err?.message ?? 'Failed to load demo graph';
         setDemoError(message);
