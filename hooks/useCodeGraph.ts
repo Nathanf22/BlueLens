@@ -386,10 +386,10 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         setIsGeneratingFlows(false);
       }
 
-      onLogEntry?.('info', `Demo graph ready (${Object.keys(graph.nodes).length} nodes) — not saved yet`);
+      onLogEntry?.('info', `Demo graph ready (${Object.keys(graph.nodes).length} nodes)`);
 
       setCodeGraphs(prev => [...prev, graph]);
-      // Not persisted automatically — user must save explicitly
+      codeGraphStorageService.saveCodeGraph(graph);
       setActiveGraphId(graph.id);
       return graph;
 
