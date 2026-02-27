@@ -309,7 +309,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
             <FolderIcon className="w-3.5 h-3.5 text-brand-500/70" />
-            <span className="truncate text-sm font-medium">{folder.name}</span>
+            <span className="truncate text-sm font-medium" title={folder.name}>{folder.name}</span>
           </div>
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
