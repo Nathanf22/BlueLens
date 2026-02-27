@@ -209,6 +209,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     branch: string,
     llmSettings?: LLMSettings,
     onLogEntry?: LogEntryFn,
+    onBranchResolved?: (resolvedBranch: string) => void,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -225,6 +226,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         repoId,
         (step, current, total) => setGraphCreationProgress({ step, current, total }),
         onLogEntry,
+        onBranchResolved,
       );
       onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 

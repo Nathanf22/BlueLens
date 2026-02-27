@@ -111,10 +111,15 @@ export const useRepoHandlers = (
     );
   };
 
+  const handleUpdateGithubBranch = (repoId: string, branch: string) => {
+    setRepos(prev => prev.map(r => r.id === repoId ? { ...r, githubBranch: branch } : r));
+  };
+
   return {
     handleAddRepo,
     handleAddGithubRepo,
     handleRemoveRepo,
     handleReopenRepo,
+    handleUpdateGithubBranch,
   };
 };

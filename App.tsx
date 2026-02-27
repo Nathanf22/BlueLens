@@ -134,7 +134,7 @@ export default function App() {
   const { handleAddNodeLink, handleRemoveNodeLink } =
     useNodeLinkHandlers(activeDiagram, updateActiveDiagram);
 
-  const { handleAddRepo, handleAddGithubRepo, handleRemoveRepo, handleReopenRepo } =
+  const { handleAddRepo, handleAddGithubRepo, handleRemoveRepo, handleReopenRepo, handleUpdateGithubBranch } =
     useRepoHandlers(repos, setRepos, activeWorkspaceId, showToast);
 
   const { handleAddCodeLink, handleRemoveCodeLink } =
@@ -310,6 +310,7 @@ export default function App() {
           repo.githubBranch || 'main',
           llmSettings,
           progressLog.addEntry,
+          (resolvedBranch) => handleUpdateGithubBranch(repoId, resolvedBranch),
         );
       } else {
         result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry);
@@ -329,7 +330,7 @@ export default function App() {
       progressLog.endLog();
       setIsCreatingGraph(false);
     }
-  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen]);
+  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;

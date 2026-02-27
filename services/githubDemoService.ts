@@ -108,6 +108,7 @@ export async function fetchGithubAnalysis(
   repoId: string,
   onProgress?: DemoProgressCallback,
   onLogEntry?: LogEntryFn,
+  onBranchResolved?: (resolvedBranch: string) => void,
 ): Promise<CodebaseAnalysis> {
   // 1. Fetch file tree — if branch is not found (404), resolve the default branch and retry once
   onProgress?.('Fetching repository structure', 0, 1);
@@ -134,6 +135,7 @@ export async function fetchGithubAnalysis(
         if (repoData.default_branch && repoData.default_branch !== resolvedBranch) {
           resolvedBranch = repoData.default_branch;
           onLogEntry?.('scan', `Branch '${branch}' not found, retrying with '${resolvedBranch}'…`);
+          onBranchResolved?.(resolvedBranch);
           treeRes = await fetchTree(resolvedBranch);
         }
       }
