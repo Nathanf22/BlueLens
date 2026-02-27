@@ -614,7 +614,6 @@ export default function App() {
             onSelectGraph={codeGraph.selectGraph}
             onCreateGraph={handleCreateGraph}
             onDeleteGraph={codeGraph.deleteGraph}
-            onAddGithubRepo={handleAddGithubRepo}
             onLoadDemoGraph={() => {
                 progressLog.startLog();
                 codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
@@ -746,6 +745,7 @@ export default function App() {
         onCloseRepoManager={() => setIsRepoManagerOpen(false)}
         repos={workspaceRepos}
         onAddRepo={handleAddRepo}
+        onAddGithubRepo={handleAddGithubRepo}
         onRemoveRepo={handleRemoveRepo}
         onReopenRepo={handleReopenRepo}
         isCodeLinkManagerOpen={isCodeLinkManagerOpen}

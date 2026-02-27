@@ -51,7 +51,6 @@ interface SidebarProps {
   onCancelCreateGraph?: () => void;
   graphCreationProgress?: { step: string; current: number; total: number } | null;
   showToast?: (message: string, type?: ToastType) => void;
-  onAddGithubRepo?: (url: string) => boolean;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -93,7 +92,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCancelCreateGraph,
   graphCreationProgress,
   showToast,
-  onAddGithubRepo,
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -110,8 +108,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [inputDialog, setInputDialog] = useState<InputDialog>(null);
   const isCreatingGraph = isCreatingGraphProp;
   const [isRepoPickerOpen, setIsRepoPickerOpen] = useState(false);
-  const [showGithubInput, setShowGithubInput] = useState(false);
-  const [githubUrlInput, setGithubUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Include both locally-connected repos and GitHub repos (no local handle needed for those)
@@ -577,16 +573,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {codeGraphs.length > 0 && (
                 <span className="bg-dark-800 px-1.5 py-0.5 rounded text-[10px]">{codeGraphs.length}</span>
               )}
-              {/* Add public GitHub repo by URL */}
-              {onAddGithubRepo && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowGithubInput(v => !v); setIsRepoPickerOpen(false); }}
-                  className="p-1 rounded hover:bg-dark-700 text-gray-500 hover:text-blue-400 transition-colors"
-                  title="Add public GitHub repo"
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                </button>
-              )}
               <div className="relative">
                 <button
                   onClick={(e) => {
@@ -597,7 +583,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       handleCreateGraph(connectedRepos[0].id);
                     } else {
                       setIsRepoPickerOpen(!isRepoPickerOpen);
-                      setShowGithubInput(false);
                     }
                   }}
                   disabled={connectedRepos.length === 0 || isCreatingGraph}
@@ -632,37 +617,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
           </div>
-          {/* GitHub URL input */}
-          {showGithubInput && (
-            <div className="px-2 mb-2 flex gap-1">
-              <input
-                type="text"
-                value={githubUrlInput}
-                onChange={e => setGithubUrlInput(e.target.value)}
-                placeholder="https://github.com/owner/repo"
-                className="flex-1 text-xs bg-dark-800 border border-gray-700 rounded px-2 py-1 text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-500/50"
-                autoFocus
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && githubUrlInput.trim()) {
-                    const ok = onAddGithubRepo?.(githubUrlInput.trim());
-                    if (ok !== false) { setGithubUrlInput(''); setShowGithubInput(false); }
-                  }
-                  if (e.key === 'Escape') { setGithubUrlInput(''); setShowGithubInput(false); }
-                }}
-              />
-              <button
-                onClick={() => {
-                  if (githubUrlInput.trim()) {
-                    const ok = onAddGithubRepo?.(githubUrlInput.trim());
-                    if (ok !== false) { setGithubUrlInput(''); setShowGithubInput(false); }
-                  }
-                }}
-                className="text-xs px-2 py-1 bg-dark-700 hover:bg-blue-800/30 text-gray-300 hover:text-blue-400 rounded transition-colors whitespace-nowrap"
-              >
-                Add
-              </button>
-            </div>
-          )}
           {isCreatingGraph && graphCreationProgress && (
             <div className="px-3 mb-2">
               <div className="flex items-center gap-2 text-xs text-green-400">
