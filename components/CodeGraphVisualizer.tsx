@@ -298,6 +298,9 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
       const Icon = d.isDomain ? Network : (KIND_ICON[d.kind] ?? Box);
       createRoot(div).render(React.createElement(Icon, { size: iconSize }));
 
+      // Tooltip (native SVG title — shows full name on hover)
+      el.append('title').text(d.name);
+
       // Label
       el.append('text')
         .text(truncate(d.name, d.isDomain ? 16 : 18))
@@ -374,8 +377,8 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
         <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 bg-dark-900/80 flex-shrink-0">
           <div className="w-2 h-2 rounded-full bg-cyan-400 flex-shrink-0" />
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-medium text-gray-200 truncate">{activeFlow.name}</h3>
-            <p className="text-[10px] text-gray-500 truncate">{activeFlow.description}</p>
+            <h3 className="text-sm font-medium text-gray-200 truncate" title={activeFlow.name}>{activeFlow.name}</h3>
+            <p className="text-[10px] text-gray-500 truncate" title={activeFlow.description}>{activeFlow.description}</p>
           </div>
           <span className="text-[10px] text-gray-600 flex-shrink-0">{activeFlow.steps.length} steps</span>
           {onOpenInEditor && activeFlow.sequenceDiagram && (
