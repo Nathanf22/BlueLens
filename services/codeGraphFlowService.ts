@@ -9,7 +9,7 @@
  */
 
 import { CodeGraph, GraphFlow, GraphFlowStep, GraphNode, LLMSettings } from '../types';
-import { llmService } from './llmService';
+import { llmService, LLMConfigError, LLMRateLimitError } from './llmService';
 import type { LogEntryFn } from './codeGraphAgentService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -442,6 +442,7 @@ async function generateFlowsWithLLM(
 
       console.warn(`[CodeGraph Flows] LLM attempt ${attempt + 1}: validation failed`);
     } catch (err) {
+      if (err instanceof LLMRateLimitError || err instanceof LLMConfigError) throw err;
       console.warn(`[CodeGraph Flows] LLM attempt ${attempt + 1} error:`, err);
     }
   }

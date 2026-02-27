@@ -16,7 +16,7 @@ import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGroup
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
 import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
-import { LLMConfigError } from '../services/llmService';
+import { LLMConfigError, LLMRateLimitError } from '../services/llmService';
 
 /** Throws LLMConfigError if no API key is configured for the active provider. */
 function requireLLMKey(llmSettings: LLMSettings | undefined): void {
@@ -396,8 +396,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     } catch (err: any) {
       if (err.name === 'AbortError') {
         onLogEntry?.('info', 'Demo graph load cancelled');
-      } else if (err instanceof LLMConfigError) {
-        throw err; // Let App.tsx handle opening AI Settings
+      } else if (err instanceof LLMConfigError || err instanceof LLMRateLimitError) {
+        throw err; // Let App.tsx handle
       } else {
         const message = err?.message ?? 'Failed to load demo graph';
         setDemoError(message);
