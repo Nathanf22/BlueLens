@@ -194,7 +194,8 @@ See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy.
 
 **Nathan Kamokoue** — [LinkedIn](https://www.linkedin.com/in/nathan-kamokoue-1289121b8/) | [X](https://x.com/KamokoueNathan)
 
-**Johann Kengne** — [LinkedIn](https://www.linkedin.com/in/johann-kengne)
+**Johann Kengne** — [LinkedIn](https://www.linkedin.com/in/johann-kengne/)
+
 ---
 
 **BlueLens** — Architecture diagrams that actually stay up to date.
