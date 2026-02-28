@@ -29,15 +29,24 @@ export const useFolderHandlers = (
   };
 
   const handleDeleteFolder = (folderId: string) => {
-    // Move diagrams to root
-    setDiagrams(prev => prev.map(d =>
-      (d.folderId === folderId && d.workspaceId === activeWorkspaceId) ? { ...d, folderId: null } : d
+    // Collect all descendant folder IDs recursively
+    const toDelete = new Set<string>([folderId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const f of folders) {
+        if (!toDelete.has(f.id) && f.parentId !== null && toDelete.has(f.parentId)) {
+          toDelete.add(f.id);
+          changed = true;
+        }
+      }
+    }
+    // Delete all diagrams inside any of those folders
+    setDiagrams(prev => prev.filter(d =>
+      !(d.workspaceId === activeWorkspaceId && d.folderId !== null && toDelete.has(d.folderId))
     ));
-    // Delete folder and move child folders to root
-    setFolders(prev => prev
-      .filter(f => f.id !== folderId)
-      .map(f => (f.parentId === folderId && f.workspaceId === activeWorkspaceId) ? { ...f, parentId: null } : f)
-    );
+    // Delete all those folders
+    setFolders(prev => prev.filter(f => !toDelete.has(f.id)));
   };
 
   const handleRenameFolder = (folderId: string, name: string) => {

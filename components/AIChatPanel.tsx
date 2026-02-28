@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, MessageSquare, Trash2, Check, Loader2, ArrowRightLeft, Code2 } from 'lucide-react';
 import { ChatMessage, ChatSession, LLMSettings } from '../types';
+import { MarkdownContent } from './MarkdownContent';
 
 interface AIChatPanelProps {
   chatSession: ChatSession | null;
@@ -82,7 +83,10 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
               : 'bg-dark-800 text-gray-300 border border-gray-700'
           }`}
         >
-          <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+          {isUser
+            ? <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+            : <MarkdownContent content={msg.content} />
+          }
           {hasMermaidCode && (
             <button
               onClick={() => onApplyCode(msg)}

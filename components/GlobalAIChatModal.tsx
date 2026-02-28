@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Sparkles, Loader2, Check, Trash2 } from 'lucide-react';
 import { ChatMessage, LLMSettings } from '../types';
+import { MarkdownContent } from './MarkdownContent';
 
 interface GlobalAIChatModalProps {
   isOpen: boolean;
@@ -83,7 +84,7 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
           </div>
         ) : (
           <div className="max-w-[90%] text-sm text-gray-300">
-            <div className="whitespace-pre-wrap break-words leading-relaxed">{msg.content}</div>
+            <MarkdownContent content={msg.content} />
             {hasCode && hasActiveDiagram && (
               <button
                 onClick={() => handleApply(msg)}
