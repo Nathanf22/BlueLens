@@ -176,6 +176,7 @@ export default function App() {
   const [globalChatMessages, setGlobalChatMessages] = useState<ChatMessage[]>([]);
   const [isGlobalAILoading, setIsGlobalAILoading] = useState(false);
   const globalMsgCounterRef = useRef(0);
+  const globalAbortRef = useRef<AbortController | null>(null);
 
   const handleGlobalSend = useCallback(async (text: string) => {
     const userMsg: ChatMessage = {
@@ -195,6 +196,8 @@ export default function App() {
     };
     setGlobalChatMessages(prev => [...prev, userMsg, pendingMsg]);
     setIsGlobalAILoading(true);
+    const abortController = new AbortController();
+    globalAbortRef.current = abortController;
 
     try {
       const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
@@ -256,6 +259,7 @@ export default function App() {
         AGENT_TOOLS,
         trackingExecutor,
         llmSettings,
+        { signal: abortController.signal },
       );
 
       // Finalise the pending message with the response text (or mark interrupted)
@@ -272,12 +276,18 @@ export default function App() {
           : m
       ));
     } catch (err: any) {
+      const wasAborted = err?.name === 'AbortError';
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === pendingId
-          ? { ...m, content: `Error: ${err.message || 'Failed to get response'}` }
+          ? {
+              ...m,
+              content: wasAborted ? '' : `Error: ${err.message || 'Failed to get response'}`,
+              stopped: wasAborted ? true : undefined,
+            }
           : m
       ));
     } finally {
+      globalAbortRef.current = null;
       setIsGlobalAILoading(false);
     }
   }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, diagrams, folders, codeGraph.codeGraphs, codeGraph.activeGraph, workspaceRepos, setDiagrams, setActiveId]);
@@ -287,9 +297,11 @@ export default function App() {
 
     // Restore the message to pending state (removes Continue button, shows spinner)
     setGlobalChatMessages(prev => prev.map(m =>
-      m.id === msg.id ? { ...m, interrupted: false, content: '' } : m
+      m.id === msg.id ? { ...m, interrupted: false, stopped: false, content: '' } : m
     ));
     setIsGlobalAILoading(true);
+    const abortController = new AbortController();
+    globalAbortRef.current = abortController;
 
     try {
       const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
@@ -344,7 +356,7 @@ export default function App() {
         AGENT_TOOLS,
         trackingExecutor,
         llmSettings,
-        { continuationContext: msg.continuationContext },
+        { continuationContext: msg.continuationContext, signal: abortController.signal },
       );
 
       setGlobalChatMessages(prev => prev.map(m =>
@@ -360,15 +372,26 @@ export default function App() {
           : m
       ));
     } catch (err: any) {
+      const wasAborted = err?.name === 'AbortError';
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === msg.id
-          ? { ...m, content: `Error: ${err.message || 'Failed to continue'}`, interrupted: false }
+          ? {
+              ...m,
+              content: wasAborted ? '' : `Error: ${err.message || 'Failed to continue'}`,
+              interrupted: false,
+              stopped: wasAborted ? true : undefined,
+            }
           : m
       ));
     } finally {
+      globalAbortRef.current = null;
       setIsGlobalAILoading(false);
     }
   }, [llmSettings, workspaces, activeWorkspaceId, activeDiagram, diagrams, folders, codeGraph.codeGraphs, codeGraph.activeGraph, workspaceRepos, setDiagrams, setActiveId]);
+
+  const handleCancelAgent = useCallback(() => {
+    globalAbortRef.current?.abort();
+  }, []);
 
   const handleCreateDiagramFromGlobal = useCallback((code: string) => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -929,6 +952,7 @@ export default function App() {
         onApplyGlobalToDiagram={(code) => updateActiveDiagram({ code })}
         onCreateGlobalDiagram={handleCreateDiagramFromGlobal}
         onContinueAgent={handleContinueAgent}
+        onCancelAgent={handleCancelAgent}
         hasActiveDiagram={!!activeDiagram}
         llmSettings={llmSettings}
         isNodeLinkManagerOpen={isNodeLinkManagerOpen}

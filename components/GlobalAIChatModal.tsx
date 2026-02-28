@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Sparkles, Loader2, Check, Trash2, ChevronDown, ChevronRight, Wrench, RotateCw } from 'lucide-react';
+import { X, Send, Sparkles, Loader2, Check, Trash2, ChevronDown, ChevronRight, Wrench, RotateCw, Square } from 'lucide-react';
 import { ChatMessage, LLMSettings, AgentToolStep } from '../types';
 import { MarkdownContent } from './MarkdownContent';
 
@@ -13,6 +13,7 @@ interface GlobalAIChatModalProps {
   onApplyToDiagram: (code: string) => void;
   onCreateDiagram: (code: string) => void;
   onContinue: (msg: ChatMessage) => void;
+  onCancel: () => void;
   hasActiveDiagram: boolean;
   activeProvider: LLMSettings['activeProvider'];
 }
@@ -27,6 +28,7 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
   onApplyToDiagram,
   onCreateDiagram,
   onContinue,
+  onCancel,
   hasActiveDiagram,
   activeProvider,
 }) => {
@@ -107,8 +109,9 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
     const isUser = msg.role === 'user';
     const hasCode = !!msg.diagramCodeSnapshot;
     const isApplied = appliedIds.has(msg.id) || !!msg.appliedToCode;
-    const isPending = !isUser && msg.content === '' && !msg.interrupted;
+    const isPending = !isUser && msg.content === '' && !msg.interrupted && !msg.stopped;
     const isInterrupted = !isUser && !!msg.interrupted;
+    const isStopped = !isUser && !!msg.stopped;
 
     return (
       <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -138,6 +141,8 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
                   Continue
                 </button>
               </div>
+            ) : isStopped ? (
+              <span className="text-xs text-gray-600 mt-1 block">Stopped.</span>
             ) : (
               <MarkdownContent content={msg.content} />
             )}
@@ -257,14 +262,24 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
                 el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
               }}
             />
-            <button
-              onClick={handleSubmit}
-              disabled={!input.trim() || isLoading}
-              className="p-2 rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-              title="Send (Enter)"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            {isLoading ? (
+              <button
+                onClick={onCancel}
+                className="p-2 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-600/30 transition-colors shrink-0"
+                title="Stop"
+              >
+                <Square className="w-4 h-4 fill-current" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={!input.trim()}
+                className="p-2 rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                title="Send (Enter)"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <p className="text-[10px] text-gray-700 mt-1.5">Enter to send · Shift+Enter for new line</p>
         </div>

@@ -183,6 +183,7 @@ async function runAgentLoopGemini(
   executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
   config: LLMProviderConfig,
   continuationContext?: unknown[],
+  signal?: AbortSignal,
 ): Promise<AgentLoopResult> {
   const ai = new GoogleGenAI({ apiKey: config.apiKey });
   const model = config.model || DEFAULT_MODELS.gemini;
@@ -202,6 +203,7 @@ async function runAgentLoopGemini(
   }));
 
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+    signal?.throwIfAborted();
     const response = await ai.models.generateContent({
       model,
       contents,
@@ -210,7 +212,7 @@ async function runAgentLoopGemini(
         temperature: 0.3,
         tools: [{ functionDeclarations }],
       },
-    });
+    }, signal ? { signal } : undefined);
 
     const candidate = response.candidates?.[0];
     if (!candidate?.content?.parts) throw new Error('No response from Gemini');
@@ -249,6 +251,7 @@ async function runAgentLoopOpenAI(
   executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
   config: LLMProviderConfig,
   continuationContext?: unknown[],
+  signal?: AbortSignal,
 ): Promise<AgentLoopResult> {
   const client = new OpenAI({ apiKey: config.apiKey, dangerouslyAllowBrowser: true });
   const model = config.model || DEFAULT_MODELS.openai;
@@ -268,13 +271,14 @@ async function runAgentLoopOpenAI(
       ];
 
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+    signal?.throwIfAborted();
     const response = await client.chat.completions.create({
       model,
       messages: conv,
       tools: openAITools,
       tool_choice: 'auto',
       temperature: 0.3,
-    });
+    }, { signal });
 
     const msg = response.choices[0]?.message;
     if (!msg) throw new Error('No response from OpenAI');
@@ -305,6 +309,7 @@ async function runAgentLoopAnthropic(
   executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
   config: LLMProviderConfig,
   continuationContext?: unknown[],
+  signal?: AbortSignal,
 ): Promise<AgentLoopResult> {
   const model = config.model || DEFAULT_MODELS.anthropic;
   const baseUrl = config.proxyUrl || 'https://api.anthropic.com';
@@ -321,6 +326,7 @@ async function runAgentLoopAnthropic(
     : messages.map(m => ({ role: m.role, content: m.content }));
 
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+    signal?.throwIfAborted();
     const res = await fetch(`${baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
@@ -335,6 +341,7 @@ async function runAgentLoopAnthropic(
         tools: anthropicTools,
         messages: conv,
       }),
+      signal,
     });
 
     if (!res.ok) {
@@ -425,17 +432,18 @@ export const llmService = {
     tools: AgentToolDefinition[],
     executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
     settings: LLMSettings,
-    options?: { continuationContext?: unknown[] },
+    options?: { continuationContext?: unknown[]; signal?: AbortSignal },
   ): Promise<AgentLoopResult> {
     const config = settings.providers[settings.activeProvider];
     if (!config?.apiKey) {
       throw new LLMConfigError(`No API key configured for ${settings.activeProvider}. Open AI Settings to configure.`);
     }
     const ctx = options?.continuationContext;
+    const sig = options?.signal;
     switch (settings.activeProvider) {
-      case 'gemini':    return runAgentLoopGemini(messages, systemPrompt, tools, executor, config, ctx);
-      case 'openai':    return runAgentLoopOpenAI(messages, systemPrompt, tools, executor, config, ctx);
-      case 'anthropic': return runAgentLoopAnthropic(messages, systemPrompt, tools, executor, config, ctx);
+      case 'gemini':    return runAgentLoopGemini(messages, systemPrompt, tools, executor, config, ctx, sig);
+      case 'openai':    return runAgentLoopOpenAI(messages, systemPrompt, tools, executor, config, ctx, sig);
+      case 'anthropic': return runAgentLoopAnthropic(messages, systemPrompt, tools, executor, config, ctx, sig);
       default: throw new Error(`Unknown provider: ${settings.activeProvider}`);
     }
   },

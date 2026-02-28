@@ -21,6 +21,7 @@ interface ModalManagerProps {
   onApplyGlobalToDiagram: (code: string) => void;
   onCreateGlobalDiagram: (code: string) => void;
   onContinueAgent: (msg: ChatMessage) => void;
+  onCancelAgent: () => void;
   hasActiveDiagram: boolean;
   llmSettings: LLMSettings;
   isNodeLinkManagerOpen: boolean;
@@ -99,6 +100,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   onApplyGlobalToDiagram,
   onCreateGlobalDiagram,
   onContinueAgent,
+  onCancelAgent,
   hasActiveDiagram,
   llmSettings,
   isNodeLinkManagerOpen,
@@ -170,6 +172,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         onApplyToDiagram={onApplyGlobalToDiagram}
         onCreateDiagram={onCreateGlobalDiagram}
         onContinue={onContinueAgent}
+        onCancel={onCancelAgent}
         hasActiveDiagram={hasActiveDiagram}
         activeProvider={llmSettings.activeProvider}
       />

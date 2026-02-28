@@ -165,6 +165,7 @@ export interface ChatMessage {
   appliedToCode?: boolean;
   toolSteps?: AgentToolStep[]; // agentic mode: tool calls made before this response
   interrupted?: boolean; // agent loop hit max iterations; user can click Continue
+  stopped?: boolean; // user manually stopped the loop
   continuationContext?: unknown[]; // provider-specific conv state for resuming the loop
 }
 
