@@ -39,9 +39,10 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
     }
   }, [isOpen]);
 
+  const lastMsg = messages[messages.length - 1];
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, isLoading]);
+  }, [messages.length, isLoading, lastMsg?.toolSteps?.length, lastMsg?.content]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -73,19 +74,20 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
     setAppliedIds(prev => new Set(prev).add(msg.id));
   };
 
-  const ToolSteps = ({ steps }: { steps: AgentToolStep[] }) => {
+  const ToolSteps = ({ steps, forceOpen }: { steps: AgentToolStep[]; forceOpen?: boolean }) => {
     const [open, setOpen] = useState(false);
+    const isOpen = forceOpen || open;
     return (
       <div className="mb-2 rounded-lg border border-gray-800 overflow-hidden text-xs">
         <button
           onClick={() => setOpen(v => !v)}
           className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-900/60 text-gray-500 hover:text-gray-400 transition-colors text-left"
         >
-          {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
+          {isOpen ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
           <Wrench className="w-3 h-3 shrink-0" />
           <span>{steps.length} tool call{steps.length !== 1 ? 's' : ''}</span>
         </button>
-        {open && (
+        {isOpen && (
           <div className="divide-y divide-gray-800">
             {steps.map((s, i) => (
               <div key={i} className="px-2.5 py-1.5 bg-gray-950/40">
@@ -103,6 +105,7 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
     const isUser = msg.role === 'user';
     const hasCode = !!msg.diagramCodeSnapshot;
     const isApplied = appliedIds.has(msg.id) || !!msg.appliedToCode;
+    const isPending = !isUser && msg.content === '';
 
     return (
       <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -112,8 +115,17 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
           </div>
         ) : (
           <div className="max-w-[90%] text-sm text-gray-300">
-            {msg.toolSteps && msg.toolSteps.length > 0 && <ToolSteps steps={msg.toolSteps} />}
-            <MarkdownContent content={msg.content} />
+            {msg.toolSteps && msg.toolSteps.length > 0 && (
+              <ToolSteps steps={msg.toolSteps} forceOpen={isPending} />
+            )}
+            {isPending ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400" />
+                Thinking...
+              </div>
+            ) : (
+              <MarkdownContent content={msg.content} />
+            )}
             {hasCode && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {hasActiveDiagram && (
@@ -201,7 +213,7 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
           ) : (
             messages.map(renderMessage)
           )}
-          {isLoading && (
+          {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
             <div className="flex justify-start">
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400" />

@@ -184,7 +184,16 @@ export default function App() {
       content: text.trim(),
       timestamp: Date.now(),
     };
-    setGlobalChatMessages(prev => [...prev, userMsg]);
+    // Add a pending assistant message immediately so the UI updates in real-time
+    const pendingId = `global-${Date.now() + 1}-${++globalMsgCounterRef.current}`;
+    const pendingMsg: ChatMessage = {
+      id: pendingId,
+      role: 'assistant',
+      content: '', // empty = still thinking; UI shows spinner
+      timestamp: Date.now(),
+      toolSteps: [],
+    };
+    setGlobalChatMessages(prev => [...prev, userMsg, pendingMsg]);
     setIsGlobalAILoading(true);
 
     try {
@@ -229,31 +238,43 @@ export default function App() {
       };
 
       const { AGENT_TOOLS, executeTool } = await import('./services/agentToolService');
+
+      // Wrap executor: after each tool call, append the step to the pending message
+      const trackingExecutor = async (name: string, args: Record<string, unknown>) => {
+        const step = await executeTool(name, args, toolContext);
+        setGlobalChatMessages(prev => prev.map(m =>
+          m.id === pendingId
+            ? { ...m, toolSteps: [...(m.toolSteps ?? []), step] }
+            : m
+        ));
+        return step;
+      };
+
       const result = await llmService.runAgentLoop(
         llmMessages,
         systemPrompt,
         AGENT_TOOLS,
-        (name, args) => executeTool(name, args, toolContext),
+        trackingExecutor,
         llmSettings,
       );
 
-      const assistantMsg: ChatMessage = {
-        id: `global-${Date.now()}-${++globalMsgCounterRef.current}`,
-        role: 'assistant',
-        content: result.content,
-        timestamp: Date.now(),
-        diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
-        toolSteps: result.toolSteps.length > 0 ? result.toolSteps : undefined,
-      };
-      setGlobalChatMessages(prev => [...prev, assistantMsg]);
+      // Finalise the pending message with the response text
+      setGlobalChatMessages(prev => prev.map(m =>
+        m.id === pendingId
+          ? {
+              ...m,
+              content: result.content,
+              diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
+              toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
+            }
+          : m
+      ));
     } catch (err: any) {
-      const errorMsg: ChatMessage = {
-        id: `global-${Date.now()}-${++globalMsgCounterRef.current}`,
-        role: 'assistant',
-        content: `Error: ${err.message || 'Failed to get response'}`,
-        timestamp: Date.now(),
-      };
-      setGlobalChatMessages(prev => [...prev, errorMsg]);
+      setGlobalChatMessages(prev => prev.map(m =>
+        m.id === pendingId
+          ? { ...m, content: `Error: ${err.message || 'Failed to get response'}` }
+          : m
+      ));
     } finally {
       setIsGlobalAILoading(false);
     }
