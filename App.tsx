@@ -258,7 +258,7 @@ export default function App() {
         llmSettings,
       );
 
-      // Finalise the pending message with the response text
+      // Finalise the pending message with the response text (or mark interrupted)
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === pendingId
           ? {
@@ -266,6 +266,8 @@ export default function App() {
               content: result.content,
               diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
               toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
+              interrupted: result.interrupted ?? false,
+              continuationContext: result.continuationContext,
             }
           : m
       ));
@@ -279,6 +281,94 @@ export default function App() {
       setIsGlobalAILoading(false);
     }
   }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, diagrams, folders, codeGraph.codeGraphs, codeGraph.activeGraph, workspaceRepos, setDiagrams, setActiveId]);
+
+  const handleContinueAgent = useCallback(async (msg: ChatMessage) => {
+    if (!msg.continuationContext) return;
+
+    // Restore the message to pending state (removes Continue button, shows spinner)
+    setGlobalChatMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, interrupted: false, content: '' } : m
+    ));
+    setIsGlobalAILoading(true);
+
+    try {
+      const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+      const context: import('./services/aiChatService').GlobalAIContext = {
+        workspaceName: activeWorkspace?.name,
+        activeDiagramName: activeDiagram?.name,
+        activeCodeGraph: codeGraph.activeGraph ? {
+          name: codeGraph.activeGraph.name,
+          nodeCount: Object.keys(codeGraph.activeGraph.nodes).length,
+          lenses: codeGraph.activeGraph.lenses.map((l: import('./types').ViewLens) => l.name),
+          modulesSummary: '',
+          flowNames: [],
+        } : undefined,
+      };
+      const systemPrompt = aiChatService.buildAgentSystemPrompt(context);
+
+      const toolContext: import('./services/agentToolService').AgentToolContext = {
+        diagrams,
+        folders,
+        codeGraphs: codeGraph.codeGraphs,
+        repos: workspaceRepos,
+        workspaceId: activeWorkspaceId,
+        onCreateDiagram: (name, code) => {
+          const id = Math.random().toString(36).substr(2, 9);
+          const newDiagram: import('./types').Diagram = {
+            id, name, code, comments: [], lastModified: Date.now(),
+            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+          };
+          setDiagrams(prev => [...prev, newDiagram]);
+          setActiveId(newDiagram.id);
+          return id;
+        },
+        onUpdateDiagram: (id, code) => {
+          setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
+      };
+
+      const { AGENT_TOOLS, executeTool } = await import('./services/agentToolService');
+      const msgId = msg.id;
+
+      const trackingExecutor = async (name: string, args: Record<string, unknown>) => {
+        const step = await executeTool(name, args, toolContext);
+        setGlobalChatMessages(prev => prev.map(m =>
+          m.id === msgId ? { ...m, toolSteps: [...(m.toolSteps ?? []), step] } : m
+        ));
+        return step;
+      };
+
+      const result = await llmService.runAgentLoop(
+        [],
+        systemPrompt,
+        AGENT_TOOLS,
+        trackingExecutor,
+        llmSettings,
+        { continuationContext: msg.continuationContext },
+      );
+
+      setGlobalChatMessages(prev => prev.map(m =>
+        m.id === msgId
+          ? {
+              ...m,
+              content: result.content,
+              diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
+              toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
+              interrupted: result.interrupted ?? false,
+              continuationContext: result.continuationContext,
+            }
+          : m
+      ));
+    } catch (err: any) {
+      setGlobalChatMessages(prev => prev.map(m =>
+        m.id === msg.id
+          ? { ...m, content: `Error: ${err.message || 'Failed to continue'}`, interrupted: false }
+          : m
+      ));
+    } finally {
+      setIsGlobalAILoading(false);
+    }
+  }, [llmSettings, workspaces, activeWorkspaceId, activeDiagram, diagrams, folders, codeGraph.codeGraphs, codeGraph.activeGraph, workspaceRepos, setDiagrams, setActiveId]);
 
   const handleCreateDiagramFromGlobal = useCallback((code: string) => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -838,6 +928,7 @@ export default function App() {
         onClearGlobalMessages={() => setGlobalChatMessages([])}
         onApplyGlobalToDiagram={(code) => updateActiveDiagram({ code })}
         onCreateGlobalDiagram={handleCreateDiagramFromGlobal}
+        onContinueAgent={handleContinueAgent}
         hasActiveDiagram={!!activeDiagram}
         llmSettings={llmSettings}
         isNodeLinkManagerOpen={isNodeLinkManagerOpen}

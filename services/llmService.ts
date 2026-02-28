@@ -8,11 +8,13 @@ import OpenAI from 'openai';
 import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig, AgentToolStep } from '../types';
 import type { AgentToolDefinition } from './agentToolService';
 
-const MAX_AGENT_ITERATIONS = 10;
+const MAX_AGENT_ITERATIONS = 20;
 
 export interface AgentLoopResult {
   content: string;
   toolSteps: AgentToolStep[];
+  interrupted?: boolean;       // true when MAX_AGENT_ITERATIONS was reached without a final answer
+  continuationContext?: unknown[]; // provider-specific conv state; pass back to resume
 }
 
 /**
@@ -180,15 +182,18 @@ async function runAgentLoopGemini(
   tools: AgentToolDefinition[],
   executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
   config: LLMProviderConfig,
+  continuationContext?: unknown[],
 ): Promise<AgentLoopResult> {
   const ai = new GoogleGenAI({ apiKey: config.apiKey });
   const model = config.model || DEFAULT_MODELS.gemini;
   const toolSteps: AgentToolStep[] = [];
 
-  const contents: any[] = messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
+  const contents: any[] = continuationContext
+    ? [...continuationContext]
+    : messages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
 
   const functionDeclarations = tools.map(t => ({
     name: t.name,
@@ -232,7 +237,7 @@ async function runAgentLoopGemini(
     contents.push({ role: 'user', parts: fnResponses });
   }
 
-  throw new Error('Agent loop exceeded maximum iterations');
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...contents] };
 }
 
 // ─── Agentic loop — OpenAI ───────────────────────────────────────────────────
@@ -243,6 +248,7 @@ async function runAgentLoopOpenAI(
   tools: AgentToolDefinition[],
   executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
   config: LLMProviderConfig,
+  continuationContext?: unknown[],
 ): Promise<AgentLoopResult> {
   const client = new OpenAI({ apiKey: config.apiKey, dangerouslyAllowBrowser: true });
   const model = config.model || DEFAULT_MODELS.openai;
@@ -253,10 +259,13 @@ async function runAgentLoopOpenAI(
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
 
-  const conv: any[] = [
-    { role: 'system', content: systemPrompt },
-    ...messages.map(m => ({ role: m.role, content: m.content })),
-  ];
+  // continuationContext already includes the system message when resuming
+  const conv: any[] = continuationContext
+    ? [...continuationContext]
+    : [
+        { role: 'system', content: systemPrompt },
+        ...messages.map(m => ({ role: m.role, content: m.content })),
+      ];
 
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
     const response = await client.chat.completions.create({
@@ -284,7 +293,7 @@ async function runAgentLoopOpenAI(
     }
   }
 
-  throw new Error('Agent loop exceeded maximum iterations');
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...conv] };
 }
 
 // ─── Agentic loop — Anthropic ────────────────────────────────────────────────
@@ -295,6 +304,7 @@ async function runAgentLoopAnthropic(
   tools: AgentToolDefinition[],
   executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
   config: LLMProviderConfig,
+  continuationContext?: unknown[],
 ): Promise<AgentLoopResult> {
   const model = config.model || DEFAULT_MODELS.anthropic;
   const baseUrl = config.proxyUrl || 'https://api.anthropic.com';
@@ -306,7 +316,9 @@ async function runAgentLoopAnthropic(
     input_schema: t.parameters,
   }));
 
-  const conv: any[] = messages.map(m => ({ role: m.role, content: m.content }));
+  const conv: any[] = continuationContext
+    ? [...continuationContext]
+    : messages.map(m => ({ role: m.role, content: m.content }));
 
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
     const res = await fetch(`${baseUrl}/v1/messages`, {
@@ -355,7 +367,7 @@ async function runAgentLoopAnthropic(
     conv.push({ role: 'user', content: toolResults });
   }
 
-  throw new Error('Agent loop exceeded maximum iterations');
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...conv] };
 }
 
 export function cleanMermaidResponse(text: string): string {
@@ -413,15 +425,17 @@ export const llmService = {
     tools: AgentToolDefinition[],
     executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
     settings: LLMSettings,
+    options?: { continuationContext?: unknown[] },
   ): Promise<AgentLoopResult> {
     const config = settings.providers[settings.activeProvider];
     if (!config?.apiKey) {
       throw new LLMConfigError(`No API key configured for ${settings.activeProvider}. Open AI Settings to configure.`);
     }
+    const ctx = options?.continuationContext;
     switch (settings.activeProvider) {
-      case 'gemini':   return runAgentLoopGemini(messages, systemPrompt, tools, executor, config);
-      case 'openai':   return runAgentLoopOpenAI(messages, systemPrompt, tools, executor, config);
-      case 'anthropic': return runAgentLoopAnthropic(messages, systemPrompt, tools, executor, config);
+      case 'gemini':    return runAgentLoopGemini(messages, systemPrompt, tools, executor, config, ctx);
+      case 'openai':    return runAgentLoopOpenAI(messages, systemPrompt, tools, executor, config, ctx);
+      case 'anthropic': return runAgentLoopAnthropic(messages, systemPrompt, tools, executor, config, ctx);
       default: throw new Error(`Unknown provider: ${settings.activeProvider}`);
     }
   },

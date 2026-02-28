@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Sparkles, Loader2, Check, Trash2, ChevronDown, ChevronRight, Wrench } from 'lucide-react';
+import { X, Send, Sparkles, Loader2, Check, Trash2, ChevronDown, ChevronRight, Wrench, RotateCw } from 'lucide-react';
 import { ChatMessage, LLMSettings, AgentToolStep } from '../types';
 import { MarkdownContent } from './MarkdownContent';
 
@@ -12,6 +12,7 @@ interface GlobalAIChatModalProps {
   onClearMessages: () => void;
   onApplyToDiagram: (code: string) => void;
   onCreateDiagram: (code: string) => void;
+  onContinue: (msg: ChatMessage) => void;
   hasActiveDiagram: boolean;
   activeProvider: LLMSettings['activeProvider'];
 }
@@ -25,6 +26,7 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
   onClearMessages,
   onApplyToDiagram,
   onCreateDiagram,
+  onContinue,
   hasActiveDiagram,
   activeProvider,
 }) => {
@@ -105,7 +107,8 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
     const isUser = msg.role === 'user';
     const hasCode = !!msg.diagramCodeSnapshot;
     const isApplied = appliedIds.has(msg.id) || !!msg.appliedToCode;
-    const isPending = !isUser && msg.content === '';
+    const isPending = !isUser && msg.content === '' && !msg.interrupted;
+    const isInterrupted = !isUser && !!msg.interrupted;
 
     return (
       <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -122,6 +125,18 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
               <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400" />
                 Thinking...
+              </div>
+            ) : isInterrupted ? (
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-xs text-gray-500">Reached 20 iterations.</span>
+                <button
+                  onClick={() => onContinue(msg)}
+                  disabled={isLoading}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-600/20 text-brand-400 hover:bg-brand-600/40 border border-brand-600/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <RotateCw className="w-3 h-3" />
+                  Continue
+                </button>
               </div>
             ) : (
               <MarkdownContent content={msg.content} />

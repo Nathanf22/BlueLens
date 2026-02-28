@@ -164,6 +164,8 @@ export interface ChatMessage {
   diagramCodeSnapshot?: string;
   appliedToCode?: boolean;
   toolSteps?: AgentToolStep[]; // agentic mode: tool calls made before this response
+  interrupted?: boolean; // agent loop hit max iterations; user can click Continue
+  continuationContext?: unknown[]; // provider-specific conv state for resuming the loop
 }
 
 export interface ChatSession {
