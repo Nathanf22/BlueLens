@@ -231,7 +231,15 @@ export const Preview: React.FC<PreviewProps> = ({
     const svgElement = svgDiv?.querySelector('svg');
     if (!svgElement) return;
 
-    const svgData = new XMLSerializer().serializeToString(svgElement);
+    // Clone and inject a solid background so the export isn't transparent
+    const clone = svgElement.cloneNode(true) as SVGSVGElement;
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', '100%');
+    bg.setAttribute('height', '100%');
+    bg.setAttribute('fill', '#0d0d0d');
+    clone.insertBefore(bg, clone.firstChild);
+
+    const svgData = new XMLSerializer().serializeToString(clone);
     const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     
