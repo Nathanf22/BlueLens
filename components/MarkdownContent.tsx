@@ -9,9 +9,9 @@ interface MarkdownContentProps {
 
 export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, className = '' }) => {
   return (
+    <div className={className || undefined}>
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      className={className}
       components={{
         p: ({ children }) => (
           <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
@@ -93,5 +93,6 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
     >
       {content}
     </ReactMarkdown>
+    </div>
   );
 };
