@@ -103,6 +103,21 @@ RULES:
 6. Include proper type annotations and structure.`;
   },
 
+  buildAgentSystemPrompt(context: GlobalAIContext): string {
+    const parts: string[] = [
+      `You are an expert AI assistant for BlueLens, an architecture diagram platform.
+You have access to tools to explore the user's workspace — use them to find the information you need before answering.
+Always call tools first rather than guessing. When you have gathered enough information, respond with a clear, helpful answer.`,
+    ];
+    if (context.workspaceName) parts.push(`Active workspace: "${context.workspaceName}"`);
+    if (context.activeDiagramName) parts.push(`Currently open diagram: "${context.activeDiagramName}"`);
+    if (context.activeCodeGraph) {
+      parts.push(`Active CodeGraph: "${context.activeCodeGraph.name}" (${context.activeCodeGraph.nodeCount} nodes)`);
+    }
+    parts.push(`\nWhen generating or modifying a diagram, always return the full Mermaid code inside a \`\`\`mermaid code block.`);
+    return parts.join('\n');
+  },
+
   buildGlobalSystemPrompt(context: GlobalAIContext): string {
     const parts: string[] = [
       `You are an expert AI assistant for BlueLens, an architecture diagram platform.

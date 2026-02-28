@@ -190,58 +190,60 @@ export default function App() {
     try {
       const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
 
-      // Build folder path for a diagram
-      const getFolderPath = (folderId: string | null): string => {
-        const parts: string[] = [];
-        let current = folderId;
-        while (current) {
-          const f = workspaceFolders.find(f => f.id === current);
-          if (!f) break;
-          parts.unshift(f.name);
-          current = f.parentId;
-        }
-        return parts.join('/');
-      };
-
-      // Build compact modules summary for CodeGraph
-      const buildModulesSummary = (graph: import('./types').CodeGraph): string => {
-        const nodes = Object.values(graph.nodes);
-        const d1 = nodes.filter(n => n.depth === 1).slice(0, 15);
-        return d1.map(m => {
-          const children = nodes.filter(n => n.parentId === m.id && n.depth === 2).slice(0, 6);
-          const childList = children.map(c => c.name).join(', ');
-          return `  ${m.name}${childList ? `: ${childList}${nodes.filter(n => n.parentId === m.id && n.depth === 2).length > 6 ? '…' : ''}` : ''}`;
-        }).join('\n');
-      };
-
       const context: import('./services/aiChatService').GlobalAIContext = {
         workspaceName: activeWorkspace?.name,
         activeDiagramName: activeDiagram?.name,
-        allDiagrams: workspaceDiagrams.map(d => ({
-          name: d.name,
-          folderPath: getFolderPath(d.folderId),
-          code: d.code,
-        })),
         activeCodeGraph: codeGraph.activeGraph ? {
           name: codeGraph.activeGraph.name,
           nodeCount: Object.keys(codeGraph.activeGraph.nodes).length,
           lenses: codeGraph.activeGraph.lenses.map((l: import('./types').ViewLens) => l.name),
-          modulesSummary: buildModulesSummary(codeGraph.activeGraph),
-          flowNames: Object.values(codeGraph.activeGraph.flows as Record<string, import('./types').GraphFlow>).map(f => f.name),
+          modulesSummary: '',
+          flowNames: [],
         } : undefined,
       };
 
-      const systemPrompt = aiChatService.buildGlobalSystemPrompt(context);
+      const systemPrompt = aiChatService.buildAgentSystemPrompt(context);
       const allMessages = [...globalChatMessages, userMsg];
       const llmMessages = aiChatService.chatMessagesToLLMMessages(allMessages);
-      const response = await llmService.sendMessage(llmMessages, systemPrompt, llmSettings);
+
+      // Tool context: give the executor read access to workspace state + write callbacks
+      const toolContext: import('./services/agentToolService').AgentToolContext = {
+        diagrams,
+        folders,
+        codeGraphs: codeGraph.codeGraphs,
+        repos: workspaceRepos,
+        workspaceId: activeWorkspaceId,
+        onCreateDiagram: (name, code) => {
+          const id = Math.random().toString(36).substr(2, 9);
+          const newDiagram: import('./types').Diagram = {
+            id, name, code, comments: [], lastModified: Date.now(),
+            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+          };
+          setDiagrams(prev => [...prev, newDiagram]);
+          setActiveId(newDiagram.id);
+          return id;
+        },
+        onUpdateDiagram: (id, code) => {
+          setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
+      };
+
+      const { AGENT_TOOLS, executeTool } = await import('./services/agentToolService');
+      const result = await llmService.runAgentLoop(
+        llmMessages,
+        systemPrompt,
+        AGENT_TOOLS,
+        (name, args) => executeTool(name, args, toolContext),
+        llmSettings,
+      );
 
       const assistantMsg: ChatMessage = {
         id: `global-${Date.now()}-${++globalMsgCounterRef.current}`,
         role: 'assistant',
-        content: response.content,
+        content: result.content,
         timestamp: Date.now(),
-        diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(response.content) || undefined,
+        diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
+        toolSteps: result.toolSteps.length > 0 ? result.toolSteps : undefined,
       };
       setGlobalChatMessages(prev => [...prev, assistantMsg]);
     } catch (err: any) {
@@ -255,7 +257,7 @@ export default function App() {
     } finally {
       setIsGlobalAILoading(false);
     }
-  }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, workspaceDiagrams, workspaceFolders, codeGraph.activeGraph]);
+  }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, diagrams, folders, codeGraph.codeGraphs, codeGraph.activeGraph, workspaceRepos, setDiagrams, setActiveId]);
 
   const handleCreateDiagramFromGlobal = useCallback((code: string) => {
     const id = Math.random().toString(36).substr(2, 9);
