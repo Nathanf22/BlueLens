@@ -13,9 +13,21 @@
   <img src="https://img.shields.io/badge/Mermaid.js-v11-orange" alt="Mermaid" />
 </p>
 
+<p align="center">
+  <a href="https://bluelens.dev"><strong>☁️ Try BlueLens Cloud →</strong></a>
+</p>
+
+<p align="center">
+  <img src="public/bluelens_landing.png" alt="BlueLens screenshot" width="100%" />
+</p>
+
 BlueLens is an open-source platform for creating, visualizing, and maintaining architecture diagrams that stay synchronized with your codebase. It transforms static diagrams into dynamic, navigable maps of your system — from 30,000-foot views down to individual functions.
 
-> **BlueLens Cloud** — A hosted version with collaboration, cloud storage, and team features is coming soon. This repository is the open-source core.
+<p align="center">
+  <img src="public/demo_pro.gif" alt="BlueLens demo" width="100%" />
+</p>
+
+> **BlueLens Cloud** — A hosted version with collaboration, cloud storage, and team features is available at [bluelens.dev](https://bluelens.dev). This repository is the open-source core.
 
 ---
 
