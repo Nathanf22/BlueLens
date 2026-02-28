@@ -342,9 +342,9 @@ export default function App() {
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
       try {
-        await codeGraph.regenerateFlows(llmSettings, options);
-        // Export only flows at the scope that was regenerated
-        if (codeGraph.activeGraph) triggerFlowExport(codeGraph.activeGraph, options?.scopeNodeId);
+        const updated = await codeGraph.regenerateFlows(llmSettings, options);
+        // Use the returned graph directly — codeGraph.activeGraph is a stale closure here
+        if (updated) triggerFlowExport(updated, options?.scopeNodeId);
       } catch (err: any) {
         if (err instanceof LLMRateLimitError) {
           showToast(err.message, 'error');
@@ -356,7 +356,7 @@ export default function App() {
         }
       }
     },
-    [codeGraph.regenerateFlows, codeGraph.activeGraph, llmSettings, triggerFlowExport, showToast, setIsAISettingsOpen]
+    [codeGraph.regenerateFlows, llmSettings, triggerFlowExport, showToast, setIsAISettingsOpen]
   );
 
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {

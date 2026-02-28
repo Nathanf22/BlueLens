@@ -433,8 +433,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const regenerateFlows = useCallback(async (
     llmSettings?: LLMSettings,
     options?: FlowGenerationOptions,
-  ) => {
-    if (!activeGraph) return;
+  ): Promise<CodeGraph | undefined> => {
+    if (!activeGraph) return undefined;
 
     setIsGeneratingFlows(true);
     setActiveFlowId(null);
@@ -449,7 +449,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       // If generation returned nothing, preserve existing flows
       if (Object.keys(flowResult.flows).length === 0) {
         console.warn('[CodeGraph] Flow generation returned 0 flows, keeping existing');
-        return;
+        return undefined;
       }
 
       let mergedFlows: Record<string, import('../types').GraphFlow>;
@@ -478,6 +478,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         updatedAt: Date.now(),
       };
       updateGraph(updated);
+      return updated;
     } finally {
       setIsGeneratingFlows(false);
       setGraphCreationProgress(null);
