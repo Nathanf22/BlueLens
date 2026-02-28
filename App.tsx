@@ -176,6 +176,7 @@ export default function App() {
   const [globalChatMessages, setGlobalChatMessages] = useState<ChatMessage[]>([]);
   const [isGlobalAILoading, setIsGlobalAILoading] = useState(false);
   const globalMsgCounterRef = useRef(0);
+  const globalAbortRef = useRef<AbortController | null>(null);
 
   const handleGlobalSend = useCallback(async (text: string) => {
     const userMsg: ChatMessage = {
@@ -184,46 +185,231 @@ export default function App() {
       content: text.trim(),
       timestamp: Date.now(),
     };
-    setGlobalChatMessages(prev => [...prev, userMsg]);
+    // Add a pending assistant message immediately so the UI updates in real-time
+    const pendingId = `global-${Date.now() + 1}-${++globalMsgCounterRef.current}`;
+    const pendingMsg: ChatMessage = {
+      id: pendingId,
+      role: 'assistant',
+      content: '', // empty = still thinking; UI shows spinner
+      timestamp: Date.now(),
+      toolSteps: [],
+    };
+    setGlobalChatMessages(prev => [...prev, userMsg, pendingMsg]);
     setIsGlobalAILoading(true);
+    const abortController = new AbortController();
+    globalAbortRef.current = abortController;
 
     try {
       const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
-      const context = {
+
+      const context: import('./services/aiChatService').GlobalAIContext = {
         workspaceName: activeWorkspace?.name,
-        activeDiagram: activeDiagram ? { name: activeDiagram.name, code: activeDiagram.code } : undefined,
+        activeDiagramName: activeDiagram?.name,
         activeCodeGraph: codeGraph.activeGraph ? {
           name: codeGraph.activeGraph.name,
           nodeCount: Object.keys(codeGraph.activeGraph.nodes).length,
           lenses: codeGraph.activeGraph.lenses.map((l: import('./types').ViewLens) => l.name),
+          modulesSummary: '',
+          flowNames: [],
         } : undefined,
       };
 
-      const systemPrompt = aiChatService.buildGlobalSystemPrompt(context);
+      const systemPrompt = aiChatService.buildAgentSystemPrompt(context);
       const allMessages = [...globalChatMessages, userMsg];
       const llmMessages = aiChatService.chatMessagesToLLMMessages(allMessages);
-      const response = await llmService.sendMessage(llmMessages, systemPrompt, llmSettings);
 
-      const assistantMsg: ChatMessage = {
-        id: `global-${Date.now()}-${++globalMsgCounterRef.current}`,
-        role: 'assistant',
-        content: response.content,
-        timestamp: Date.now(),
-        diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(response.content) || undefined,
+      // Tool context: give the executor read access to workspace state + write callbacks
+      const toolContext: import('./services/agentToolService').AgentToolContext = {
+        diagrams,
+        folders,
+        codeGraphs: codeGraph.codeGraphs,
+        repos: workspaceRepos,
+        workspaceId: activeWorkspaceId,
+        onCreateDiagram: (name, code) => {
+          const id = Math.random().toString(36).substr(2, 9);
+          const newDiagram: import('./types').Diagram = {
+            id, name, code, comments: [], lastModified: Date.now(),
+            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+          };
+          setDiagrams(prev => [...prev, newDiagram]);
+          setActiveId(newDiagram.id);
+          return id;
+        },
+        onUpdateDiagram: (id, code) => {
+          setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
       };
-      setGlobalChatMessages(prev => [...prev, assistantMsg]);
+
+      const { AGENT_TOOLS, executeTool } = await import('./services/agentToolService');
+
+      // Wrap executor: after each tool call, append the step to the pending message
+      const trackingExecutor = async (name: string, args: Record<string, unknown>) => {
+        const step = await executeTool(name, args, toolContext);
+        setGlobalChatMessages(prev => prev.map(m =>
+          m.id === pendingId
+            ? { ...m, toolSteps: [...(m.toolSteps ?? []), step] }
+            : m
+        ));
+        return step;
+      };
+
+      const result = await llmService.runAgentLoop(
+        llmMessages,
+        systemPrompt,
+        AGENT_TOOLS,
+        trackingExecutor,
+        llmSettings,
+        { signal: abortController.signal },
+      );
+
+      // Finalise the pending message with the response text (or mark interrupted)
+      setGlobalChatMessages(prev => prev.map(m =>
+        m.id === pendingId
+          ? {
+              ...m,
+              content: result.content,
+              diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
+              toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
+              interrupted: result.interrupted ?? false,
+              continuationContext: result.continuationContext,
+            }
+          : m
+      ));
     } catch (err: any) {
-      const errorMsg: ChatMessage = {
-        id: `global-${Date.now()}-${++globalMsgCounterRef.current}`,
-        role: 'assistant',
-        content: `Error: ${err.message || 'Failed to get response'}`,
-        timestamp: Date.now(),
-      };
-      setGlobalChatMessages(prev => [...prev, errorMsg]);
+      const wasAborted = err?.name === 'AbortError';
+      setGlobalChatMessages(prev => prev.map(m =>
+        m.id === pendingId
+          ? {
+              ...m,
+              content: wasAborted ? '' : `Error: ${err.message || 'Failed to get response'}`,
+              stopped: wasAborted ? true : undefined,
+            }
+          : m
+      ));
     } finally {
+      globalAbortRef.current = null;
       setIsGlobalAILoading(false);
     }
-  }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, codeGraph.activeGraph]);
+  }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, diagrams, folders, codeGraph.codeGraphs, codeGraph.activeGraph, workspaceRepos, setDiagrams, setActiveId]);
+
+  const handleContinueAgent = useCallback(async (msg: ChatMessage) => {
+    if (!msg.continuationContext) return;
+
+    // Restore the message to pending state (removes Continue button, shows spinner)
+    setGlobalChatMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, interrupted: false, stopped: false, content: '' } : m
+    ));
+    setIsGlobalAILoading(true);
+    const abortController = new AbortController();
+    globalAbortRef.current = abortController;
+
+    try {
+      const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+      const context: import('./services/aiChatService').GlobalAIContext = {
+        workspaceName: activeWorkspace?.name,
+        activeDiagramName: activeDiagram?.name,
+        activeCodeGraph: codeGraph.activeGraph ? {
+          name: codeGraph.activeGraph.name,
+          nodeCount: Object.keys(codeGraph.activeGraph.nodes).length,
+          lenses: codeGraph.activeGraph.lenses.map((l: import('./types').ViewLens) => l.name),
+          modulesSummary: '',
+          flowNames: [],
+        } : undefined,
+      };
+      const systemPrompt = aiChatService.buildAgentSystemPrompt(context);
+
+      const toolContext: import('./services/agentToolService').AgentToolContext = {
+        diagrams,
+        folders,
+        codeGraphs: codeGraph.codeGraphs,
+        repos: workspaceRepos,
+        workspaceId: activeWorkspaceId,
+        onCreateDiagram: (name, code) => {
+          const id = Math.random().toString(36).substr(2, 9);
+          const newDiagram: import('./types').Diagram = {
+            id, name, code, comments: [], lastModified: Date.now(),
+            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+          };
+          setDiagrams(prev => [...prev, newDiagram]);
+          setActiveId(newDiagram.id);
+          return id;
+        },
+        onUpdateDiagram: (id, code) => {
+          setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
+      };
+
+      const { AGENT_TOOLS, executeTool } = await import('./services/agentToolService');
+      const msgId = msg.id;
+
+      const trackingExecutor = async (name: string, args: Record<string, unknown>) => {
+        const step = await executeTool(name, args, toolContext);
+        setGlobalChatMessages(prev => prev.map(m =>
+          m.id === msgId ? { ...m, toolSteps: [...(m.toolSteps ?? []), step] } : m
+        ));
+        return step;
+      };
+
+      const result = await llmService.runAgentLoop(
+        [],
+        systemPrompt,
+        AGENT_TOOLS,
+        trackingExecutor,
+        llmSettings,
+        { continuationContext: msg.continuationContext, signal: abortController.signal },
+      );
+
+      setGlobalChatMessages(prev => prev.map(m =>
+        m.id === msgId
+          ? {
+              ...m,
+              content: result.content,
+              diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
+              toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
+              interrupted: result.interrupted ?? false,
+              continuationContext: result.continuationContext,
+            }
+          : m
+      ));
+    } catch (err: any) {
+      const wasAborted = err?.name === 'AbortError';
+      setGlobalChatMessages(prev => prev.map(m =>
+        m.id === msg.id
+          ? {
+              ...m,
+              content: wasAborted ? '' : `Error: ${err.message || 'Failed to continue'}`,
+              interrupted: false,
+              stopped: wasAborted ? true : undefined,
+            }
+          : m
+      ));
+    } finally {
+      globalAbortRef.current = null;
+      setIsGlobalAILoading(false);
+    }
+  }, [llmSettings, workspaces, activeWorkspaceId, activeDiagram, diagrams, folders, codeGraph.codeGraphs, codeGraph.activeGraph, workspaceRepos, setDiagrams, setActiveId]);
+
+  const handleCancelAgent = useCallback(() => {
+    globalAbortRef.current?.abort();
+  }, []);
+
+  const handleCreateDiagramFromGlobal = useCallback((code: string) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    const count = diagrams.filter(d => d.workspaceId === activeWorkspaceId).length;
+    const newDiagram: import('./types').Diagram = {
+      id,
+      name: `AI Generated ${count + 1}`,
+      code,
+      comments: [],
+      lastModified: Date.now(),
+      folderId: null,
+      workspaceId: activeWorkspaceId,
+      nodeLinks: [],
+    };
+    setDiagrams(prev => [...prev, newDiagram]);
+    setActiveId(newDiagram.id);
+    setIsGlobalAIOpen(false);
+  }, [diagrams, activeWorkspaceId, setDiagrams, setActiveId, setIsGlobalAIOpen]);
 
   // --- Flow export state ---
   const [pendingFlowExport, setPendingFlowExport] = useState<{ graph: CodeGraph } | null>(null);
@@ -764,6 +950,9 @@ export default function App() {
         onGlobalSend={handleGlobalSend}
         onClearGlobalMessages={() => setGlobalChatMessages([])}
         onApplyGlobalToDiagram={(code) => updateActiveDiagram({ code })}
+        onCreateGlobalDiagram={handleCreateDiagramFromGlobal}
+        onContinueAgent={handleContinueAgent}
+        onCancelAgent={handleCancelAgent}
         hasActiveDiagram={!!activeDiagram}
         llmSettings={llmSettings}
         isNodeLinkManagerOpen={isNodeLinkManagerOpen}

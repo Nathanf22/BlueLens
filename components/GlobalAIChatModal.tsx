@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Sparkles, Loader2, Check, Trash2 } from 'lucide-react';
-import { ChatMessage, LLMSettings } from '../types';
+import { X, Send, Sparkles, Loader2, Check, Trash2, ChevronDown, ChevronRight, Wrench, RotateCw, Square } from 'lucide-react';
+import { ChatMessage, LLMSettings, AgentToolStep } from '../types';
 import { MarkdownContent } from './MarkdownContent';
 
 interface GlobalAIChatModalProps {
@@ -11,6 +11,9 @@ interface GlobalAIChatModalProps {
   onSend: (text: string) => void;
   onClearMessages: () => void;
   onApplyToDiagram: (code: string) => void;
+  onCreateDiagram: (code: string) => void;
+  onContinue: (msg: ChatMessage) => void;
+  onCancel: () => void;
   hasActiveDiagram: boolean;
   activeProvider: LLMSettings['activeProvider'];
 }
@@ -23,6 +26,9 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
   onSend,
   onClearMessages,
   onApplyToDiagram,
+  onCreateDiagram,
+  onContinue,
+  onCancel,
   hasActiveDiagram,
   activeProvider,
 }) => {
@@ -37,9 +43,10 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
     }
   }, [isOpen]);
 
+  const lastMsg = messages[messages.length - 1];
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, isLoading]);
+  }, [messages.length, isLoading, lastMsg?.toolSteps?.length, lastMsg?.content]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -71,10 +78,40 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
     setAppliedIds(prev => new Set(prev).add(msg.id));
   };
 
+  const ToolSteps = ({ steps, forceOpen }: { steps: AgentToolStep[]; forceOpen?: boolean }) => {
+    const [open, setOpen] = useState(false);
+    const isOpen = forceOpen || open;
+    return (
+      <div className="mb-2 rounded-lg border border-gray-800 overflow-hidden text-xs">
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-900/60 text-gray-500 hover:text-gray-400 transition-colors text-left"
+        >
+          {isOpen ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
+          <Wrench className="w-3 h-3 shrink-0" />
+          <span>{steps.length} tool call{steps.length !== 1 ? 's' : ''}</span>
+        </button>
+        {isOpen && (
+          <div className="divide-y divide-gray-800">
+            {steps.map((s, i) => (
+              <div key={i} className="px-2.5 py-1.5 bg-gray-950/40">
+                <div className="font-mono text-gray-400">{s.label}</div>
+                <div className="mt-0.5 text-gray-600 truncate">{s.result.slice(0, 120)}{s.result.length > 120 ? '…' : ''}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderMessage = (msg: ChatMessage) => {
     const isUser = msg.role === 'user';
     const hasCode = !!msg.diagramCodeSnapshot;
     const isApplied = appliedIds.has(msg.id) || !!msg.appliedToCode;
+    const isPending = !isUser && msg.content === '' && !msg.interrupted && !msg.stopped;
+    const isInterrupted = !isUser && !!msg.interrupted;
+    const isStopped = !isUser && !!msg.stopped;
 
     return (
       <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -84,23 +121,57 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
           </div>
         ) : (
           <div className="max-w-[90%] text-sm text-gray-300">
-            <MarkdownContent content={msg.content} />
-            {hasCode && hasActiveDiagram && (
-              <button
-                onClick={() => handleApply(msg)}
-                disabled={isApplied}
-                className={`mt-2 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                  isApplied
-                    ? 'bg-green-900/30 text-green-400 cursor-default'
-                    : 'bg-brand-600/20 text-brand-400 hover:bg-brand-600/40 border border-brand-600/30'
-                }`}
-              >
-                {isApplied ? (
-                  <><Check className="w-3 h-3" /> Applied</>
-                ) : (
-                  'Apply to diagram'
+            {msg.toolSteps && msg.toolSteps.length > 0 && (
+              <ToolSteps steps={msg.toolSteps} forceOpen={isPending} />
+            )}
+            {isPending ? (
+              <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400" />
+                Thinking...
+              </div>
+            ) : isInterrupted ? (
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-xs text-gray-500">Reached 20 iterations.</span>
+                <button
+                  onClick={() => onContinue(msg)}
+                  disabled={isLoading}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-600/20 text-brand-400 hover:bg-brand-600/40 border border-brand-600/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <RotateCw className="w-3 h-3" />
+                  Continue
+                </button>
+              </div>
+            ) : isStopped ? (
+              <span className="text-xs text-gray-600 mt-1 block">Stopped.</span>
+            ) : (
+              <MarkdownContent content={msg.content} />
+            )}
+            {hasCode && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {hasActiveDiagram && (
+                  <button
+                    onClick={() => handleApply(msg)}
+                    disabled={isApplied}
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                      isApplied
+                        ? 'bg-green-900/30 text-green-400 cursor-default'
+                        : 'bg-brand-600/20 text-brand-400 hover:bg-brand-600/40 border border-brand-600/30'
+                    }`}
+                  >
+                    {isApplied ? (
+                      <><Check className="w-3 h-3" /> Applied</>
+                    ) : (
+                      'Apply to diagram'
+                    )}
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={() => onCreateDiagram(msg.diagramCodeSnapshot!)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 transition-colors"
+                >
+                  + Create new diagram
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -162,7 +233,7 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
           ) : (
             messages.map(renderMessage)
           )}
-          {isLoading && (
+          {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
             <div className="flex justify-start">
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400" />
@@ -191,14 +262,24 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
                 el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
               }}
             />
-            <button
-              onClick={handleSubmit}
-              disabled={!input.trim() || isLoading}
-              className="p-2 rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-              title="Send (Enter)"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            {isLoading ? (
+              <button
+                onClick={onCancel}
+                className="p-2 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-600/30 transition-colors shrink-0"
+                title="Stop"
+              >
+                <Square className="w-4 h-4 fill-current" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={!input.trim()}
+                className="p-2 rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                title="Send (Enter)"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <p className="text-[10px] text-gray-700 mt-1.5">Enter to send · Shift+Enter for new line</p>
         </div>

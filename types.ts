@@ -149,6 +149,13 @@ export interface LLMSettings {
 export interface LLMMessage { role: 'user' | 'assistant'; content: string; }
 export interface LLMResponse { content: string; provider: LLMProvider; model: string; }
 
+export interface AgentToolStep {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: string;
+  label: string; // human-readable summary, e.g. 'get_diagram("Auth Service")'
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -156,6 +163,10 @@ export interface ChatMessage {
   timestamp: number;
   diagramCodeSnapshot?: string;
   appliedToCode?: boolean;
+  toolSteps?: AgentToolStep[]; // agentic mode: tool calls made before this response
+  interrupted?: boolean; // agent loop hit max iterations; user can click Continue
+  stopped?: boolean; // user manually stopped the loop
+  continuationContext?: unknown[]; // provider-specific conv state for resuming the loop
 }
 
 export interface ChatSession {

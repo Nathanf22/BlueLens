@@ -5,7 +5,17 @@
 
 import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
-import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig } from '../types';
+import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig, AgentToolStep } from '../types';
+import type { AgentToolDefinition } from './agentToolService';
+
+const MAX_AGENT_ITERATIONS = 20;
+
+export interface AgentLoopResult {
+  content: string;
+  toolSteps: AgentToolStep[];
+  interrupted?: boolean;       // true when MAX_AGENT_ITERATIONS was reached without a final answer
+  continuationContext?: unknown[]; // provider-specific conv state; pass back to resume
+}
 
 /**
  * Thrown when no valid AI API key is configured.
@@ -164,6 +174,209 @@ async function sendAnthropic(
   return { content: text, provider: 'anthropic', model };
 }
 
+// ─── Agentic loop — Gemini ───────────────────────────────────────────────────
+
+async function runAgentLoopGemini(
+  messages: LLMMessage[],
+  systemPrompt: string,
+  tools: AgentToolDefinition[],
+  executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
+  config: LLMProviderConfig,
+  continuationContext?: unknown[],
+  signal?: AbortSignal,
+): Promise<AgentLoopResult> {
+  const ai = new GoogleGenAI({ apiKey: config.apiKey });
+  const model = config.model || DEFAULT_MODELS.gemini;
+  const toolSteps: AgentToolStep[] = [];
+
+  const contents: any[] = continuationContext
+    ? [...continuationContext]
+    : messages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
+
+  const functionDeclarations = tools.map(t => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.parameters,
+  }));
+
+  for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+    signal?.throwIfAborted();
+    const response = await ai.models.generateContent({
+      model,
+      contents,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.3,
+        tools: [{ functionDeclarations }],
+      },
+    }, signal ? { signal } : undefined);
+
+    const candidate = response.candidates?.[0];
+    if (!candidate?.content?.parts) throw new Error('No response from Gemini');
+
+    const parts = candidate.content.parts;
+    const fnParts = parts.filter((p: any) => p.functionCall);
+    const textParts = parts.filter((p: any) => p.text);
+
+    if (fnParts.length === 0) {
+      return { content: textParts.map((p: any) => p.text).join(''), toolSteps };
+    }
+
+    // Add model turn with all parts
+    contents.push({ role: 'model', parts });
+
+    // Execute each tool call and collect function responses
+    const fnResponses: any[] = [];
+    for (const part of fnParts) {
+      const { name, args } = part.functionCall;
+      const step = await executor(name, args ?? {});
+      toolSteps.push(step);
+      fnResponses.push({ functionResponse: { name, response: { output: step.result } } });
+    }
+    contents.push({ role: 'user', parts: fnResponses });
+  }
+
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...contents] };
+}
+
+// ─── Agentic loop — OpenAI ───────────────────────────────────────────────────
+
+async function runAgentLoopOpenAI(
+  messages: LLMMessage[],
+  systemPrompt: string,
+  tools: AgentToolDefinition[],
+  executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
+  config: LLMProviderConfig,
+  continuationContext?: unknown[],
+  signal?: AbortSignal,
+): Promise<AgentLoopResult> {
+  const client = new OpenAI({ apiKey: config.apiKey, dangerouslyAllowBrowser: true });
+  const model = config.model || DEFAULT_MODELS.openai;
+  const toolSteps: AgentToolStep[] = [];
+
+  const openAITools = tools.map(t => ({
+    type: 'function' as const,
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+
+  // continuationContext already includes the system message when resuming
+  const conv: any[] = continuationContext
+    ? [...continuationContext]
+    : [
+        { role: 'system', content: systemPrompt },
+        ...messages.map(m => ({ role: m.role, content: m.content })),
+      ];
+
+  for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+    signal?.throwIfAborted();
+    const response = await client.chat.completions.create({
+      model,
+      messages: conv,
+      tools: openAITools,
+      tool_choice: 'auto',
+      temperature: 0.3,
+    }, { signal });
+
+    const msg = response.choices[0]?.message;
+    if (!msg) throw new Error('No response from OpenAI');
+
+    conv.push(msg);
+
+    if (!msg.tool_calls?.length) {
+      return { content: msg.content ?? '', toolSteps };
+    }
+
+    for (const tc of msg.tool_calls) {
+      const args = JSON.parse(tc.function.arguments || '{}');
+      const step = await executor(tc.function.name, args);
+      toolSteps.push(step);
+      conv.push({ role: 'tool', tool_call_id: tc.id, content: step.result });
+    }
+  }
+
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...conv] };
+}
+
+// ─── Agentic loop — Anthropic ────────────────────────────────────────────────
+
+async function runAgentLoopAnthropic(
+  messages: LLMMessage[],
+  systemPrompt: string,
+  tools: AgentToolDefinition[],
+  executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
+  config: LLMProviderConfig,
+  continuationContext?: unknown[],
+  signal?: AbortSignal,
+): Promise<AgentLoopResult> {
+  const model = config.model || DEFAULT_MODELS.anthropic;
+  const baseUrl = config.proxyUrl || 'https://api.anthropic.com';
+  const toolSteps: AgentToolStep[] = [];
+
+  const anthropicTools = tools.map(t => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters,
+  }));
+
+  const conv: any[] = continuationContext
+    ? [...continuationContext]
+    : messages.map(m => ({ role: m.role, content: m.content }));
+
+  for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+    signal?.throwIfAborted();
+    const res = await fetch(`${baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': config.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        system: systemPrompt,
+        tools: anthropicTools,
+        messages: conv,
+      }),
+      signal,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      if (res.status === 429) throw new LLMRateLimitError('Anthropic');
+      if (res.status === 401 || res.status === 403) throw new LLMConfigError('Anthropic API key is invalid. Open AI Settings.');
+      throw new Error(`Anthropic error (${res.status}): ${text}`);
+    }
+
+    const data = await res.json();
+    const content: any[] = data.content ?? [];
+    const stopReason: string = data.stop_reason;
+
+    // Add assistant turn
+    conv.push({ role: 'assistant', content });
+
+    if (stopReason !== 'tool_use') {
+      const text = content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
+      return { content: text, toolSteps };
+    }
+
+    // Execute tool use blocks
+    const toolResults: any[] = [];
+    for (const block of content) {
+      if (block.type !== 'tool_use') continue;
+      const step = await executor(block.name, block.input ?? {});
+      toolSteps.push(step);
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: step.result });
+    }
+    conv.push({ role: 'user', content: toolResults });
+  }
+
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...conv] };
+}
+
 export function cleanMermaidResponse(text: string): string {
   let clean = text.trim();
   // Strip markdown code fences
@@ -210,6 +423,28 @@ export const llmService = {
         return sendAnthropic(messages, systemPrompt, config, signal);
       default:
         throw new Error(`Unknown provider: ${settings.activeProvider}`);
+    }
+  },
+
+  async runAgentLoop(
+    messages: LLMMessage[],
+    systemPrompt: string,
+    tools: AgentToolDefinition[],
+    executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
+    settings: LLMSettings,
+    options?: { continuationContext?: unknown[]; signal?: AbortSignal },
+  ): Promise<AgentLoopResult> {
+    const config = settings.providers[settings.activeProvider];
+    if (!config?.apiKey) {
+      throw new LLMConfigError(`No API key configured for ${settings.activeProvider}. Open AI Settings to configure.`);
+    }
+    const ctx = options?.continuationContext;
+    const sig = options?.signal;
+    switch (settings.activeProvider) {
+      case 'gemini':    return runAgentLoopGemini(messages, systemPrompt, tools, executor, config, ctx, sig);
+      case 'openai':    return runAgentLoopOpenAI(messages, systemPrompt, tools, executor, config, ctx, sig);
+      case 'anthropic': return runAgentLoopAnthropic(messages, systemPrompt, tools, executor, config, ctx, sig);
+      default: throw new Error(`Unknown provider: ${settings.activeProvider}`);
     }
   },
 
