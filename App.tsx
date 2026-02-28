@@ -189,13 +189,45 @@ export default function App() {
 
     try {
       const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
-      const context = {
+
+      // Build folder path for a diagram
+      const getFolderPath = (folderId: string | null): string => {
+        const parts: string[] = [];
+        let current = folderId;
+        while (current) {
+          const f = workspaceFolders.find(f => f.id === current);
+          if (!f) break;
+          parts.unshift(f.name);
+          current = f.parentId;
+        }
+        return parts.join('/');
+      };
+
+      // Build compact modules summary for CodeGraph
+      const buildModulesSummary = (graph: import('./types').CodeGraph): string => {
+        const nodes = Object.values(graph.nodes);
+        const d1 = nodes.filter(n => n.depth === 1).slice(0, 15);
+        return d1.map(m => {
+          const children = nodes.filter(n => n.parentId === m.id && n.depth === 2).slice(0, 6);
+          const childList = children.map(c => c.name).join(', ');
+          return `  ${m.name}${childList ? `: ${childList}${nodes.filter(n => n.parentId === m.id && n.depth === 2).length > 6 ? '…' : ''}` : ''}`;
+        }).join('\n');
+      };
+
+      const context: import('./services/aiChatService').GlobalAIContext = {
         workspaceName: activeWorkspace?.name,
-        activeDiagram: activeDiagram ? { name: activeDiagram.name, code: activeDiagram.code } : undefined,
+        activeDiagramName: activeDiagram?.name,
+        allDiagrams: workspaceDiagrams.map(d => ({
+          name: d.name,
+          folderPath: getFolderPath(d.folderId),
+          code: d.code,
+        })),
         activeCodeGraph: codeGraph.activeGraph ? {
           name: codeGraph.activeGraph.name,
           nodeCount: Object.keys(codeGraph.activeGraph.nodes).length,
           lenses: codeGraph.activeGraph.lenses.map((l: import('./types').ViewLens) => l.name),
+          modulesSummary: buildModulesSummary(codeGraph.activeGraph),
+          flowNames: Object.values(codeGraph.activeGraph.flows as Record<string, import('./types').GraphFlow>).map(f => f.name),
         } : undefined,
       };
 
@@ -223,7 +255,25 @@ export default function App() {
     } finally {
       setIsGlobalAILoading(false);
     }
-  }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, codeGraph.activeGraph]);
+  }, [globalChatMessages, llmSettings, workspaces, activeWorkspaceId, activeDiagram, workspaceDiagrams, workspaceFolders, codeGraph.activeGraph]);
+
+  const handleCreateDiagramFromGlobal = useCallback((code: string) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    const count = diagrams.filter(d => d.workspaceId === activeWorkspaceId).length;
+    const newDiagram: import('./types').Diagram = {
+      id,
+      name: `AI Generated ${count + 1}`,
+      code,
+      comments: [],
+      lastModified: Date.now(),
+      folderId: null,
+      workspaceId: activeWorkspaceId,
+      nodeLinks: [],
+    };
+    setDiagrams(prev => [...prev, newDiagram]);
+    setActiveId(newDiagram.id);
+    setIsGlobalAIOpen(false);
+  }, [diagrams, activeWorkspaceId, setDiagrams, setActiveId, setIsGlobalAIOpen]);
 
   // --- Flow export state ---
   const [pendingFlowExport, setPendingFlowExport] = useState<{ graph: CodeGraph } | null>(null);
@@ -764,6 +814,7 @@ export default function App() {
         onGlobalSend={handleGlobalSend}
         onClearGlobalMessages={() => setGlobalChatMessages([])}
         onApplyGlobalToDiagram={(code) => updateActiveDiagram({ code })}
+        onCreateGlobalDiagram={handleCreateDiagramFromGlobal}
         hasActiveDiagram={!!activeDiagram}
         llmSettings={llmSettings}
         isNodeLinkManagerOpen={isNodeLinkManagerOpen}

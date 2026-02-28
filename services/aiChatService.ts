@@ -5,10 +5,23 @@
 
 import { ChatMessage, LLMMessage } from '../types';
 
+export interface GlobalAIDiagram {
+  name: string;
+  folderPath: string; // '' means root
+  code: string;
+}
+
 export interface GlobalAIContext {
   workspaceName?: string;
-  activeDiagram?: { name: string; code: string };
-  activeCodeGraph?: { name: string; nodeCount: number; lenses: string[] };
+  activeDiagramName?: string; // just the name, so the AI knows which one is open
+  allDiagrams?: GlobalAIDiagram[];
+  activeCodeGraph?: {
+    name: string;
+    nodeCount: number;
+    lenses: string[];
+    modulesSummary: string; // compact module → files listing
+    flowNames: string[];
+  };
 }
 
 export const aiChatService = {
@@ -93,36 +106,54 @@ RULES:
   buildGlobalSystemPrompt(context: GlobalAIContext): string {
     const parts: string[] = [
       `You are an expert AI assistant for BlueLens, an architecture diagram platform.
-You help users create and understand software architecture diagrams using Mermaid.js, answer architecture questions, and reason about codebases.`,
+You help users create, modify, and understand software architecture diagrams using Mermaid.js, answer architecture questions, and reason about codebases.`,
     ];
 
     if (context.workspaceName) {
       parts.push(`\nActive workspace: "${context.workspaceName}"`);
     }
 
-    if (context.activeDiagram) {
-      parts.push(`\nThe user currently has this diagram open ("${context.activeDiagram.name}"):
-\`\`\`mermaid
-${context.activeDiagram.code}
-\`\`\``);
+    if (context.activeDiagramName) {
+      parts.push(`Currently open diagram: "${context.activeDiagramName}"`);
     }
 
+    // All workspace diagrams with their full Mermaid code
+    if (context.allDiagrams && context.allDiagrams.length > 0) {
+      const diagramLines = context.allDiagrams.map((d, i) => {
+        const location = d.folderPath ? `folder: ${d.folderPath}` : 'root';
+        return `${i + 1}. "${d.name}" [${location}]\n\`\`\`mermaid\n${d.code}\n\`\`\``;
+      });
+      parts.push(`\n=== WORKSPACE DIAGRAMS (${context.allDiagrams.length} total) ===\n${diagramLines.join('\n\n')}`);
+    }
+
+    // CodeGraph context
     if (context.activeCodeGraph) {
-      const { name, nodeCount, lenses } = context.activeCodeGraph;
-      parts.push(`\nThe user is viewing a CodeGraph named "${name}" with ${nodeCount} nodes.${lenses.length > 0 ? ` Available lenses: ${lenses.join(', ')}.` : ''}`);
+      const { name, nodeCount, lenses, modulesSummary, flowNames } = context.activeCodeGraph;
+      const codeGraphLines = [
+        `\n=== CODE GRAPH: "${name}" ===`,
+        `${nodeCount} nodes | Lenses: ${lenses.join(', ')}`,
+      ];
+      if (modulesSummary) {
+        codeGraphLines.push(`Modules:\n${modulesSummary}`);
+      }
+      if (flowNames.length > 0) {
+        codeGraphLines.push(`Flows: ${flowNames.join(', ')}`);
+      }
+      parts.push(codeGraphLines.join('\n'));
     }
 
     parts.push(`
-CAPABILITIES:
-- Answer architecture and design questions
-- Generate new Mermaid diagrams (wrap code in \`\`\`mermaid blocks)
-- Modify the active diagram when asked (return the COMPLETE updated code in a \`\`\`mermaid block)
-- Explain code structure, dependencies, and design patterns
+=== CAPABILITIES ===
+- Answer architecture and design questions, using the workspace diagrams above as context
+- Reference any diagram by name when answering — you have their full code above
+- Generate NEW Mermaid diagrams (wrap code in \`\`\`mermaid blocks) — the user can save them directly
+- Modify the currently open diagram when asked (return the COMPLETE updated code in a \`\`\`mermaid block)
+- Explain code structure, dependencies, and design patterns from the CodeGraph
 - Suggest improvements to diagrams or architecture
 
 When generating or modifying a diagram, always return the full Mermaid code inside a \`\`\`mermaid code block.`);
 
-    return parts.join('');
+    return parts.join('\n');
   },
 
   extractMermaidFromResponse(text: string): string | null {

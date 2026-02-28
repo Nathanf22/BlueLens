@@ -11,6 +11,7 @@ interface GlobalAIChatModalProps {
   onSend: (text: string) => void;
   onClearMessages: () => void;
   onApplyToDiagram: (code: string) => void;
+  onCreateDiagram: (code: string) => void;
   hasActiveDiagram: boolean;
   activeProvider: LLMSettings['activeProvider'];
 }
@@ -23,6 +24,7 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
   onSend,
   onClearMessages,
   onApplyToDiagram,
+  onCreateDiagram,
   hasActiveDiagram,
   activeProvider,
 }) => {
@@ -85,22 +87,32 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
         ) : (
           <div className="max-w-[90%] text-sm text-gray-300">
             <MarkdownContent content={msg.content} />
-            {hasCode && hasActiveDiagram && (
-              <button
-                onClick={() => handleApply(msg)}
-                disabled={isApplied}
-                className={`mt-2 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                  isApplied
-                    ? 'bg-green-900/30 text-green-400 cursor-default'
-                    : 'bg-brand-600/20 text-brand-400 hover:bg-brand-600/40 border border-brand-600/30'
-                }`}
-              >
-                {isApplied ? (
-                  <><Check className="w-3 h-3" /> Applied</>
-                ) : (
-                  'Apply to diagram'
+            {hasCode && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {hasActiveDiagram && (
+                  <button
+                    onClick={() => handleApply(msg)}
+                    disabled={isApplied}
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                      isApplied
+                        ? 'bg-green-900/30 text-green-400 cursor-default'
+                        : 'bg-brand-600/20 text-brand-400 hover:bg-brand-600/40 border border-brand-600/30'
+                    }`}
+                  >
+                    {isApplied ? (
+                      <><Check className="w-3 h-3" /> Applied</>
+                    ) : (
+                      'Apply to diagram'
+                    )}
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={() => onCreateDiagram(msg.diagramCodeSnapshot!)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 transition-colors"
+                >
+                  + Create new diagram
+                </button>
+              </div>
             )}
           </div>
         )}

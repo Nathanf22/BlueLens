@@ -19,6 +19,7 @@ interface ModalManagerProps {
   onGlobalSend: (text: string) => void;
   onClearGlobalMessages: () => void;
   onApplyGlobalToDiagram: (code: string) => void;
+  onCreateGlobalDiagram: (code: string) => void;
   hasActiveDiagram: boolean;
   llmSettings: LLMSettings;
   isNodeLinkManagerOpen: boolean;
@@ -95,6 +96,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   onGlobalSend,
   onClearGlobalMessages,
   onApplyGlobalToDiagram,
+  onCreateGlobalDiagram,
   hasActiveDiagram,
   llmSettings,
   isNodeLinkManagerOpen,
@@ -164,6 +166,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         onSend={onGlobalSend}
         onClearMessages={onClearGlobalMessages}
         onApplyToDiagram={onApplyGlobalToDiagram}
+        onCreateDiagram={onCreateGlobalDiagram}
         hasActiveDiagram={hasActiveDiagram}
         activeProvider={llmSettings.activeProvider}
       />
