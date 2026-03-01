@@ -1,33 +1,60 @@
 <p align="center">
-  <img src="bluelens-logos/bluelens-full-color-dark.svg" alt="BlueLens" width="80" height="80" />
+  <img src="bluelens-logos/bluelens-full-color-dark.svg" width="80" height="80" />
 </p>
 
 <h1 align="center">BlueLens</h1>
 
-<p align="center"><strong>Living Architecture Diagrams That Sync With Reality</strong></p>
-
 <p align="center">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
-  <img src="https://img.shields.io/badge/React-19-blue" alt="React" />
-  <img src="https://img.shields.io/badge/TypeScript-strict-blue" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Mermaid.js-v11-orange" alt="Mermaid" />
+  <strong>Living architecture diagrams — navigable, AI-aware, 
+  and in sync with your code.</strong>
 </p>
 
 <p align="center">
-  <a href="https://bluelens.dev"><strong>☁️ Try BlueLens Cloud →</strong></a>
+  <img src="https://img.shields.io/badge/license-MIT-green" />
+  <img src="https://img.shields.io/badge/React-19-blue" />
+  <img src="https://img.shields.io/badge/TypeScript-strict-blue" />
+  <img src="https://img.shields.io/badge/Mermaid.js-v11-orange" />
 </p>
 
 <p align="center">
-  <img src="public/bluelens_landing.png" alt="BlueLens screenshot" width="100%" />
+  <a href="https://app.bluelens.dev"><strong>Try it free →</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://bluelens.dev">Website</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/Nathanf22/BlueLens/issues">Issues</a>
 </p>
 
-BlueLens is an open-source platform for creating, visualizing, and maintaining architecture diagrams that stay synchronized with your codebase. It transforms static diagrams into dynamic, navigable maps of your system — from 30,000-foot views down to individual functions.
+---
+
+Most architecture tools give you a flat diagram you look at once 
+and never update.
+
+BlueLens is different in three ways:
+
+**1. Drill-down navigation** — every node can link to a 
+sub-diagram. Click to go deeper, breadcrumb to come back. 
+Your architecture lives at every level of abstraction, not 
+just one flat view.
+
+**2. An AI agent that actually traverses your workspace** — 
+ask "explain the auth flow" and the agent navigates your 
+diagrams and code graph autonomously before answering. 
+It calls real tools (list_diagrams, get_node_source...), 
+not static context injection.
+
+**3. CodeGraph + drift detection** — point it at any local 
+repo, get an interactive architecture map in seconds. 
+When your code changes, BlueLens detects the drift and 
+lets you resync in one click.
 
 <p align="center">
   <img src="public/demo_pro.gif" alt="BlueLens demo" width="100%" />
 </p>
 
-> **BlueLens Cloud** — A hosted version with collaboration, cloud storage, and team features is available at [bluelens.dev](https://bluelens.dev). This repository is the open-source core.
+> 100% client-side — your code never leaves your machine.  
+> Free and open source. MIT license.
+
+---
 
 ---
 
