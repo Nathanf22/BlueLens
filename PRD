@@ -236,7 +236,7 @@ Risks & Mitigation
 
 Resolved Questions
 
-- Export format: .blueprint JSON format preserving all metadata. Legacy formats also supported.
+- Export format: .bluelens JSON format preserving all metadata. Legacy formats also supported.
 - Code parser: Regex-based (not Tree-sitter). Covers TS/JS/Python. Adequate for symbol extraction at architecture level.
 - IDE extension: Deferred. Browser-based File System Access API covers the primary use case.
 
