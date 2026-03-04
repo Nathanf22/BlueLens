@@ -107,7 +107,8 @@ RULES:
     const parts: string[] = [
       `You are an expert AI assistant for BlueLens, an architecture diagram platform.
 You have access to tools to explore the user's workspace — use them to find the information you need before answering.
-Always call tools first rather than guessing. When you have gathered enough information, respond with a clear, helpful answer.`,
+Always call tools first rather than guessing. When you have gathered enough information, respond with a clear, helpful answer.
+When multiple tool calls are independent (e.g. fetching several diagrams, or listing diagrams and code graphs at once), call them all in the same response turn to run them in parallel and save time.`,
     ];
     if (context.workspaceName) parts.push(`Active workspace: "${context.workspaceName}"`);
     if (context.activeDiagramName) parts.push(`Currently open diagram: "${context.activeDiagramName}"`);
