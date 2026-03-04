@@ -225,11 +225,12 @@ export default function App() {
         codeGraphs: codeGraph.codeGraphs,
         repos: workspaceRepos,
         workspaceId: activeWorkspaceId,
-        onCreateDiagram: (name, code) => {
+        onCreateFolder: (name, parentId) => createFolderProgrammatic(name, parentId),
+        onCreateDiagram: (name, code, folderId, description) => {
           const id = Math.random().toString(36).substr(2, 9);
           const newDiagram: import('./types').Diagram = {
-            id, name, code, comments: [], lastModified: Date.now(),
-            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+            id, name, code, description, comments: [], lastModified: Date.now(),
+            folderId: folderId ?? null, workspaceId: activeWorkspaceId, nodeLinks: [],
           };
           setDiagrams(prev => [...prev, newDiagram]);
           setActiveId(newDiagram.id);
@@ -348,11 +349,12 @@ export default function App() {
         codeGraphs: codeGraph.codeGraphs,
         repos: workspaceRepos,
         workspaceId: activeWorkspaceId,
-        onCreateDiagram: (name, code) => {
+        onCreateFolder: (name, parentId) => createFolderProgrammatic(name, parentId),
+        onCreateDiagram: (name, code, folderId, description) => {
           const id = Math.random().toString(36).substr(2, 9);
           const newDiagram: import('./types').Diagram = {
-            id, name, code, comments: [], lastModified: Date.now(),
-            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+            id, name, code, description, comments: [], lastModified: Date.now(),
+            folderId: folderId ?? null, workspaceId: activeWorkspaceId, nodeLinks: [],
           };
           setDiagrams(prev => [...prev, newDiagram]);
           setActiveId(newDiagram.id);

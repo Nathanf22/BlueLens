@@ -31,7 +31,8 @@ export interface AgentToolContext {
   codeGraphs: CodeGraph[];
   repos: RepoConfig[];
   workspaceId: string;
-  onCreateDiagram: (name: string, code: string) => string; // returns new diagram id
+  onCreateFolder: (name: string, parentId: string | null) => string; // returns new folder id
+  onCreateDiagram: (name: string, code: string, folderId?: string | null, description?: string) => string; // returns new diagram id
   onUpdateDiagram: (id: string, code: string) => void;
   onAddNodeLink: (diagramId: string, nodeId: string, targetDiagramId: string, label?: string) => void;
   onRemoveNodeLink: (diagramId: string, nodeId: string) => void;
@@ -43,8 +44,13 @@ export interface AgentToolContext {
 
 export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
+    name: 'list_folders',
+    description: 'Returns all folders in the current workspace (id, name, parentId, full path). Use before create_folder or create_diagram with a folder_id. PARALLEL: can be called together with list_diagrams and list_code_graphs.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'list_diagrams',
-    description: 'Returns all diagrams in the current workspace (id, name, description, folder path). PARALLEL: call this together with list_code_graphs in the same turn when you need both. Must precede get_diagram / list_node_links / add_node_link calls that need diagram IDs.',
+    description: 'Returns all diagrams in the current workspace (id, name, description, folderId, folder path). PARALLEL: call this together with list_code_graphs in the same turn when you need both. Must precede get_diagram / list_node_links / add_node_link calls that need diagram IDs.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -160,13 +166,27 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
     },
   },
   {
+    name: 'create_folder',
+    description: 'Creates a new folder in the workspace. Use list_folders first to find existing folder IDs for nesting. PARALLEL: multiple create_folder calls for independent folders can be batched.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Folder name' },
+        parent_id: { type: 'string', description: 'Parent folder id (from list_folders) for nesting. Omit to create at root.' },
+      },
+      required: ['name'],
+    },
+  },
+  {
     name: 'create_diagram',
-    description: 'Creates a new diagram in the workspace with the given name and Mermaid code. No prerequisites. PARALLEL: multiple create_diagram calls can be batched together.',
+    description: 'Creates a new diagram in the workspace with the given name, Mermaid code, optional description, and optional folder. Use list_folders to find folder IDs. PARALLEL: multiple create_diagram calls can be batched together.',
     parameters: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Name for the new diagram' },
         code: { type: 'string', description: 'Complete valid Mermaid code' },
+        description: { type: 'string', description: 'Short description of what this diagram represents' },
+        folder_id: { type: 'string', description: 'Folder id (from list_folders or create_folder) to place the diagram in. Omit for root.' },
       },
       required: ['name', 'code'],
     },
@@ -219,7 +239,9 @@ function makeLabel(name: string, args: Record<string, unknown>): string {
     case 'remove_node_link': return `remove_node_link(node: "${args.node_id}")`;
     case 'add_code_link': return `add_code_link(node: "${args.node_id}" → ${args.file_path})`;
     case 'remove_code_link': return `remove_code_link(node: "${args.node_id}")`;
-    case 'create_diagram': return `create_diagram(name: "${args.name}")`;
+    case 'list_folders': return 'list_folders()';
+    case 'create_folder': return `create_folder(name: "${args.name}"${args.parent_id ? `, parent: "${args.parent_id}"` : ''})`;
+    case 'create_diagram': return `create_diagram(name: "${args.name}"${args.folder_id ? `, folder: "${args.folder_id}"` : ''})`;
     case 'update_diagram': return `update_diagram(id: "${args.id}")`;
     default: return `${name}(${JSON.stringify(args)})`;
   }
@@ -252,12 +274,25 @@ async function executeToolInner(
   const workspaceDiagrams = ctx.diagrams.filter(d => d.workspaceId === ctx.workspaceId);
   const workspaceGraphs = ctx.codeGraphs.filter(g => g.workspaceId === ctx.workspaceId);
 
+  const workspaceFolders = ctx.folders.filter(f => f.workspaceId === ctx.workspaceId);
+
   switch (name) {
+    case 'list_folders': {
+      const result = workspaceFolders.map(f => ({
+        id: f.id,
+        name: f.name,
+        parentId: f.parentId,
+        path: getFolderPath(f.id, ctx.folders),
+      }));
+      return JSON.stringify(result);
+    }
+
     case 'list_diagrams': {
       const result = workspaceDiagrams.map(d => ({
         id: d.id,
         name: d.name,
         description: d.description || null,
+        folderId: d.folderId,
         folderPath: getFolderPath(d.folderId, ctx.folders) || '(root)',
       }));
       return JSON.stringify(result);
@@ -424,13 +459,31 @@ async function executeToolInner(
       return JSON.stringify({ success: true, diagramId, nodeId });
     }
 
+    case 'create_folder': {
+      const n = args.name as string;
+      const parentId = (args.parent_id as string | undefined) ?? null;
+      if (!n?.trim()) return JSON.stringify({ error: 'name is required' });
+      if (parentId) {
+        const parent = workspaceFolders.find(f => f.id === parentId);
+        if (!parent) return JSON.stringify({ error: `Parent folder not found: ${parentId}` });
+      }
+      const newId = ctx.onCreateFolder(n.trim(), parentId);
+      return JSON.stringify({ success: true, id: newId, name: n.trim(), parentId });
+    }
+
     case 'create_diagram': {
       const n = args.name as string;
       const code = args.code as string;
+      const description = args.description as string | undefined;
+      const folderId = (args.folder_id as string | undefined) ?? null;
       if (!n?.trim()) return JSON.stringify({ error: 'name is required' });
       if (!code?.trim()) return JSON.stringify({ error: 'code is required' });
-      const newId = ctx.onCreateDiagram(n.trim(), code.trim());
-      return JSON.stringify({ success: true, id: newId, name: n.trim() });
+      if (folderId) {
+        const folder = workspaceFolders.find(f => f.id === folderId);
+        if (!folder) return JSON.stringify({ error: `Folder not found: ${folderId}` });
+      }
+      const newId = ctx.onCreateDiagram(n.trim(), code.trim(), folderId, description?.trim());
+      return JSON.stringify({ success: true, id: newId, name: n.trim(), folderId, description: description?.trim() || null });
     }
 
     case 'update_diagram': {
