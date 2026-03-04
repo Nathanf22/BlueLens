@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2, Globe, Clock, ChevronDown, ChevronUp, GitCommit } from 'lucide-react';
+import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2, Globe, Clock, ChevronDown, ChevronUp, GitCommit, ArrowRightLeft, History as GitHistory, Bug } from 'lucide-react';
 import { RepoConfig } from '../types';
 import { fileSystemService } from '../services/fileSystemService';
 import { useGitHistory } from '../hooks/useGitHistory';
+import { gitService } from '../services/gitService';
 
 interface RepoManagerProps {
   repos: RepoConfig[];
@@ -12,6 +13,8 @@ interface RepoManagerProps {
   onReopenRepo: (repoId: string) => void;
   onClose: () => void;
   onCreateGraph?: (repoId: string) => Promise<any>;
+  onStartCodebaseImport?: (repoId: string, commitSha?: string) => void;
+  onStartComparison?: (repoId: string, commitSha: string) => void;
   hasConfiguredAI?: boolean;
 }
 
@@ -19,7 +22,12 @@ interface RepoManagerProps {
 // GitHistoryPanel — expandable per-repo commit list
 // ---------------------------------------------------------------------------
 
-const GitHistoryPanel: React.FC<{ repoId: string }> = ({ repoId }) => {
+const GitHistoryPanel: React.FC<{
+  repoId: string;
+  onSelectCommit: (sha: string) => void;
+  onCompareCommit?: (sha: string) => void;
+  isProcessing?: boolean;
+}> = ({ repoId, onSelectCommit, onCompareCommit, isProcessing }) => {
   const [expanded, setExpanded] = useState(false);
   const { commits, loading, error, loadCommits, clearError } = useGitHistory(20);
 
@@ -77,15 +85,58 @@ const GitHistoryPanel: React.FC<{ repoId: string }> = ({ repoId }) => {
           {commits.map(commit => (
             <div
               key={commit.sha}
-              className="flex items-start gap-2 py-1.5 px-2 rounded hover:bg-dark-700/60 transition-colors group"
+              className="w-full flex items-start gap-2 py-1.5 px-2 rounded hover:bg-emerald-500/10 hover:border-emerald-500/30 border border-transparent transition-all group text-left disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <GitCommit className="w-3.5 h-3.5 text-gray-500 flex-shrink-0 mt-0.5" />
+              <GitCommit className="w-3.5 h-3.5 text-gray-500 group-hover:text-emerald-400 flex-shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
-                <p className="text-xs text-gray-200 truncate leading-snug">
-                  {commit.message.split('\n')[0]}
-                </p>
-                <p className="text-[10px] text-gray-500 mt-0.5">
-                  <span className="font-mono text-brand-400/80">{commit.sha.slice(0, 7)}</span>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-200 truncate leading-snug font-medium group-hover:text-emerald-300">
+                    {commit.message.split('\n')[0]}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => onSelectCommit(commit.sha)}
+                      disabled={isProcessing}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
+                    >
+                      <GitHistory className="w-3.5 h-3.5" />
+                      Time Travel
+                    </button>
+                    <button
+                      onClick={() => onCompareCommit?.(commit.sha)}
+                      disabled={isProcessing}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                      Compare
+                    </button>
+                    <button
+                      onClick={async () => {
+                        console.log(`[Debug] Dumping commit ${commit.sha.slice(0, 7)}...`);
+                        const handle = fileSystemService.getHandle(repoId);
+                        if (handle) {
+                            try {
+                                const result = await gitService.debugDumpCommit(handle, commit.sha);
+                                console.log(`[Debug] Dump successful: ${result}`);
+                                alert(`Dump successful: ${result}`);
+                            } catch (e) {
+                                console.error(`[Debug] Dump failed:`, e);
+                                alert(`Dump failed: ${(e as Error).message}`);
+                            }
+                        } else {
+                            console.error(`[Debug] Could not get repo handle for ID: ${repoId}`);
+                            alert(`Dump failed: Could not get repo handle.`);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
+                    >
+                      <Bug className="w-3.5 h-3.5" />
+                      Debug Dump
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-500 mt-0.5 italic">
+                  <span className="font-mono text-brand-400/80 not-italic">{commit.sha.slice(0, 7)}</span>
                   {' · '}{commit.author}
                   {' · '}{formatDate(commit.timestamp)}
                 </p>
@@ -110,6 +161,8 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
   onReopenRepo,
   onClose,
   onCreateGraph,
+  onStartCodebaseImport,
+  onStartComparison,
   hasConfiguredAI = false,
 }) => {
   const [creatingGraphForRepo, setCreatingGraphForRepo] = useState<string | null>(null);
@@ -234,7 +287,18 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
 
                     {/* Git History panel — only for local connected repos */}
                     {canShowGitHistory && (
-                      <GitHistoryPanel repoId={repo.id} />
+                      <GitHistoryPanel
+                        repoId={repo.id}
+                        isProcessing={creatingGraphForRepo !== null}
+                        onSelectCommit={(sha) => {
+                          onClose();
+                          onStartCodebaseImport?.(repo.id, sha);
+                        }}
+                        onCompareCommit={(sha) => {
+                          onClose();
+                          onStartComparison?.(repo.id, sha);
+                        }}
+                      />
                     )}
                   </div>
                 );

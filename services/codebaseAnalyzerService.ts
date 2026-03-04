@@ -8,15 +8,8 @@
  */
 
 import { AnalyzedFile, CodebaseModule, CodebaseAnalysis, ScanConfig, ScannedEntity } from '../types';
-import { IFileSystemProvider, FileProviderEntry, getLanguage } from './IFileSystemProvider';
+import { IFileSystemProvider, FileProviderEntry, getLanguage, CODE_EXTENSIONS } from './IFileSystemProvider';
 import { codeParserService } from './codeParserService';
-
-const CODE_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.py',
-  '.rs', '.go', '.java', '.kt', '.rb',
-  '.php', '.cs', '.cpp', '.cc', '.c', '.h', '.hpp',
-  '.swift', '.dart',
-]);
 
 const ENTRY_POINT_NAMES = new Set([
   'index.ts', 'index.tsx', 'index.js', 'index.jsx',
@@ -234,9 +227,9 @@ export const codebaseAnalyzerService = {
         analyzedFiles.push({
           filePath,
           language,
-          symbols: scannedSymbols,
-          imports,
-          exportedSymbols,
+          symbols: scannedSymbols || [],
+          imports: imports || [],
+          exportedSymbols: exportedSymbols || [],
           size: content.length,
         });
 

@@ -16,6 +16,7 @@
 
 import git from 'isomorphic-git';
 import type { GitCommit } from '../types';
+import { CODE_EXTENSIONS } from './IFileSystemProvider';
 
 // ---------------------------------------------------------------------------
 // Custom error type (amélioration #4)
@@ -82,11 +83,12 @@ function buildFsAdapter(root: FileSystemDirectoryHandle) {
                 throw err;
             }
 
-            console.log(`[GitFS] stat: ${path}`);
+            console.debug(`[GitFS] stat: ${path}`);
             const parts = path.replace(/^\//, '').split('/').filter(Boolean);
             const handle = parts.length === 0 ? root : await navigateTo(root, parts);
             if (!handle) {
-                console.warn(`[GitFS] stat ENOENT: ${path}`);
+                // This is a common case, debug level is appropriate
+                console.debug(`[GitFS] stat ENOENT: ${path}`);
                 const err: any = new Error(`ENOENT: no such file or directory, stat '${path}'`);
                 err.code = 'ENOENT';
                 throw err;
@@ -131,7 +133,7 @@ function buildFsAdapter(root: FileSystemDirectoryHandle) {
                 isCharacterDevice: () => false,
                 isBlockDevice: () => false,
             };
-            // console.log(`[GitFS] stat result for ${path}:`, isDir ? 'DIR' : 'FILE', size);
+            // console.debug(`[GitFS] stat result for ${path}:`, isDir ? 'DIR' : 'FILE', size);
             return result;
         },
 
@@ -149,11 +151,11 @@ function buildFsAdapter(root: FileSystemDirectoryHandle) {
                 throw err;
             }
 
-            console.log(`[GitFS] readFile: ${path}`, options);
+            console.debug(`[GitFS] readFile: ${path}`, options);
             const parts = path.replace(/^\//, '').split('/').filter(Boolean);
             const handle = await navigateTo(root, parts);
             if (!handle || handle.kind !== 'file') {
-                console.warn(`[GitFS] readFile ENOENT: ${path}`);
+                console.debug(`[GitFS] readFile ENOENT: ${path}`);
                 const err: any = new Error(`ENOENT: no such file or directory, open '${path}'`);
                 err.code = 'ENOENT';
                 throw err;
@@ -164,13 +166,13 @@ function buildFsAdapter(root: FileSystemDirectoryHandle) {
 
             if (encoding === 'utf8' || encoding === 'utf-8') {
                 const text = await file.text();
-                console.log(`[GitFS] readFile result (text): ${path}, length: ${text.length}`);
+                console.debug(`[GitFS] readFile result (text): ${path}, length: ${text.length}`);
                 return text;
             }
 
             const arrayBuffer = await file.arrayBuffer();
             const data = (globalThis as any).Buffer.from(arrayBuffer);
-            console.log(`[GitFS] readFile result (Buffer): ${path}, size: ${data.length}`);
+            console.debug(`[GitFS] readFile result (Buffer): ${path}, size: ${data.length}`);
 
             if (!data) {
                 console.error(`[GitFS] readFile CRITICAL: returned null for ${path}`);
@@ -187,7 +189,7 @@ function buildFsAdapter(root: FileSystemDirectoryHandle) {
                 throw err;
             }
 
-            console.log(`[GitFS] readdir: ${path}`);
+            console.debug(`[GitFS] readdir: ${path}`);
             const parts = path.replace(/^\//, '').split('/').filter(Boolean);
             let dir: FileSystemDirectoryHandle;
             if (parts.length === 0) {
@@ -195,7 +197,7 @@ function buildFsAdapter(root: FileSystemDirectoryHandle) {
             } else {
                 const handle = await navigateTo(root, parts);
                 if (!handle || handle.kind !== 'directory') {
-                    console.warn(`[GitFS] readdir ENOTDIR: ${path}`);
+                    console.debug(`[GitFS] readdir ENOTDIR: ${path}`);
                     const err: any = new Error(`ENOTDIR: not a directory, readdir '${path}'`);
                     err.code = 'ENOTDIR';
                     throw err;
@@ -217,26 +219,26 @@ function buildFsAdapter(root: FileSystemDirectoryHandle) {
                     names.push(value);
                 }
             }
-            console.log(`[GitFS] readdir result for ${path}:`, names.length, 'entries');
+            console.debug(`[GitFS] readdir result for ${path}:`, names.length, 'entries');
             return names;
         },
 
         // ── readlink ──────────────────────────────────────────────────────────
         async readlink(path: string): Promise<string> {
-            console.log(`[GitFS] readlink: ${path}`);
+            console.debug(`[GitFS] readlink: ${path}`);
             const err: any = new Error(`EINVAL: invalid argument, readlink '${path}'`);
             err.code = 'EINVAL';
             throw err;
         },
 
         // ── write ops (no-ops) ────────────────────────────────────────────────
-        async writeFile(path: string): Promise<void> { console.log(`[GitFS] writeFile (no-op): ${path}`); },
-        async mkdir(path: string): Promise<void> { console.log(`[GitFS] mkdir (no-op): ${path}`); },
-        async rmdir(path: string): Promise<void> { console.log(`[GitFS] rmdir (no-op): ${path}`); },
-        async unlink(path: string): Promise<void> { console.log(`[GitFS] unlink (no-op): ${path}`); },
-        async rename(from: string, to: string): Promise<void> { console.log(`[GitFS] rename (no-op): ${from} -> ${to}`); },
-        async chmod(path: string): Promise<void> { console.log(`[GitFS] chmod (no-op): ${path}`); },
-        async symlink(target: string, path: string): Promise<void> { console.log(`[GitFS] symlink (no-op): ${target} -> ${path}`); },
+        async writeFile(path: string): Promise<void> { console.debug(`[GitFS] writeFile (no-op): ${path}`); },
+        async mkdir(path: string): Promise<void> { console.debug(`[GitFS] mkdir (no-op): ${path}`); },
+        async rmdir(path: string): Promise<void> { console.debug(`[GitFS] rmdir (no-op): ${path}`); },
+        async unlink(path: string): Promise<void> { console.debug(`[GitFS] unlink (no-op): ${path}`); },
+        async rename(from: string, to: string): Promise<void> { console.debug(`[GitFS] rename (no-op): ${from} -> ${to}`); },
+        async chmod(path: string): Promise<void> { console.debug(`[GitFS] chmod (no-op): ${path}`); },
+        async symlink(target: string, path: string): Promise<void> { console.debug(`[GitFS] symlink (no-op): ${target} -> ${path}`); },
     };
 
     // isomorphic-git looks for fs.promises or methods directly on fs
@@ -252,17 +254,6 @@ function buildFsAdapter(root: FileSystemDirectoryHandle) {
 // ---------------------------------------------------------------------------
 
 const blobCache = new Map<string, string>();
-
-// ---------------------------------------------------------------------------
-// Code-file extensions (same set as codebaseAnalyzerService)
-// ---------------------------------------------------------------------------
-
-const CODE_EXTENSIONS = new Set([
-    '.ts', '.tsx', '.js', '.jsx', '.py',
-    '.rs', '.go', '.java', '.kt', '.rb',
-    '.php', '.cs', '.cpp', '.cc', '.c', '.h', '.hpp',
-    '.swift', '.dart',
-]);
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -427,20 +418,12 @@ export const gitService = {
 
         let allPaths: string[];
         try {
-            allPaths = (await git.walk({
+            // Use listFiles instead of walk for better reliability with tree traversal
+            allPaths = await git.listFiles({
                 fs,
                 dir,
-                trees: [git.TREE({ ref: commitSha })],
-                map: async (filepath, [entry]) => {
-                    if (!entry) return null;
-                    const type = await entry.type();
-                    if (type !== 'blob') return null; // skip trees (dirs)
-                    // filter to code extensions only
-                    const ext = filepath.substring(filepath.lastIndexOf('.')).toLowerCase();
-                    if (!CODE_EXTENSIONS.has(ext)) return null;
-                    return filepath;
-                },
-            })) as string[];
+                ref: commitSha,
+            });
         } catch (err: any) {
             throw new GitServiceError(
                 `Impossible de lister les fichiers au commit ${commitSha.slice(0, 7)} : ${err?.message}`,
@@ -448,6 +431,51 @@ export const gitService = {
             );
         }
 
-        return allPaths.filter(Boolean);
+        console.log(`[GitService] Files found: ${(allPaths || []).length}`);
+
+        return (allPaths || []).filter(p => {
+            if (!p) return false;
+            const ext = p.substring(p.lastIndexOf('.')).toLowerCase();
+            return CODE_EXTENSIONS.has(ext);
+        });
+    },
+
+    /**
+     * DEBUG: Extract all code files from a specific commit into a `_debug_dump_<sha>` folder
+     * at the root of the repository. Useful to verify file contents and structure.
+     */
+    async debugDumpCommit(
+        handle: FileSystemDirectoryHandle,
+        commitSha: string
+    ): Promise<string> {
+        const files = await this.listFilesAtCommit(handle, commitSha);
+        console.log(`[GitService] Dumping ${files.length} files for commit ${commitSha}...`);
+
+        const folderName = `_debug_dump_${commitSha.slice(0, 7)}`;
+        const rootDumpHandle = await handle.getDirectoryHandle(folderName, { create: true });
+
+        for (const filePath of files) {
+            const content = await this.readFileAtCommit(handle, commitSha, filePath);
+            
+            // Create subdirectories
+            const parts = filePath.split('/');
+            const fileName = parts.pop();
+            if (!fileName) continue;
+
+            let currentDir = rootDumpHandle;
+            for (const part of parts) {
+                if (part === '.' || part === '') continue;
+                currentDir = await currentDir.getDirectoryHandle(part, { create: true });
+            }
+
+            // Write file
+            const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
+            // @ts-ignore - createWritable exists in Chromium-based browsers
+            const writable = await (fileHandle as any).createWritable();
+            await writable.write(content);
+            await writable.close();
+        }
+
+        return `Dumped ${files.length} files to /${folderName}`;
     },
 };

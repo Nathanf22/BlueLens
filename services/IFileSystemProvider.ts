@@ -33,6 +33,17 @@ export interface IFileSystemProvider {
 // Shared utility: filename → language (identical to the map in fileSystemService)
 // ---------------------------------------------------------------------------
 
+/**
+ * Set of file extensions considered as "code" for analysis purposes.
+ * Shared between gitService and codebaseAnalyzerService to ensure consistency.
+ */
+export const CODE_EXTENSIONS = new Set([
+    '.ts', '.tsx', '.js', '.jsx', '.py',
+    '.rs', '.go', '.java', '.kt', '.rb',
+    '.php', '.cs', '.cpp', '.cc', '.c', '.h', '.hpp',
+    '.swift', '.dart',
+]);
+
 const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
     '.ts': 'typescript', '.tsx': 'typescript',
     '.js': 'javascript', '.jsx': 'javascript',

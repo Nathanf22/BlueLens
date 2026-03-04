@@ -75,7 +75,8 @@ interface ModalManagerProps {
   // Codebase Import
   isCodebaseImportOpen: boolean;
   onCloseCodebaseImport: () => void;
-  onStartCodebaseImport: (repoId: string) => void;
+  onStartCodebaseImport: (repoId: string, commitSha?: string) => void;
+  onStartComparison?: (repoId: string, commitSha: string) => void;
   codebaseImportProgress: CodebaseImportProgress | null;
   isCodebaseImporting: boolean;
   onResetCodebaseImport: () => void;
@@ -148,6 +149,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   isCodebaseImportOpen,
   onCloseCodebaseImport,
   onStartCodebaseImport,
+  onStartComparison,
   codebaseImportProgress,
   isCodebaseImporting,
   onResetCodebaseImport,
@@ -199,6 +201,8 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
           onReopenRepo={onReopenRepo}
           onClose={onCloseRepoManager}
           onCreateGraph={onCreateGraph}
+          onStartCodebaseImport={onStartCodebaseImport}
+          onStartComparison={onStartComparison}
         />
       )}
 
