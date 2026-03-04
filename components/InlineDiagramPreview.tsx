@@ -5,11 +5,13 @@ interface InlineDiagramPreviewProps {
   code: string;
 }
 
+let _globalIdCounter = 0;
+
 export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code }) => {
   const [view, setView] = useState<'diagram' | 'code'>('diagram');
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const idCounter = useRef(0);
+  const renderId = useRef(`inline-preview-${++_globalIdCounter}`);
 
   useEffect(() => {
     if (!code.trim()) return;
@@ -17,7 +19,7 @@ export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code
     setSvg('');
     setError('');
 
-    const id = `inline-preview-${++idCounter.current}-${Date.now()}`;
+    const id = renderId.current;
     (async () => {
       try {
         const { svg: rendered } = await mermaid.render(id, code);
