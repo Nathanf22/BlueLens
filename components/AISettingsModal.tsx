@@ -21,6 +21,8 @@ const PROVIDER_INFO: Record<LLMProvider, { label: string; description: string }>
 /** Known models per provider. The first entry is the service default. */
 const PROVIDER_MODELS: Record<LLMProvider, { id: string; label: string }[]> = {
   gemini: [
+    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
+    { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
     { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
     { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
     { id: 'gemini-2.5-flash-preview', label: 'Gemini 2.5 Flash Preview' },
