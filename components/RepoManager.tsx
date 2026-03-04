@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2, Globe, Clock, ChevronDown, ChevronUp, GitCommit, ArrowRightLeft, History as GitHistory, Bug } from 'lucide-react';
+import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2, Globe, Clock, ChevronDown, ChevronUp, GitCommit, ArrowRightLeft, History as GitHistory } from 'lucide-react';
 import { RepoConfig } from '../types';
 import { fileSystemService } from '../services/fileSystemService';
 import { useGitHistory } from '../hooks/useGitHistory';
-import { gitService } from '../services/gitService';
 
 interface RepoManagerProps {
   repos: RepoConfig[];
@@ -12,7 +11,7 @@ interface RepoManagerProps {
   onRemoveRepo: (repoId: string) => void;
   onReopenRepo: (repoId: string) => void;
   onClose: () => void;
-  onCreateGraph?: (repoId: string) => Promise<any>;
+  onCreateGraph?: (repoId: string, commitSha?: string) => Promise<any>;
   onStartCodebaseImport?: (repoId: string, commitSha?: string) => void;
   onStartComparison?: (repoId: string, commitSha: string) => void;
   hasConfiguredAI?: boolean;
@@ -24,8 +23,8 @@ interface RepoManagerProps {
 
 const GitHistoryPanel: React.FC<{
   repoId: string;
-  onSelectCommit: (sha: string) => void;
-  onCompareCommit?: (sha: string) => void;
+  onSelectCommit: (repoId: string, sha: string) => void;
+  onCompareCommit?: (repoId: string, sha: string) => void;
   isProcessing?: boolean;
 }> = ({ repoId, onSelectCommit, onCompareCommit, isProcessing }) => {
   const [expanded, setExpanded] = useState(false);
@@ -93,9 +92,9 @@ const GitHistoryPanel: React.FC<{
                   <p className="text-xs text-gray-200 truncate leading-snug font-medium group-hover:text-emerald-300">
                     {commit.message.split('\n')[0]}
                   </p>
-                  <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => onSelectCommit(commit.sha)}
+                      onClick={() => onSelectCommit(repoId, commit.sha)}
                       disabled={isProcessing}
                       className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
                     >
@@ -103,35 +102,12 @@ const GitHistoryPanel: React.FC<{
                       Time Travel
                     </button>
                     <button
-                      onClick={() => onCompareCommit?.(commit.sha)}
+                      onClick={() => onCompareCommit?.(repoId, commit.sha)}
                       disabled={isProcessing}
                       className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
                     >
                       <ArrowRightLeft className="w-3.5 h-3.5" />
                       Compare
-                    </button>
-                    <button
-                      onClick={async () => {
-                        console.log(`[Debug] Dumping commit ${commit.sha.slice(0, 7)}...`);
-                        const handle = fileSystemService.getHandle(repoId);
-                        if (handle) {
-                            try {
-                                const result = await gitService.debugDumpCommit(handle, commit.sha);
-                                console.log(`[Debug] Dump successful: ${result}`);
-                                alert(`Dump successful: ${result}`);
-                            } catch (e) {
-                                console.error(`[Debug] Dump failed:`, e);
-                                alert(`Dump failed: ${(e as Error).message}`);
-                            }
-                        } else {
-                            console.error(`[Debug] Could not get repo handle for ID: ${repoId}`);
-                            alert(`Dump failed: Could not get repo handle.`);
-                        }
-                      }}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
-                    >
-                      <Bug className="w-3.5 h-3.5" />
-                      Debug Dump
                     </button>
                   </div>
                 </div>
@@ -290,13 +266,23 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
                       <GitHistoryPanel
                         repoId={repo.id}
                         isProcessing={creatingGraphForRepo !== null}
-                        onSelectCommit={(sha) => {
-                          onClose();
-                          onStartCodebaseImport?.(repo.id, sha);
+                        onSelectCommit={async (repoId, sha) => {
+                          if (onCreateGraph) {
+                            setCreatingGraphForRepo(repoId);
+                            try {
+                              await onCreateGraph(repoId, sha);
+                              onClose();
+                            } finally {
+                              setCreatingGraphForRepo(null);
+                            }
+                          } else {
+                            onClose();
+                            onStartCodebaseImport?.(repoId, sha);
+                          }
                         }}
-                        onCompareCommit={(sha) => {
+                        onCompareCommit={(repoId, sha) => {
                           onClose();
-                          onStartComparison?.(repo.id, sha);
+                          onStartComparison?.(repoId, sha);
                         }}
                       />
                     )}

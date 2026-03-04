@@ -81,7 +81,7 @@ interface ModalManagerProps {
   isCodebaseImporting: boolean;
   onResetCodebaseImport: () => void;
   // Create Code Graph trigger from RepoManager
-  onCreateGraph?: (repoId: string) => Promise<any>;
+  onCreateGraph?: (repoId: string, commitSha?: string) => Promise<any>;
   // CodeGraph Config
   isCodeGraphConfigOpen: boolean;
   onCloseCodeGraphConfig: () => void;
