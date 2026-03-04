@@ -225,11 +225,12 @@ export default function App() {
         codeGraphs: codeGraph.codeGraphs,
         repos: workspaceRepos,
         workspaceId: activeWorkspaceId,
-        onCreateDiagram: (name, code) => {
+        onCreateFolder: (name, parentId) => createFolderProgrammatic(name, parentId),
+        onCreateDiagram: (name, code, folderId, description) => {
           const id = Math.random().toString(36).substr(2, 9);
           const newDiagram: import('./types').Diagram = {
-            id, name, code, comments: [], lastModified: Date.now(),
-            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+            id, name, code, description, comments: [], lastModified: Date.now(),
+            folderId: folderId ?? null, workspaceId: activeWorkspaceId, nodeLinks: [],
           };
           setDiagrams(prev => [...prev, newDiagram]);
           setActiveId(newDiagram.id);
@@ -237,6 +238,30 @@ export default function App() {
         },
         onUpdateDiagram: (id, code) => {
           setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
+        onAddNodeLink: (diagramId, nodeId, targetDiagramId, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.nodeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, nodeLinks: [...links, { nodeId, targetDiagramId, label }] };
+          }));
+        },
+        onRemoveNodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, nodeLinks: (d.nodeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
+        },
+        onAddCodeLink: (diagramId, nodeId, repoId, filePath, lineStart, lineEnd, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.codeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, codeLinks: [...links, { nodeId, repoId, filePath, lineStart, lineEnd, label }] };
+          }));
+        },
+        onRemoveCodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, codeLinks: (d.codeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
         },
       };
 
@@ -324,11 +349,12 @@ export default function App() {
         codeGraphs: codeGraph.codeGraphs,
         repos: workspaceRepos,
         workspaceId: activeWorkspaceId,
-        onCreateDiagram: (name, code) => {
+        onCreateFolder: (name, parentId) => createFolderProgrammatic(name, parentId),
+        onCreateDiagram: (name, code, folderId, description) => {
           const id = Math.random().toString(36).substr(2, 9);
           const newDiagram: import('./types').Diagram = {
-            id, name, code, comments: [], lastModified: Date.now(),
-            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+            id, name, code, description, comments: [], lastModified: Date.now(),
+            folderId: folderId ?? null, workspaceId: activeWorkspaceId, nodeLinks: [],
           };
           setDiagrams(prev => [...prev, newDiagram]);
           setActiveId(newDiagram.id);
@@ -336,6 +362,30 @@ export default function App() {
         },
         onUpdateDiagram: (id, code) => {
           setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
+        onAddNodeLink: (diagramId, nodeId, targetDiagramId, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.nodeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, nodeLinks: [...links, { nodeId, targetDiagramId, label }] };
+          }));
+        },
+        onRemoveNodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, nodeLinks: (d.nodeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
+        },
+        onAddCodeLink: (diagramId, nodeId, repoId, filePath, lineStart, lineEnd, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.codeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, codeLinks: [...links, { nodeId, repoId, filePath, lineStart, lineEnd, label }] };
+          }));
+        },
+        onRemoveCodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, codeLinks: (d.codeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
         },
       };
 
