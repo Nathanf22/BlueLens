@@ -42,7 +42,7 @@ export class LLMRateLimitError extends Error {
 }
 
 const DEFAULT_MODELS: Record<LLMProvider, string> = {
-  gemini: 'gemini-3-flash-preview',
+  gemini: 'gemini-3.1-flash-lite-preview',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-sonnet-4-6',
 };
