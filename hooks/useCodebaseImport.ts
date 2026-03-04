@@ -3,6 +3,7 @@ import { Diagram, RepoConfig, CodebaseImportProgress, NodeLink } from '../types'
 import { fileSystemService } from '../services/fileSystemService';
 import { codebaseAnalyzerService } from '../services/codebaseAnalyzerService';
 import { diagramGeneratorService } from '../services/diagramGeneratorService';
+import { LocalFileSystemProvider } from '../services/LocalFileSystemProvider';
 
 interface UseCodebaseImportParams {
   diagrams: Diagram[];
@@ -45,7 +46,7 @@ export const useCodebaseImport = ({
       setProgress({ step: 'scanning', message: 'Scanning codebase files...', percent: 5 });
 
       const analysis = await codebaseAnalyzerService.analyzeCodebase(
-        handle,
+        new LocalFileSystemProvider(handle),
         repo.scanConfig,
         (scanned, total) => {
           setProgress({

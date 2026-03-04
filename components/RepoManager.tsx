@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2, Globe } from 'lucide-react';
+import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2, Globe, Clock, ChevronDown, ChevronUp, GitCommit } from 'lucide-react';
 import { RepoConfig } from '../types';
 import { fileSystemService } from '../services/fileSystemService';
+import { useGitHistory } from '../hooks/useGitHistory';
 
 interface RepoManagerProps {
   repos: RepoConfig[];
@@ -13,6 +14,93 @@ interface RepoManagerProps {
   onCreateGraph?: (repoId: string) => Promise<any>;
   hasConfiguredAI?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// GitHistoryPanel — expandable per-repo commit list
+// ---------------------------------------------------------------------------
+
+const GitHistoryPanel: React.FC<{ repoId: string }> = ({ repoId }) => {
+  const [expanded, setExpanded] = useState(false);
+  const { commits, loading, error, loadCommits, clearError } = useGitHistory(20);
+
+  const handleToggle = async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && commits.length === 0 && !loading) {
+      await loadCommits(repoId);
+    }
+  };
+
+  const formatDate = (ms: number) => {
+    const d = new Date(ms);
+    return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  return (
+    <div className="border-t border-gray-700/60">
+      {/* Toggle button */}
+      <button
+        onClick={handleToggle}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-400 hover:text-gray-200 hover:bg-dark-700/50 transition-colors"
+      >
+        <span className="flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5" />
+          Git History
+          {commits.length > 0 && (
+            <span className="ml-1 text-gray-500">({commits.length} commits)</span>
+          )}
+        </span>
+        {loading
+          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          : expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
+        }
+      </button>
+
+      {/* Commit list */}
+      {expanded && (
+        <div className="px-3 pb-3 max-h-64 overflow-y-auto space-y-1">
+          {error && (
+            <div className="flex items-start gap-2 p-2 rounded bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span className="flex-1">{error}</span>
+              <button onClick={clearError} className="hover:text-red-200">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+          {loading && commits.length === 0 && (
+            <p className="text-xs text-gray-500 py-2 text-center">Loading commits…</p>
+          )}
+          {!loading && commits.length === 0 && !error && (
+            <p className="text-xs text-gray-500 py-2 text-center italic">No commits found</p>
+          )}
+          {commits.map(commit => (
+            <div
+              key={commit.sha}
+              className="flex items-start gap-2 py-1.5 px-2 rounded hover:bg-dark-700/60 transition-colors group"
+            >
+              <GitCommit className="w-3.5 h-3.5 text-gray-500 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-gray-200 truncate leading-snug">
+                  {commit.message.split('\n')[0]}
+                </p>
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  <span className="font-mono text-brand-400/80">{commit.sha.slice(0, 7)}</span>
+                  {' · '}{commit.author}
+                  {' · '}{formatDate(commit.timestamp)}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// RepoManager
+// ---------------------------------------------------------------------------
 
 export const RepoManager: React.FC<RepoManagerProps> = ({
   repos,
@@ -74,6 +162,8 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
               {repos.map(repo => {
                 const isGithub = !!repo.githubOwner;
                 const isConnected = isGithub || fileSystemService.hasHandle(repo.id);
+                // Only local (non-GitHub) connected repos can show Git history
+                const canShowGitHistory = !isGithub && isConnected;
                 return (
                   <div
                     key={repo.id}
@@ -140,6 +230,11 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
                           <span className="text-xs text-yellow-500/80">AI key required</span>
                         )}
                       </div>
+                    )}
+
+                    {/* Git History panel — only for local connected repos */}
+                    {canShowGitHistory && (
+                      <GitHistoryPanel repoId={repo.id} />
                     )}
                   </div>
                 );

@@ -320,6 +320,18 @@ export interface CodebaseImportProgress {
   diagramsCreated?: number;
 }
 
+// --- Git History (Time Travel) ---
+
+/** A single Git commit, as returned by gitService.listCommits(). */
+export interface GitCommit {
+  sha: string;
+  message: string;
+  author: string;
+  email: string;
+  /** Unix timestamp in milliseconds. */
+  timestamp: number;
+}
+
 // --- Progress Log ---
 
 export type ProgressLogCategory =
