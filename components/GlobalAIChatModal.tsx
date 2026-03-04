@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Sparkles, Loader2, Check, Trash2, ChevronDown, ChevronRight, Wrench, RotateCw, Square } from 'lucide-react';
 import { ChatMessage, LLMSettings, AgentToolStep } from '../types';
 import { MarkdownContent } from './MarkdownContent';
+import { InlineDiagramPreview } from './InlineDiagramPreview';
 
 interface GlobalAIChatModalProps {
   isOpen: boolean;
@@ -145,6 +146,9 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
               <span className="text-xs text-gray-600 mt-1 block">Stopped.</span>
             ) : (
               <MarkdownContent content={msg.content} />
+            )}
+            {hasCode && (
+              <InlineDiagramPreview code={msg.diagramCodeSnapshot!} />
             )}
             {hasCode && (
               <div className="mt-2 flex flex-wrap gap-2">
