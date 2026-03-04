@@ -44,12 +44,12 @@ export interface AgentToolContext {
 export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     name: 'list_diagrams',
-    description: 'Returns all diagrams in the current workspace (id, name, description, folder path). Use this first to discover what diagrams exist before fetching their content.',
+    description: 'Returns all diagrams in the current workspace (id, name, description, folder path). PARALLEL: call this together with list_code_graphs in the same turn when you need both. Must precede get_diagram / list_node_links / add_node_link calls that need diagram IDs.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'get_diagram',
-    description: 'Returns the full Mermaid code and metadata for a specific diagram by id.',
+    description: 'Returns the full Mermaid code and metadata for a specific diagram by id. PARALLEL: multiple get_diagram calls for different ids can be batched in the same turn. Requires diagram IDs from list_diagrams.',
     parameters: {
       type: 'object',
       properties: {
@@ -60,7 +60,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'list_node_links',
-    description: 'Returns the nodeLinks of a diagram — which Mermaid node IDs link to which sub-diagram ids.',
+    description: 'Returns the nodeLinks of a diagram — which Mermaid node IDs link to which sub-diagram ids. PARALLEL: multiple list_node_links calls for different diagrams can be batched together.',
     parameters: {
       type: 'object',
       properties: {
@@ -71,12 +71,12 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'list_code_graphs',
-    description: 'Returns all CodeGraphs available in the workspace (id, name, node count, repo name).',
+    description: 'Returns all CodeGraphs available in the workspace (id, name, node count, repo name). PARALLEL: call this together with list_diagrams in the same turn when you need both. Must precede get_graph_nodes calls.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'get_graph_nodes',
-    description: 'Returns nodes of a CodeGraph filtered by depth and/or kind. depth 1 = modules/packages, depth 2 = files, depth 3 = symbols (functions, classes).',
+    description: 'Returns nodes of a CodeGraph filtered by depth and/or kind. depth 1 = modules/packages, depth 2 = files, depth 3 = symbols (functions, classes). PARALLEL: multiple get_graph_nodes calls for different graph_ids or parent_ids can be batched together. Requires graph_id from list_code_graphs.',
     parameters: {
       type: 'object',
       properties: {
@@ -94,7 +94,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'get_node_source',
-    description: 'Fetches the source code for a specific graph node. Works for GitHub-backed repos. Returns file path, line range, and code excerpt.',
+    description: 'Fetches the source code for a specific graph node. Works for GitHub-backed repos. Returns file path, line range, and code excerpt. PARALLEL: multiple get_node_source calls for different node_ids can be batched in the same turn. Requires node_id from get_graph_nodes.',
     parameters: {
       type: 'object',
       properties: {
@@ -106,7 +106,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'add_node_link',
-    description: 'Links a Mermaid node in a diagram to another diagram for drill-down navigation. The node will show a badge and become clickable. Use list_diagrams to find diagram IDs, and get_diagram to inspect node IDs in the Mermaid code.',
+    description: 'Links a Mermaid node in a diagram to another diagram for drill-down navigation. The node will show a badge and become clickable. Requires: list_diagrams (for both diagram IDs) then get_diagram (to find node IDs) — these two reads can be done in parallel before calling this. PARALLEL: multiple add_node_link calls targeting different nodes can be batched together.',
     parameters: {
       type: 'object',
       properties: {
@@ -120,7 +120,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'remove_node_link',
-    description: 'Removes the drill-down link from a Mermaid node.',
+    description: 'Removes the drill-down link from a Mermaid node. PARALLEL: multiple remove_node_link calls targeting different nodes can be batched together.',
     parameters: {
       type: 'object',
       properties: {
@@ -132,7 +132,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'add_code_link',
-    description: 'Links a Mermaid node to a source file in a repo. Use list_code_graphs to find repo IDs, and get_graph_nodes (depth: 2) to find file paths.',
+    description: 'Links a Mermaid node to a source file in a repo. Requires: list_code_graphs (for repo IDs) and get_graph_nodes with depth:2 (for file paths) — these reads can be done in parallel with list_diagrams before calling this. PARALLEL: multiple add_code_link calls targeting different nodes can be batched together.',
     parameters: {
       type: 'object',
       properties: {
@@ -149,7 +149,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'remove_code_link',
-    description: 'Removes the code link from a Mermaid node.',
+    description: 'Removes the code link from a Mermaid node. PARALLEL: multiple remove_code_link calls targeting different nodes can be batched together.',
     parameters: {
       type: 'object',
       properties: {
@@ -161,7 +161,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'create_diagram',
-    description: 'Creates a new diagram in the workspace with the given name and Mermaid code.',
+    description: 'Creates a new diagram in the workspace with the given name and Mermaid code. No prerequisites. PARALLEL: multiple create_diagram calls can be batched together.',
     parameters: {
       type: 'object',
       properties: {
@@ -173,7 +173,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   },
   {
     name: 'update_diagram',
-    description: 'Updates the Mermaid code of an existing diagram. Use get_diagram first to retrieve the current code.',
+    description: 'Updates the Mermaid code of an existing diagram. Requires get_diagram first to retrieve the current code. SEQUENTIAL with respect to its own diagram — do not update the same diagram twice in one turn.',
     parameters: {
       type: 'object',
       properties: {
