@@ -33,6 +33,10 @@ export interface AgentToolContext {
   workspaceId: string;
   onCreateDiagram: (name: string, code: string) => string; // returns new diagram id
   onUpdateDiagram: (id: string, code: string) => void;
+  onAddNodeLink: (diagramId: string, nodeId: string, targetDiagramId: string, label?: string) => void;
+  onRemoveNodeLink: (diagramId: string, nodeId: string) => void;
+  onAddCodeLink: (diagramId: string, nodeId: string, repoId: string, filePath: string, lineStart?: number, lineEnd?: number, label?: string) => void;
+  onRemoveCodeLink: (diagramId: string, nodeId: string) => void;
 }
 
 // ─── Tool definitions ─────────────────────────────────────────────────────────
@@ -101,6 +105,61 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
     },
   },
   {
+    name: 'add_node_link',
+    description: 'Links a Mermaid node in a diagram to another diagram for drill-down navigation. The node will show a badge and become clickable. Use list_diagrams to find diagram IDs, and get_diagram to inspect node IDs in the Mermaid code.',
+    parameters: {
+      type: 'object',
+      properties: {
+        diagram_id: { type: 'string', description: 'ID of the diagram containing the node' },
+        node_id: { type: 'string', description: 'Mermaid node ID to link (e.g. "Auth", "UserService")' },
+        target_diagram_id: { type: 'string', description: 'ID of the diagram to navigate to when the node is clicked' },
+        label: { type: 'string', description: 'Optional label for the link' },
+      },
+      required: ['diagram_id', 'node_id', 'target_diagram_id'],
+    },
+  },
+  {
+    name: 'remove_node_link',
+    description: 'Removes the drill-down link from a Mermaid node.',
+    parameters: {
+      type: 'object',
+      properties: {
+        diagram_id: { type: 'string', description: 'ID of the diagram containing the node' },
+        node_id: { type: 'string', description: 'Mermaid node ID whose link should be removed' },
+      },
+      required: ['diagram_id', 'node_id'],
+    },
+  },
+  {
+    name: 'add_code_link',
+    description: 'Links a Mermaid node to a source file in a repo. Use list_code_graphs to find repo IDs, and get_graph_nodes (depth: 2) to find file paths.',
+    parameters: {
+      type: 'object',
+      properties: {
+        diagram_id: { type: 'string', description: 'ID of the diagram containing the node' },
+        node_id: { type: 'string', description: 'Mermaid node ID to link' },
+        repo_id: { type: 'string', description: 'Repo ID (from list_code_graphs repoId field)' },
+        file_path: { type: 'string', description: 'File path relative to repo root' },
+        line_start: { type: 'number', description: 'Optional start line' },
+        line_end: { type: 'number', description: 'Optional end line' },
+        label: { type: 'string', description: 'Optional display label' },
+      },
+      required: ['diagram_id', 'node_id', 'repo_id', 'file_path'],
+    },
+  },
+  {
+    name: 'remove_code_link',
+    description: 'Removes the code link from a Mermaid node.',
+    parameters: {
+      type: 'object',
+      properties: {
+        diagram_id: { type: 'string', description: 'ID of the diagram containing the node' },
+        node_id: { type: 'string', description: 'Mermaid node ID whose code link should be removed' },
+      },
+      required: ['diagram_id', 'node_id'],
+    },
+  },
+  {
     name: 'create_diagram',
     description: 'Creates a new diagram in the workspace with the given name and Mermaid code.',
     parameters: {
@@ -156,6 +215,10 @@ function makeLabel(name: string, args: Record<string, unknown>): string {
       return `get_graph_nodes(${parts.join(', ')})`;
     }
     case 'get_node_source': return `get_node_source(node: "${args.node_id}")`;
+    case 'add_node_link': return `add_node_link(node: "${args.node_id}" → diagram: "${args.target_diagram_id}")`;
+    case 'remove_node_link': return `remove_node_link(node: "${args.node_id}")`;
+    case 'add_code_link': return `add_code_link(node: "${args.node_id}" → ${args.file_path})`;
+    case 'remove_code_link': return `remove_code_link(node: "${args.node_id}")`;
     case 'create_diagram': return `create_diagram(name: "${args.name}")`;
     case 'update_diagram': return `update_diagram(id: "${args.id}")`;
     default: return `${name}(${JSON.stringify(args)})`;
@@ -210,7 +273,19 @@ async function executeToolInner(
         description: diagram.description || null,
         folderPath: getFolderPath(diagram.folderId, ctx.folders) || '(root)',
         code: diagram.code,
-        nodeLinksCount: diagram.nodeLinks.length,
+        nodeLinks: diagram.nodeLinks.map(nl => ({
+          nodeId: nl.nodeId,
+          targetDiagramId: nl.targetDiagramId,
+          label: nl.label || null,
+        })),
+        codeLinks: (diagram.codeLinks || []).map(cl => ({
+          nodeId: cl.nodeId,
+          repoId: cl.repoId,
+          filePath: cl.filePath,
+          lineStart: cl.lineStart || null,
+          lineEnd: cl.lineEnd || null,
+          label: cl.label || null,
+        })),
       });
     }
 
@@ -300,6 +375,53 @@ async function executeToolInner(
         lineRange: `${lineStart}-${lineEnd}`,
         note: 'Full source only available for GitHub-backed repos in this context',
       });
+    }
+
+    case 'add_node_link': {
+      const diagramId = args.diagram_id as string;
+      const nodeId = args.node_id as string;
+      const targetDiagramId = args.target_diagram_id as string;
+      const label = args.label as string | undefined;
+      const diagram = workspaceDiagrams.find(d => d.id === diagramId);
+      if (!diagram) return JSON.stringify({ error: `Diagram not found: ${diagramId}` });
+      const target = workspaceDiagrams.find(d => d.id === targetDiagramId);
+      if (!target) return JSON.stringify({ error: `Target diagram not found: ${targetDiagramId}` });
+      ctx.onAddNodeLink(diagramId, nodeId, targetDiagramId, label);
+      return JSON.stringify({ success: true, diagramId, nodeId, targetDiagramId, targetName: target.name });
+    }
+
+    case 'remove_node_link': {
+      const diagramId = args.diagram_id as string;
+      const nodeId = args.node_id as string;
+      const diagram = workspaceDiagrams.find(d => d.id === diagramId);
+      if (!diagram) return JSON.stringify({ error: `Diagram not found: ${diagramId}` });
+      ctx.onRemoveNodeLink(diagramId, nodeId);
+      return JSON.stringify({ success: true, diagramId, nodeId });
+    }
+
+    case 'add_code_link': {
+      const diagramId = args.diagram_id as string;
+      const nodeId = args.node_id as string;
+      const repoId = args.repo_id as string;
+      const filePath = args.file_path as string;
+      const lineStart = args.line_start as number | undefined;
+      const lineEnd = args.line_end as number | undefined;
+      const label = args.label as string | undefined;
+      const diagram = workspaceDiagrams.find(d => d.id === diagramId);
+      if (!diagram) return JSON.stringify({ error: `Diagram not found: ${diagramId}` });
+      const repo = ctx.repos.find(r => r.id === repoId);
+      if (!repo) return JSON.stringify({ error: `Repo not found: ${repoId}` });
+      ctx.onAddCodeLink(diagramId, nodeId, repoId, filePath, lineStart, lineEnd, label);
+      return JSON.stringify({ success: true, diagramId, nodeId, repoId, filePath });
+    }
+
+    case 'remove_code_link': {
+      const diagramId = args.diagram_id as string;
+      const nodeId = args.node_id as string;
+      const diagram = workspaceDiagrams.find(d => d.id === diagramId);
+      if (!diagram) return JSON.stringify({ error: `Diagram not found: ${diagramId}` });
+      ctx.onRemoveCodeLink(diagramId, nodeId);
+      return JSON.stringify({ success: true, diagramId, nodeId });
     }
 
     case 'create_diagram': {

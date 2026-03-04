@@ -238,6 +238,30 @@ export default function App() {
         onUpdateDiagram: (id, code) => {
           setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
         },
+        onAddNodeLink: (diagramId, nodeId, targetDiagramId, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.nodeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, nodeLinks: [...links, { nodeId, targetDiagramId, label }] };
+          }));
+        },
+        onRemoveNodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, nodeLinks: (d.nodeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
+        },
+        onAddCodeLink: (diagramId, nodeId, repoId, filePath, lineStart, lineEnd, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.codeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, codeLinks: [...links, { nodeId, repoId, filePath, lineStart, lineEnd, label }] };
+          }));
+        },
+        onRemoveCodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, codeLinks: (d.codeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
+        },
       };
 
       const { AGENT_TOOLS, executeTool } = await import('./services/agentToolService');
@@ -336,6 +360,30 @@ export default function App() {
         },
         onUpdateDiagram: (id, code) => {
           setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
+        onAddNodeLink: (diagramId, nodeId, targetDiagramId, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.nodeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, nodeLinks: [...links, { nodeId, targetDiagramId, label }] };
+          }));
+        },
+        onRemoveNodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, nodeLinks: (d.nodeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
+        },
+        onAddCodeLink: (diagramId, nodeId, repoId, filePath, lineStart, lineEnd, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.codeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, codeLinks: [...links, { nodeId, repoId, filePath, lineStart, lineEnd, label }] };
+          }));
+        },
+        onRemoveCodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, codeLinks: (d.codeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
         },
       };
 
