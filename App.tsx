@@ -532,6 +532,13 @@ export default function App() {
   }, [folders, diagrams, doExportFlows]);
 
   const handleCreateGraph = useCallback(async (repoId: string) => {
+    const existing = codeGraph.codeGraphs.find(g => g.repoId === repoId);
+    if (existing) {
+      codeGraph.selectGraph(existing.id);
+      showToast('A Code Graph already exists for this repo. Use Re-parse to regenerate it.', 'info');
+      return;
+    }
+
     const repo = workspaceRepos.find(r => r.id === repoId);
     graphCreationCancelledRef.current = false;
     setIsCreatingGraph(true);
@@ -568,7 +575,7 @@ export default function App() {
       progressLog.endLog();
       setIsCreatingGraph(false);
     }
-  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
+  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
