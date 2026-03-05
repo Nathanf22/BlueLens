@@ -532,6 +532,13 @@ export default function App() {
   }, [folders, diagrams, doExportFlows]);
 
   const handleCreateGraph = useCallback(async (repoId: string) => {
+    const existing = codeGraph.codeGraphs.find(g => g.repoId === repoId);
+    if (existing) {
+      codeGraph.selectGraph(existing.id);
+      showToast('A Code Graph already exists for this repo. Use Re-parse to regenerate it.', 'info');
+      return;
+    }
+
     const repo = workspaceRepos.find(r => r.id === repoId);
     graphCreationCancelledRef.current = false;
     setIsCreatingGraph(true);
@@ -568,12 +575,19 @@ export default function App() {
       progressLog.endLog();
       setIsCreatingGraph(false);
     }
-  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
+  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
     codeGraph.cancelCreateGraph();
   }, [codeGraph.cancelCreateGraph]);
+
+  const handleReparseGraph = useCallback(async () => {
+    if (!codeGraph.activeGraph) return;
+    const repoId = codeGraph.activeGraph.repoId;
+    codeGraph.deleteGraph(codeGraph.activeGraph.id);
+    await handleCreateGraph(repoId);
+  }, [codeGraph.activeGraph, codeGraph.deleteGraph, handleCreateGraph]);
 
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
@@ -970,6 +984,8 @@ export default function App() {
           onCodeGraphOpenFlowInEditor={handleOpenFlowInEditor}
           codeGraphIsGeneratingFlows={codeGraph.isGeneratingFlows}
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
+          codeGraphIsReparsing={isCreatingGraph}
+          onCodeGraphReparse={handleReparseGraph}
           progressLogEntries={progressLog.entries}
           isProgressLogActive={progressLog.isActive}
           isProgressLogExpanded={progressLog.isExpanded}

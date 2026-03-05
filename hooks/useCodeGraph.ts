@@ -183,6 +183,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       const nodeCount = Object.keys(graph.nodes).length;
       onLogEntry?.('info', `Graph creation complete (${nodeCount} nodes)`);
 
+      graph = { ...graph, parsedAt: Date.now() };
       setCodeGraphs(prev => [...prev, graph]);
       codeGraphStorageService.saveCodeGraph(graph);
       setActiveGraphId(graph.id);
@@ -282,6 +283,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
       onLogEntry?.('info', `Graph creation complete (${Object.keys(graph.nodes).length} nodes)`);
 
+      graph = { ...graph, parsedAt: Date.now() };
       setCodeGraphs(prev => [...prev, graph]);
       codeGraphStorageService.saveCodeGraph(graph);
       setActiveGraphId(graph.id);
@@ -388,6 +390,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
       onLogEntry?.('info', `Demo graph ready (${Object.keys(graph.nodes).length} nodes)`);
 
+      graph = { ...graph, parsedAt: Date.now() };
       setCodeGraphs(prev => [...prev, graph]);
       codeGraphStorageService.saveCodeGraph(graph);
       setActiveGraphId(graph.id);
