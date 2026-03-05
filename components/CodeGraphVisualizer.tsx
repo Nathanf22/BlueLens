@@ -20,15 +20,15 @@ const DOMAIN_H = 60;
 
 // --- Icon mapping by kind ---
 const KIND_ICON: Record<string, React.ComponentType<{ size?: number }>> = {
-  system:    Server,
-  package:   Network,
-  module:    Layers,
-  class:     FileText,
-  function:  Terminal,
+  system: Server,
+  package: Network,
+  module: Layers,
+  class: FileText,
+  function: Terminal,
   interface: ShieldCheck,
-  variable:  Box,
-  method:    Code2,
-  field:     Box,
+  variable: Box,
+  method: Code2,
+  field: Box,
 };
 
 interface D3Node {
@@ -38,6 +38,7 @@ interface D3Node {
   kind: GraphNodeKind | 'domain';
   depth: number;
   isDomain: boolean;
+  tags?: string[];
   // D3 simulation mutates these:
   x?: number;
   y?: number;
@@ -122,7 +123,7 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
     } catch { /* getBBox can fail on empty graphs */ }
   }, [dimensions]);
 
-  const handleZoomIn  = () => svgSelectionRef.current?.transition().duration(300).call(zoomBehaviorRef.current!.scaleBy, 1.2);
+  const handleZoomIn = () => svgSelectionRef.current?.transition().duration(300).call(zoomBehaviorRef.current!.scaleBy, 1.2);
   const handleZoomOut = () => svgSelectionRef.current?.transition().duration(300).call(zoomBehaviorRef.current!.scaleBy, 0.8);
 
   // Main D3 effect — runs when data or dimensions change
@@ -189,8 +190,8 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
         .attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto')
         .append('path').attr('fill', color).attr('d', 'M0,-5L10,0L0,5');
     };
-    mkMarker('arrow-std',    '#4b5563', 34);
-    mkMarker('arrow-flow',   '#3b82f6', 34);
+    mkMarker('arrow-std', '#4b5563', 34);
+    mkMarker('arrow-flow', '#3b82f6', 34);
     mkMarker('arrow-domain', '#a855f7', 34);
 
     // Container group
@@ -204,7 +205,7 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
       .join('line')
       .attr('class', 'link')
       .attr('stroke', d => {
-        if (lens.type === 'flow')   return '#3b82f6';
+        if (lens.type === 'flow') return '#3b82f6';
         if (lens.type === 'domain') return '#a855f7';
         return '#4b5563';
       })
@@ -212,7 +213,7 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
       .attr('stroke-dasharray', d => d.isDashed ? '4,4' : lens.type === 'flow' ? '4,4' : '0')
       .attr('opacity', 0.6)
       .attr('marker-end', () => {
-        if (lens.type === 'flow')   return 'url(#arrow-flow)';
+        if (lens.type === 'flow') return 'url(#arrow-flow)';
         if (lens.type === 'domain') return 'url(#arrow-domain)';
         return 'url(#arrow-std)';
       });
@@ -233,7 +234,7 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
             d.fx = d.x; d.fy = d.y;
           })
           .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
-          .on('end',  (event, d) => {
+          .on('end', (event, d) => {
             if (!event.active) simulation.alphaTarget(0);
             d.fx = null; d.fy = null;
           }) as any
@@ -252,7 +253,7 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
     });
 
     // Draw shapes
-    node.each(function(d) {
+    node.each(function (d) {
       const el = d3.select(this);
       el.selectAll('*').remove();
 
@@ -263,14 +264,24 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
       const y = -h / 2;
       const r = d.isDomain ? 30 : 8;
 
-      // Main rect with gradient + shadow
       el.append('rect')
         .attr('width', w).attr('height', h)
         .attr('x', x).attr('y', y)
         .attr('rx', r).attr('ry', r)
-        .attr('fill', d.isDomain ? 'url(#domain-grad)' : 'url(#tech-grad)')
-        .attr('stroke', isSel ? (d.isDomain ? '#e879f9' : '#38bdf8') : (d.isDomain ? '#7e22ce' : '#374151'))
-        .attr('stroke-width', isSel ? 2 : 1)
+        .attr('fill', () => {
+          if (d.tags?.includes('diff:removed')) return '#5a1a1a'; // Dark red
+          if (d.tags?.includes('diff:added')) return '#1a4a2a'; // Dark green
+          //if (d.tags?.includes('diff:modified')) return '#3d2510'; // Dark amber/orange tint
+          return d.isDomain ? 'url(#domain-grad)' : 'url(#tech-grad)';
+        })
+        .attr('stroke', () => {
+          if (d.tags?.includes('diff:removed')) return '#dc2626'; // Red-600
+          if (d.tags?.includes('diff:added')) return '#16a34a'; // Green-600
+          if (d.tags?.includes('diff:modified')) return '#f59e0b'; // Amber-500
+          return isSel ? (d.isDomain ? '#e879f9' : '#38bdf8') : (d.isDomain ? '#7e22ce' : '#374151');
+        })
+        .attr('stroke-width', isSel || d.tags?.includes('diff:modified') ? 2 : 1)
+        .attr('stroke-dasharray', d.tags?.includes('diff:removed') ? '5,5' : 'none')
         .attr('filter', 'url(#shadow-sm)');
 
       // Top highlight — glassy sheen
@@ -337,21 +348,23 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
       simulation.stop();
       clearTimeout(fitTimer);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphData, dimensions]);
 
-  // Selection highlight effect — updates stroke only, no simulation restart
   useEffect(() => {
     if (!svgRef.current) return;
     d3.select(svgRef.current)
       .selectAll<SVGGElement, D3Node>('.node')
       .select('rect')
-      .attr('stroke', d =>
-        d.isDomain
+      .attr('stroke', d => {
+        if (d.tags?.includes('diff:removed')) return '#dc2626';
+        if (d.tags?.includes('diff:added')) return '#16a34a';
+        if (d.tags?.includes('diff:modified')) return '#f59e0b';
+        return d.isDomain
           ? (d.id === selectedNodeId ? '#e879f9' : '#7e22ce')
-          : (d.id === selectedNodeId ? '#38bdf8' : '#374151')
-      )
-      .attr('stroke-width', d => d.id === selectedNodeId ? 2 : 1);
+          : (d.id === selectedNodeId ? '#38bdf8' : '#374151');
+      })
+      .attr('stroke-width', d => d.id === selectedNodeId || d.tags?.includes('diff:modified') ? 2 : 1);
   }, [selectedNodeId]);
 
   // --- Sequence diagram for active flow ---
@@ -420,8 +433,8 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
       {/* Zoom controls */}
       <div className="absolute top-4 right-4 flex flex-col gap-0 opacity-70 group-hover:opacity-100 transition-opacity">
         <div className="bg-dark-800 rounded border border-gray-700 shadow-lg flex flex-col">
-          <button onClick={handleZoomIn}  className="p-2 hover:bg-gray-700 rounded-t text-gray-300 transition-colors" title="Zoom in"><ZoomIn  size={16} /></button>
-          <button onClick={handleZoomOut} className="p-2 hover:bg-gray-700 text-gray-300 transition-colors"          title="Zoom out"><ZoomOut size={16} /></button>
+          <button onClick={handleZoomIn} className="p-2 hover:bg-gray-700 rounded-t text-gray-300 transition-colors" title="Zoom in"><ZoomIn size={16} /></button>
+          <button onClick={handleZoomOut} className="p-2 hover:bg-gray-700 text-gray-300 transition-colors" title="Zoom out"><ZoomOut size={16} /></button>
           <div className="h-px bg-gray-700" />
           <button onClick={handleFitView} className="p-2 hover:bg-gray-700 rounded-b text-gray-300 transition-colors" title="Fit view"><Eye size={16} /></button>
         </div>
@@ -444,7 +457,7 @@ function buildStandardData(
 
   const nodes: D3Node[] = visibleNodes.map(n => ({
     id: n.id, name: n.name, description: n.description,
-    kind: n.kind, depth: n.depth, isDomain: false,
+    kind: n.kind, depth: n.depth, isDomain: false, tags: n.tags,
   }));
 
   const links: D3Link[] = nonContain.map(r => ({

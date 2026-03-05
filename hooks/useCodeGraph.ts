@@ -16,8 +16,10 @@ import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGroup
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
 import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
+import { GitFileSystemProvider } from '../services/GitFileSystemProvider';
 import { LocalFileSystemProvider } from '../services/LocalFileSystemProvider';
 import { LLMConfigError, LLMRateLimitError } from '../services/llmService';
+import { compareAnalysis } from '../services/ArchitectureDiff';
 
 /** Throws LLMConfigError if no API key is configured for the active provider. */
 function requireLLMKey(llmSettings: LLMSettings | undefined): void {
@@ -299,6 +301,91 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     } finally {
       setGraphCreationProgress(null);
       setIsGeneratingFlows(false);
+    }
+  }, [activeWorkspaceId]);
+
+  const createComparisonGraph = useCallback(async (
+    repoId: string,
+    commitSha: string,
+    llmSettings?: LLMSettings,
+    onLogEntry?: LogEntryFn,
+  ) => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const { signal } = controller;
+
+    const handle = fileSystemService.getHandle(repoId);
+    if (!handle) return null;
+
+    try {
+      setGraphCreationProgress({ step: 'Analyzing HEAD', current: 0, total: 3 });
+      onLogEntry?.('scan', 'Scanning current codebase (HEAD)...');
+      let headAnalysis = await codebaseAnalyzerService.analyzeCodebase(new LocalFileSystemProvider(handle));
+
+      setGraphCreationProgress({ step: `Analyzing commit ${commitSha.substring(0, 7)}`, current: 1, total: 3 });
+      onLogEntry?.('scan', `Scanning commit ${commitSha.substring(0, 7)}...`);
+      const gitProvider = new GitFileSystemProvider(handle, commitSha);
+      const commitAnalysis = await codebaseAnalyzerService.analyzeCodebase(gitProvider);
+
+      setGraphCreationProgress({ step: 'Comparing versions', current: 2, total: 3 });
+      onLogEntry?.('info', 'Comparing codebase versions...');
+      const diffResult = compareAnalysis(headAnalysis, commitAnalysis);
+
+      // We use AI grouping on HEAD if enabled, but for a fast and safe diff,
+      // it's often better to stick with heuristics unless the graph is mostly structural.
+      // We will apply the same pipeline as createGraph:
+      requireLLMKey(llmSettings);
+      onLogEntry?.('info', 'Starting AI analysis pipeline on HEAD');
+      try {
+        headAnalysis = await analyzeCodebaseWithAI(
+          headAnalysis,
+          llmSettings!,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          onLogEntry,
+          signal,
+        );
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        onLogEntry?.('info', `AI analysis failed (${err.message}), using heuristic grouping`);
+        headAnalysis = groupByFunctionalHeuristics(headAnalysis);
+      }
+
+      setGraphCreationProgress({ step: 'Building comparison graph', current: 0, total: 1 });
+
+      let graph = await codeToGraphParserService.parseCodebaseToGraph(
+        headAnalysis,
+        repoId,
+        handle.name,
+        activeWorkspaceId,
+        handle,
+        undefined,
+        (message, current, total) => setGraphCreationProgress({ step: message, current, total }),
+        onLogEntry,
+        diffResult, // Inject the diff result
+      );
+
+      // Comparison graphs will have a special name
+      graph.name = `Comparison: HEAD vs ${commitSha.substring(0, 7)}`;
+      // Skip flow generation for diff graphs to keep it fast and clean
+
+      const nodeCount = Object.keys(graph.nodes).length;
+      onLogEntry?.('info', `Comparison graph creation complete (${nodeCount} nodes)`);
+
+      setCodeGraphs(prev => [...prev, graph]);
+      codeGraphStorageService.saveCodeGraph(graph);
+      setActiveGraphId(graph.id);
+      setGraphCreationProgress(null);
+      return graph;
+
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        onLogEntry?.('info', 'Graph comparison cancelled');
+      } else {
+        throw err;
+      }
+      return null;
+    } finally {
+      setGraphCreationProgress(null);
     }
   }, [activeWorkspaceId]);
 
@@ -610,6 +697,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
     createGraph,
     createGithubGraph,
+    createComparisonGraph,
     cancelCreateGraph,
     deleteGraph,
     loadDemoGraph,

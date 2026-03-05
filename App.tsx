@@ -525,6 +525,31 @@ export default function App() {
     }
   }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
 
+  const handleStartComparison = useCallback(async (repoId: string, commitSha: string) => {
+    graphCreationCancelledRef.current = false;
+    setIsCreatingGraph(true);
+    progressLog.startLog();
+    try {
+      const result = await codeGraph.createComparisonGraph(repoId, commitSha, llmSettings, progressLog.addEntry);
+      if (result) triggerFlowExport(result);
+      else if (graphCreationCancelledRef.current) showToast('Comparison cancelled', 'info');
+      return result;
+    } catch (err: any) {
+      if (err instanceof LLMRateLimitError) {
+        showToast(err.message, 'error');
+      } else if (err instanceof LLMConfigError) {
+        showToast('An AI API key is required to compare Code Graphs. Configure one in AI Settings.', 'error');
+        setIsAISettingsOpen(true);
+      } else {
+        showToast(`Comparison failed: ${err?.message ?? 'Unknown error'}`, 'error');
+      }
+      return null;
+    } finally {
+      progressLog.endLog();
+      setIsCreatingGraph(false);
+    }
+  }, [codeGraph.createComparisonGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen]);
+
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
     codeGraph.cancelCreateGraph();
@@ -1006,7 +1031,7 @@ export default function App() {
         isCodebaseImportOpen={!!codebaseImportProgress}
         onCloseCodebaseImport={resetCodebaseImport}
         onStartCodebaseImport={startCodebaseImport}
-        onStartComparison={startComparison}
+        onStartComparison={handleStartComparison}
         codebaseImportProgress={codebaseImportProgress}
         isCodebaseImporting={isCodebaseImporting}
         onResetCodebaseImport={resetCodebaseImport}

@@ -30,7 +30,22 @@ export function compareAnalysis(newAnalysis: CodebaseAnalysis, oldAnalysis: Code
         } else {
             // Module exists in both, check files
             const oldMod = oldModulesMap.get(path)!;
+
+            // Track the size of result arrays before comparing files
+            const addedCount = result.added.length;
+            const removedCount = result.removed.length;
+            const modifiedCount = result.modified.length;
+
             compareFiles(newMod.files, oldMod.files, result);
+
+            // If any file in this module changed, consider the module itself modified
+            if (
+                result.added.length > addedCount ||
+                result.removed.length > removedCount ||
+                result.modified.length > modifiedCount
+            ) {
+                result.modified.push(path);
+            }
         }
     }
 

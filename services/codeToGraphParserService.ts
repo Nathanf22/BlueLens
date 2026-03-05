@@ -17,6 +17,7 @@ import type { LogEntryFn } from './codeGraphAgentService';
 import { codeGraphModelService } from './codeGraphModelService';
 import { codeParserService } from './codeParserService';
 import { fileSystemService } from './fileSystemService';
+import { DiffResult } from './ArchitectureDiff';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -86,6 +87,7 @@ export async function parseCodebaseToGraph(
   config?: CodeGraphConfig,
   onProgress?: (message: string, current: number, total: number) => void,
   onLogEntry?: LogEntryFn,
+  diffResult?: DiffResult,
 ): Promise<CodeGraph> {
   let graph = codeGraphModelService.createEmptyGraph(workspaceId, repoId, repoName);
   const rootId = graph.rootNodeId;
@@ -103,6 +105,12 @@ export async function parseCodebaseToGraph(
     const nodeId = generateId();
     moduleIdMap.set(mod.name, nodeId);
 
+    const tags = [];
+    if (diffResult) {
+      if (diffResult.added.includes(mod.path)) tags.push('diff:added');
+      else if (diffResult.modified.includes(mod.path)) tags.push('diff:modified');
+    }
+
     const node: GraphNode = {
       id: nodeId,
       name: mod.name,
@@ -112,7 +120,7 @@ export async function parseCodebaseToGraph(
       parentId: rootId,
       children: [],
       sourceRef: null,
-      tags: [],
+      tags,
       lensConfig: {},
       domainProjections: [],
     };
@@ -157,6 +165,12 @@ export async function parseCodebaseToGraph(
         contentHash, // empty string when no handle; sync service ignores empty-hash entries
       };
 
+      const tags = [file.language];
+      if (diffResult) {
+        if (diffResult.added.includes(file.filePath)) tags.push('diff:added');
+        else if (diffResult.modified.includes(file.filePath)) tags.push('diff:modified');
+      }
+
       const node: GraphNode = {
         id: fileNodeId,
         name: file.filePath.split('/').pop() || file.filePath,
@@ -165,7 +179,7 @@ export async function parseCodebaseToGraph(
         parentId: moduleNodeId,
         children: [],
         sourceRef,
-        tags: [file.language],
+        tags,
         lensConfig: {},
         domainProjections: [],
       };
@@ -200,15 +214,21 @@ export async function parseCodebaseToGraph(
           contentHash: '', // Symbol-level hash computed only during sync
         };
 
+        const symTags = [sym.kind];
+        const fileDiffTag = tags.find(t => t.startsWith('diff:'));
+        if (fileDiffTag) {
+          symTags.push(fileDiffTag);
+        }
+
         const symNode: GraphNode = {
           id: symNodeId,
           name: sym.name,
-          kind: symbolKindToNodeKind(sym.kind),
+          kind: symbolKindToNodeKind(sym.kind as any),
           depth: 3,
           parentId: fileNodeId,
           children: [],
           sourceRef: symSourceRef,
-          tags: [sym.kind],
+          tags: symTags,
           lensConfig: {},
           domainProjections: [],
         };
@@ -320,6 +340,75 @@ export async function parseCodebaseToGraph(
         const depResult = codeGraphModelService.addRelation(graph, sourceModId, targetModId, 'depends_on');
         graph = depResult.graph;
       }
+    }
+  }
+
+  // Handle phantom removed nodes
+  if (diffResult) {
+    onLogEntry?.('parse', `Adding ${diffResult.removed.length} removed items`);
+    for (const removedPath of diffResult.removed) {
+      // Very simple heuristic: if it looks like a module path (shallow)
+      const isModuleLevel = !removedPath.includes('/') || removedPath.split('/').length <= 2;
+      const nodeId = generateId();
+      const name = (removedPath.split('/').pop() || removedPath) + ' (REMOVED)';
+
+      if (isModuleLevel) {
+        const node: GraphNode = {
+          id: nodeId, name, kind: 'package', depth: 1, parentId: rootId,
+          children: [], sourceRef: null, tags: ['diff:removed'], lensConfig: {}, domainProjections: [],
+        };
+        const result = codeGraphModelService.addNode(graph, node);
+        graph = result.graph;
+        const containResult = codeGraphModelService.addRelation(graph, rootId, nodeId, 'contains');
+        graph = containResult.graph;
+      } else {
+        // Try to place in the parent module if the module still exists
+        // E.g., if removedPath is "src/components/Button.tsx", try to find a module that contains "src/components"
+        // This is a rough estimation since we don't have the old architecture. We place it in root if we can't find a parent.
+        let parentId = rootId;
+        for (const mod of analysis.modules) {
+          if (removedPath.startsWith(mod.path + '/')) {
+            parentId = moduleIdMap.get(mod.name) || rootId;
+            break;
+          }
+        }
+
+        const node: GraphNode = {
+          id: nodeId, name, kind: 'module', depth: 2, parentId,
+          children: [], sourceRef: null, tags: ['diff:removed'], lensConfig: {}, domainProjections: [],
+        };
+        const result = codeGraphModelService.addNode(graph, node);
+        graph = result.graph;
+        const containResult = codeGraphModelService.addRelation(graph, parentId, nodeId, 'contains');
+        graph = containResult.graph;
+      }
+    }
+  }
+
+  // Post-processing: Bubble up diff tags so parent modules get colored even if AI grouping changed their paths
+  if (diffResult) {
+    const propagateDiffTags = (nodeId: string): boolean => {
+      const node = graph.nodes[nodeId];
+      if (!node) return false;
+
+      let hasDiffDescendant = false;
+      for (const childId of node.children) {
+        if (propagateDiffTags(childId)) {
+          hasDiffDescendant = true;
+        }
+      }
+
+      const hasDirectDiff = node.tags.some(t => t.startsWith('diff:'));
+      if (hasDiffDescendant && !hasDirectDiff) {
+        node.tags.push('diff:modified');
+      }
+
+      return hasDirectDiff || hasDiffDescendant;
+    };
+
+    // Start propagation from root's children, since root typically doesn't need a tag
+    for (const childId of graph.nodes[rootId].children) {
+      propagateDiffTags(childId);
     }
   }
 
