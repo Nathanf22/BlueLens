@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { ConfirmModal } from './ConfirmModal';
 import {
   ChevronRight, Layers, Box, File, Code,
   GitBranch, RefreshCw, AlertTriangle, Trash2, Home,
@@ -122,6 +123,7 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
   const [showAnomalies, setShowAnomalies] = useState(false);
   const [anomalies, setAnomalies] = useState<CodeGraphAnomaly[]>([]);
   const [customPromptText, setCustomPromptText] = useState('');
+  const [showReparseConfirm, setShowReparseConfirm] = useState(false);
 
   const parsedAge = (graph.parsedAt || graph.createdAt)
     ? formatParsedAge(graph.parsedAt || graph.createdAt)
@@ -230,7 +232,7 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
 
         {onReparseGraph && (
           <button
-            onClick={onReparseGraph}
+            onClick={() => setShowReparseConfirm(true)}
             disabled={isReparsing}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-dark-700 text-gray-400 hover:text-brand-400 transition-colors disabled:opacity-50"
             title="Re-parse codebase from scratch"
@@ -517,6 +519,16 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
             ))
           )}
         </div>
+      )}
+
+      {showReparseConfirm && onReparseGraph && (
+        <ConfirmModal
+          message={`Re-parse will delete the current Code Graph for "${graph.name}" and rebuild it from scratch.\n\nAll nodes, relations, flows, and AI analysis will be regenerated. Diagrams created from this graph will keep their Mermaid code but lose their link to the graph.`}
+          confirmLabel="Re-parse"
+          danger={true}
+          onConfirm={() => { setShowReparseConfirm(false); onReparseGraph(); }}
+          onCancel={() => setShowReparseConfirm(false)}
+        />
       )}
     </div>
   );
