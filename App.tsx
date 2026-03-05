@@ -575,6 +575,13 @@ export default function App() {
     codeGraph.cancelCreateGraph();
   }, [codeGraph.cancelCreateGraph]);
 
+  const handleReparseGraph = useCallback(async () => {
+    if (!codeGraph.activeGraph) return;
+    const repoId = codeGraph.activeGraph.repoId;
+    codeGraph.deleteGraph(codeGraph.activeGraph.id);
+    await handleCreateGraph(repoId);
+  }, [codeGraph.activeGraph, codeGraph.deleteGraph, handleCreateGraph]);
+
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
       try {
@@ -970,6 +977,8 @@ export default function App() {
           onCodeGraphOpenFlowInEditor={handleOpenFlowInEditor}
           codeGraphIsGeneratingFlows={codeGraph.isGeneratingFlows}
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
+          codeGraphIsReparsing={isCreatingGraph}
+          onCodeGraphReparse={handleReparseGraph}
           progressLogEntries={progressLog.entries}
           isProgressLogActive={progressLog.isActive}
           isProgressLogExpanded={progressLog.isExpanded}

@@ -84,6 +84,9 @@ interface WorkspaceViewProps {
   // CodeGraph flow generation
   codeGraphIsGeneratingFlows?: boolean;
   onCodeGraphRegenerateFlows?: (options?: { scopeNodeId?: string; customPrompt?: string }) => void;
+  // CodeGraph re-parse
+  codeGraphIsReparsing?: boolean;
+  onCodeGraphReparse?: () => void;
   // Progress Log
   progressLogEntries?: ProgressLogEntry[];
   isProgressLogActive?: boolean;
@@ -164,6 +167,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onCodeGraphOpenFlowInEditor,
   codeGraphIsGeneratingFlows = false,
   onCodeGraphRegenerateFlows,
+  codeGraphIsReparsing = false,
+  onCodeGraphReparse,
   progressLogEntries = [],
   isProgressLogActive = false,
   isProgressLogExpanded = false,
@@ -238,6 +243,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onDeselectFlow={onCodeGraphDeselectFlow || (() => {})}
                 isGeneratingFlows={codeGraphIsGeneratingFlows}
                 onRegenerateFlows={onCodeGraphRegenerateFlows}
+                isReparsing={codeGraphIsReparsing}
+                onReparseGraph={onCodeGraphReparse}
               />
             </div>
           ) : (
