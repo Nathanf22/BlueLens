@@ -440,42 +440,4 @@ export const gitService = {
         });
     },
 
-    /**
-     * DEBUG: Extract all code files from a specific commit into a `_debug_dump_<sha>` folder
-     * at the root of the repository. Useful to verify file contents and structure.
-     */
-    async debugDumpCommit(
-        handle: FileSystemDirectoryHandle,
-        commitSha: string
-    ): Promise<string> {
-        const files = await this.listFilesAtCommit(handle, commitSha);
-        console.log(`[GitService] Dumping ${files.length} files for commit ${commitSha}...`);
-
-        const folderName = `_debug_dump_${commitSha.slice(0, 7)}`;
-        const rootDumpHandle = await handle.getDirectoryHandle(folderName, { create: true });
-
-        for (const filePath of files) {
-            const content = await this.readFileAtCommit(handle, commitSha, filePath);
-            
-            // Create subdirectories
-            const parts = filePath.split('/');
-            const fileName = parts.pop();
-            if (!fileName) continue;
-
-            let currentDir = rootDumpHandle;
-            for (const part of parts) {
-                if (part === '.' || part === '') continue;
-                currentDir = await currentDir.getDirectoryHandle(part, { create: true });
-            }
-
-            // Write file
-            const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
-            // @ts-ignore - createWritable exists in Chromium-based browsers
-            const writable = await (fileHandle as any).createWritable();
-            await writable.write(content);
-            await writable.close();
-        }
-
-        return `Dumped ${files.length} files to /${folderName}`;
-    },
 };
