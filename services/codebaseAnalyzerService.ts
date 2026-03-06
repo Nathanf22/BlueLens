@@ -1,18 +1,15 @@
 /**
- * Analyzes a codebase via File System Access API to build a structured
+ * Analyzes a codebase via an IFileSystemProvider to build a structured
  * CodebaseAnalysis suitable for diagram generation.
+ *
+ * The provider abstraction allows the same analysis pipeline to run against:
+ *  - the current working tree (LocalFileSystemProvider)
+ *  - any historical Git commit  (GitFileSystemProvider)
  */
 
 import { AnalyzedFile, CodebaseModule, CodebaseAnalysis, ScanConfig, ScannedEntity } from '../types';
-import { fileSystemService, FileEntry } from './fileSystemService';
+import { IFileSystemProvider, FileProviderEntry, getLanguage, CODE_EXTENSIONS } from './IFileSystemProvider';
 import { codeParserService } from './codeParserService';
-
-const CODE_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.py',
-  '.rs', '.go', '.java', '.kt', '.rb',
-  '.php', '.cs', '.cpp', '.cc', '.c', '.h', '.hpp',
-  '.swift', '.dart',
-]);
 
 const ENTRY_POINT_NAMES = new Set([
   'index.ts', 'index.tsx', 'index.js', 'index.jsx',
@@ -55,18 +52,18 @@ function isCodeFile(name: string): boolean {
   return CODE_EXTENSIONS.has(ext.toLowerCase());
 }
 
-/** Recursively list all code files in the repo */
+/** Recursively list all code files via the provider */
 async function listAllFiles(
-  handle: FileSystemDirectoryHandle,
+  provider: IFileSystemProvider,
   basePath: string = '',
   config?: ScanConfig
 ): Promise<string[]> {
-  const entries = await fileSystemService.listDirectory(handle, basePath);
+  const entries: FileProviderEntry[] = await provider.listDirectory(basePath);
   const files: string[] = [];
 
   for (const entry of entries) {
     if (entry.kind === 'directory') {
-      const subFiles = await listAllFiles(handle, entry.path, config);
+      const subFiles = await listAllFiles(provider, entry.path, config);
       files.push(...subFiles);
     } else if (isCodeFile(entry.name)) {
       if (shouldIncludeFile(entry.path, config)) {
@@ -170,13 +167,21 @@ function groupIntoModules(files: AnalyzedFile[], allFilePaths: string[]): Codeba
 }
 
 export const codebaseAnalyzerService = {
+  /**
+   * Analyse un codebase complet via un IFileSystemProvider.
+   *
+   * @param provider   Accès aux fichiers — peut être local (LocalFileSystemProvider)
+   *                   ou historique (GitFileSystemProvider) sans modifier cette fonction.
+   * @param scanConfig Filtres include/exclude optionnels.
+   * @param onProgress Callback de progression (filesScanned, totalFiles).
+   */
   async analyzeCodebase(
-    handle: FileSystemDirectoryHandle,
+    provider: IFileSystemProvider,
     scanConfig?: ScanConfig,
     onProgress?: (filesScanned: number, totalFiles: number) => void
   ): Promise<CodebaseAnalysis> {
     // 1. List all code files
-    const allFilePaths = await listAllFiles(handle, '', scanConfig);
+    const allFilePaths = await listAllFiles(provider, '', scanConfig);
 
     // 2. Analyze each file
     const analyzedFiles: AnalyzedFile[] = [];
@@ -189,8 +194,9 @@ export const codebaseAnalyzerService = {
       onProgress?.(i + 1, allFilePaths.length);
 
       try {
-        const content = await fileSystemService.readFile(handle, filePath);
-        const language = fileSystemService.getLanguage(filePath);
+        const content = await provider.readFile(filePath);
+        // Use the shared utility — not a provider method (amélioration #1)
+        const language = getLanguage(filePath);
         const symbols = codeParserService.extractSymbols(content, language);
         const imports = codeParserService.extractImports(content, language);
         const exportedSymbols = codeParserService.extractExports(content, language);
@@ -221,9 +227,9 @@ export const codebaseAnalyzerService = {
         analyzedFiles.push({
           filePath,
           language,
-          symbols: scannedSymbols,
-          imports,
-          exportedSymbols,
+          symbols: scannedSymbols || [],
+          imports: imports || [],
+          exportedSymbols: exportedSymbols || [],
           size: content.length,
         });
 

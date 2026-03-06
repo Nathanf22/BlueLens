@@ -16,6 +16,7 @@ import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGroup
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
 import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
+import { LocalFileSystemProvider } from '../services/LocalFileSystemProvider';
 import { LLMConfigError, LLMRateLimitError } from '../services/llmService';
 
 /** Throws LLMConfigError if no API key is configured for the active provider. */
@@ -123,7 +124,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
       onLogEntry?.('scan', 'Scanning codebase...');
 
-      let analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
+      let analysis = await codebaseAnalyzerService.analyzeCodebase(new LocalFileSystemProvider(handle));
       onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
       // AI-powered grouping (required); throws LLMConfigError if no key configured
