@@ -42,7 +42,7 @@ interface SidebarProps {
   codeGraphs?: CodeGraph[];
   activeGraphId?: string | null;
   onSelectGraph?: (graphId: string | null) => void;
-  onCreateGraph?: (repoId: string) => Promise<CodeGraph | null>;
+  onCreateGraph?: (repoId: string, commitSha?: string) => Promise<CodeGraph | null>;
   onDeleteGraph?: (graphId: string) => void;
   onLoadDemoGraph?: () => void;
   isDemoLoading?: boolean;

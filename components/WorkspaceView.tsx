@@ -49,7 +49,7 @@ interface WorkspaceViewProps {
   onGenerateScaffold?: (language: string) => void;
   leftWidthPercent: number;
   isDragging: boolean;
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   onMouseDown: (e: React.MouseEvent) => void;
   // CodeGraph
   codeGraph?: CodeGraph | null;
