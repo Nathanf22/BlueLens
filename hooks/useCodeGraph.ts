@@ -16,6 +16,7 @@ import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGroup
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
 import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
+import { LocalFileSystemProvider } from '../services/LocalFileSystemProvider';
 import { LLMConfigError, LLMRateLimitError } from '../services/llmService';
 
 /** Throws LLMConfigError if no API key is configured for the active provider. */
@@ -111,6 +112,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     repoId: string,
     llmSettings?: LLMSettings,
     onLogEntry?: LogEntryFn,
+    commitSha?: string,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -121,9 +123,13 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
     try {
       setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
-      onLogEntry?.('scan', 'Scanning codebase...');
+      onLogEntry?.('scan', commitSha ? `Scanning codebase @ ${commitSha.slice(0, 7)}...` : 'Scanning codebase...');
 
-      let analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
+      const provider = commitSha
+        ? new (await import('../services/GitFileSystemProvider')).GitFileSystemProvider(handle, commitSha)
+        : new LocalFileSystemProvider(handle);
+
+      let analysis = await codebaseAnalyzerService.analyzeCodebase(provider);
       onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
       // AI-powered grouping (required); throws LLMConfigError if no key configured
@@ -145,10 +151,12 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
       setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
 
+      const graphName = commitSha ? `${handle.name} @ ${commitSha.slice(0, 7)}` : handle.name;
+
       let graph = await codeToGraphParserService.parseCodebaseToGraph(
         analysis,
         repoId,
-        handle.name,
+        graphName,
         activeWorkspaceId,
         handle,
         undefined,

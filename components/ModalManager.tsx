@@ -75,12 +75,12 @@ interface ModalManagerProps {
   // Codebase Import
   isCodebaseImportOpen: boolean;
   onCloseCodebaseImport: () => void;
-  onStartCodebaseImport: (repoId: string) => void;
+  onStartCodebaseImport: (repoId: string, commitSha?: string) => void;
   codebaseImportProgress: CodebaseImportProgress | null;
   isCodebaseImporting: boolean;
   onResetCodebaseImport: () => void;
   // Create Code Graph trigger from RepoManager
-  onCreateGraph?: (repoId: string) => Promise<any>;
+  onCreateGraph?: (repoId: string, commitSha?: string) => Promise<any>;
   // CodeGraph Config
   isCodeGraphConfigOpen: boolean;
   onCloseCodeGraphConfig: () => void;
@@ -199,6 +199,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
           onReopenRepo={onReopenRepo}
           onClose={onCloseRepoManager}
           onCreateGraph={onCreateGraph}
+          onStartCodebaseImport={onStartCodebaseImport}
         />
       )}
 

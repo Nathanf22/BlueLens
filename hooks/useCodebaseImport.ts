@@ -3,6 +3,8 @@ import { Diagram, RepoConfig, CodebaseImportProgress, NodeLink } from '../types'
 import { fileSystemService } from '../services/fileSystemService';
 import { codebaseAnalyzerService } from '../services/codebaseAnalyzerService';
 import { diagramGeneratorService } from '../services/diagramGeneratorService';
+import { LocalFileSystemProvider } from '../services/LocalFileSystemProvider';
+import { GitFileSystemProvider } from '../services/GitFileSystemProvider';
 
 interface UseCodebaseImportParams {
   diagrams: Diagram[];
@@ -24,7 +26,7 @@ export const useCodebaseImport = ({
   const [progress, setProgress] = useState<CodebaseImportProgress | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
-  const startImport = useCallback(async (repoId: string) => {
+  const startImport = useCallback(async (repoId: string, commitSha?: string) => {
     const repo = repos.find(r => r.id === repoId);
     if (!repo) return;
 
@@ -42,10 +44,15 @@ export const useCodebaseImport = ({
 
     try {
       // Step 1: Scanning
-      setProgress({ step: 'scanning', message: 'Scanning codebase files...', percent: 5 });
+      const scanLabel = commitSha ? `@ ${commitSha.substring(0, 7)}` : '';
+      setProgress({ step: 'scanning', message: `Scanning codebase files${scanLabel ? ` (${scanLabel})` : ''}...`, percent: 5 });
+
+      const provider = commitSha
+        ? new GitFileSystemProvider(handle, commitSha)
+        : new LocalFileSystemProvider(handle);
 
       const analysis = await codebaseAnalyzerService.analyzeCodebase(
-        handle,
+        provider,
         repo.scanConfig,
         (scanned, total) => {
           setProgress({
@@ -84,7 +91,10 @@ export const useCodebaseImport = ({
         percent: 65,
       });
 
-      const folderId = createFolderProgrammatic(`Generated: ${repo.name}`);
+      const folderName = commitSha
+        ? `Generated: ${repo.name} @ ${commitSha.substring(0, 7)}`
+        : `Generated: ${repo.name}`;
+      const folderId = createFolderProgrammatic(folderName);
 
       // Create Diagram objects
       const now = Date.now();

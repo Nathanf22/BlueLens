@@ -155,15 +155,19 @@ export default function App() {
   } = useScanHandlers(activeDiagram, updateActiveDiagram, llmSettings, workspaceRepos);
 
   // --- Codebase Import ---
-  const { progress: codebaseImportProgress, isImporting: isCodebaseImporting, startImport: startCodebaseImport, resetProgress: resetCodebaseImport } =
-    useCodebaseImport({
-      diagrams,
-      setDiagrams,
-      repos: workspaceRepos,
-      activeWorkspaceId,
-      createFolderProgrammatic,
-      setActiveId,
-    });
+  const {
+    progress: codebaseImportProgress,
+    isImporting: isCodebaseImporting,
+    startImport: startCodebaseImport,
+    resetProgress: resetCodebaseImport
+  } = useCodebaseImport({
+    diagrams,
+    setDiagrams,
+    repos: workspaceRepos,
+    activeWorkspaceId,
+    createFolderProgrammatic,
+    setActiveId,
+  });
 
   // --- Progress Log ---
   const progressLog = useProgressLog();
@@ -291,13 +295,13 @@ export default function App() {
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === pendingId
           ? {
-              ...m,
-              content: result.content,
-              diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
-              toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
-              interrupted: result.interrupted ?? false,
-              continuationContext: result.continuationContext,
-            }
+            ...m,
+            content: result.content,
+            diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
+            toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
+            interrupted: result.interrupted ?? false,
+            continuationContext: result.continuationContext,
+          }
           : m
       ));
     } catch (err: any) {
@@ -305,10 +309,10 @@ export default function App() {
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === pendingId
           ? {
-              ...m,
-              content: wasAborted ? '' : `Error: ${err.message || 'Failed to get response'}`,
-              stopped: wasAborted ? true : undefined,
-            }
+            ...m,
+            content: wasAborted ? '' : `Error: ${err.message || 'Failed to get response'}`,
+            stopped: wasAborted ? true : undefined,
+          }
           : m
       ));
     } finally {
@@ -412,13 +416,13 @@ export default function App() {
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === msgId
           ? {
-              ...m,
-              content: result.content,
-              diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
-              toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
-              interrupted: result.interrupted ?? false,
-              continuationContext: result.continuationContext,
-            }
+            ...m,
+            content: result.content,
+            diagramCodeSnapshot: aiChatService.extractMermaidFromResponse(result.content) || undefined,
+            toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
+            interrupted: result.interrupted ?? false,
+            continuationContext: result.continuationContext,
+          }
           : m
       ));
     } catch (err: any) {
@@ -426,11 +430,11 @@ export default function App() {
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === msg.id
           ? {
-              ...m,
-              content: wasAborted ? '' : `Error: ${err.message || 'Failed to continue'}`,
-              interrupted: false,
-              stopped: wasAborted ? true : undefined,
-            }
+            ...m,
+            content: wasAborted ? '' : `Error: ${err.message || 'Failed to continue'}`,
+            interrupted: false,
+            stopped: wasAborted ? true : undefined,
+          }
           : m
       ));
     } finally {
@@ -531,12 +535,14 @@ export default function App() {
     }
   }, [folders, diagrams, doExportFlows]);
 
-  const handleCreateGraph = useCallback(async (repoId: string) => {
-    const existing = codeGraph.codeGraphs.find(g => g.repoId === repoId);
-    if (existing) {
-      codeGraph.selectGraph(existing.id);
-      showToast('A Code Graph already exists for this repo. Use Re-parse to regenerate it.', 'info');
-      return;
+  const handleCreateGraph = useCallback(async (repoId: string, commitSha?: string) => {
+    if (!commitSha) {
+      const existing = codeGraph.codeGraphs.find(g => g.repoId === repoId);
+      if (existing) {
+        codeGraph.selectGraph(existing.id);
+        showToast('A Code Graph already exists for this repo. Use Re-parse to regenerate it.', 'info');
+        return;
+      }
     }
 
     const repo = workspaceRepos.find(r => r.id === repoId);
@@ -556,7 +562,7 @@ export default function App() {
           (resolvedBranch) => handleUpdateGithubBranch(repoId, resolvedBranch),
         );
       } else {
-        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry);
+        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha);
       }
       if (result) triggerFlowExport(result);
       else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
@@ -888,19 +894,19 @@ export default function App() {
             onDeleteGraph={codeGraph.deleteGraph}
             hasConfiguredAI={hasConfiguredProvider}
             onLoadDemoGraph={() => {
-                progressLog.startLog();
-                codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
-                  .then(graph => { if (graph) triggerFlowExport(graph); })
-                  .catch((err: any) => {
-                    if (err instanceof LLMRateLimitError) {
-                      showToast(err.message, 'error');
-                    } else if (err instanceof LLMConfigError) {
-                      showToast('An AI API key is required to load the demo graph. Configure one in AI Settings.', 'error');
-                      setIsAISettingsOpen(true);
-                    }
-                  })
-                  .finally(() => progressLog.endLog());
-              }}
+              progressLog.startLog();
+              codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
+                .then(graph => { if (graph) triggerFlowExport(graph); })
+                .catch((err: any) => {
+                  if (err instanceof LLMRateLimitError) {
+                    showToast(err.message, 'error');
+                  } else if (err instanceof LLMConfigError) {
+                    showToast('An AI API key is required to load the demo graph. Configure one in AI Settings.', 'error');
+                    setIsAISettingsOpen(true);
+                  }
+                })
+                .finally(() => progressLog.endLog());
+            }}
             isDemoLoading={codeGraph.isDemoLoading}
             demoError={codeGraph.demoError}
             isCreatingGraph={isCreatingGraph}
@@ -1064,8 +1070,8 @@ export default function App() {
         isAnalysisPanelOpen={isAnalysisPanelOpen}
         onCloseAnalysisPanel={() => setIsAnalysisPanelOpen(false)}
         diagramAnalysis={diagramAnalysis}
-        isCodebaseImportOpen={isCodebaseImportOpen}
-        onCloseCodebaseImport={() => setIsCodebaseImportOpen(false)}
+        isCodebaseImportOpen={!!codebaseImportProgress}
+        onCloseCodebaseImport={resetCodebaseImport}
         onStartCodebaseImport={startCodebaseImport}
         codebaseImportProgress={codebaseImportProgress}
         isCodebaseImporting={isCodebaseImporting}

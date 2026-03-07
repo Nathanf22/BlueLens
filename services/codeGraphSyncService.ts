@@ -8,6 +8,7 @@ import { fileSystemService } from './fileSystemService';
 import { codeParserService } from './codeParserService';
 import { codebaseAnalyzerService } from './codebaseAnalyzerService';
 import { codeToGraphParserService } from './codeToGraphParserService';
+import { LocalFileSystemProvider } from './LocalFileSystemProvider';
 
 interface ChangeReport {
   modified: SyncLockEntry[];
@@ -67,7 +68,7 @@ async function fullResync(
   repoName: string
 ): Promise<CodeGraph> {
   // Re-parse the entire codebase
-  const analysis = await codebaseAnalyzerService.analyzeCodebase(handle);
+  const analysis = await codebaseAnalyzerService.analyzeCodebase(new LocalFileSystemProvider(handle));
 
   // Build a fresh graph from the analysis
   const freshGraph = await codeToGraphParserService.parseCodebaseToGraph(
