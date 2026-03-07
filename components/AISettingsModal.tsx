@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Check, AlertCircle, Loader2, ChevronDown } from 'lucide-react';
+import { X, Check, AlertCircle, Loader2, ChevronDown, ShieldAlert } from 'lucide-react';
 import { Button } from './Button';
 import { LLMProvider, LLMProviderConfig, LLMSettings } from '../types';
 import { llmService } from '../services/llmService';
@@ -10,6 +10,7 @@ interface AISettingsModalProps {
   llmSettings: LLMSettings;
   onUpdateProvider: (provider: LLMProvider, config: LLMProviderConfig | null) => void;
   onSetActiveProvider: (provider: LLMProvider) => void;
+  storageInsecure?: boolean;
 }
 
 const PROVIDER_INFO: Record<LLMProvider, { label: string; description: string }> = {
@@ -65,6 +66,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   llmSettings,
   onUpdateProvider,
   onSetActiveProvider,
+  storageInsecure = false,
 }) => {
   const [testingProvider, setTestingProvider] = useState<LLMProvider | null>(null);
   const [testResults, setTestResults] = useState<Record<string, 'success' | 'error' | null>>({});
@@ -131,6 +133,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-6 overflow-y-auto">
+          {storageInsecure && (
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+              <ShieldAlert className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-yellow-300 leading-relaxed">
+                <span className="font-semibold">Encrypted storage unavailable.</span> Your browser does not support IndexedDB or Web Crypto API. API keys are stored in plaintext localStorage. Use a modern Chromium-based browser (Chrome, Edge, Brave) for encrypted key storage.
+              </p>
+            </div>
+          )}
           {PROVIDER_ORDER.map(provider => {
             const info = PROVIDER_INFO[provider];
             const config = llmSettings.providers[provider];

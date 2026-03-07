@@ -49,6 +49,7 @@ interface ModalManagerProps {
   onCloseAISettings: () => void;
   onUpdateProvider: (provider: LLMProvider, config: LLMProviderConfig | null) => void;
   onSetActiveProvider: (provider: LLMProvider) => void;
+  storageInsecure?: boolean;
   // Scan Results
   isScanResultsOpen: boolean;
   onCloseScanResults: () => void;
@@ -125,6 +126,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   onCloseAISettings,
   onUpdateProvider,
   onSetActiveProvider,
+  storageInsecure,
   isScanResultsOpen,
   onCloseScanResults,
   scanResult,
@@ -221,6 +223,7 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         llmSettings={llmSettings}
         onUpdateProvider={onUpdateProvider}
         onSetActiveProvider={onSetActiveProvider}
+        storageInsecure={storageInsecure}
       />
 
       {/* Scan Results Panel */}
