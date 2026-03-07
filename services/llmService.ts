@@ -228,14 +228,13 @@ async function runAgentLoopGemini(
     // Add model turn with all parts
     contents.push({ role: 'model', parts });
 
-    // Execute each tool call and collect function responses
-    const fnResponses: any[] = [];
-    for (const part of fnParts) {
+    // Execute tool calls in parallel when the LLM batches multiple in one turn
+    const fnResponses = await Promise.all(fnParts.map(async (part: any) => {
       const { name, args } = part.functionCall;
       const step = await executor(name, args ?? {});
       toolSteps.push(step);
-      fnResponses.push({ functionResponse: { name, response: { output: step.result } } });
-    }
+      return { functionResponse: { name, response: { output: step.result } } };
+    }));
     contents.push({ role: 'user', parts: fnResponses });
   }
 
@@ -289,12 +288,14 @@ async function runAgentLoopOpenAI(
       return { content: msg.content ?? '', toolSteps };
     }
 
-    for (const tc of msg.tool_calls) {
+    // Execute tool calls in parallel when the LLM batches multiple in one turn
+    const toolMessages = await Promise.all(msg.tool_calls.map(async (tc: any) => {
       const args = JSON.parse(tc.function.arguments || '{}');
       const step = await executor(tc.function.name, args);
       toolSteps.push(step);
-      conv.push({ role: 'tool', tool_call_id: tc.id, content: step.result });
-    }
+      return { role: 'tool' as const, tool_call_id: tc.id, content: step.result };
+    }));
+    toolMessages.forEach(m => conv.push(m));
   }
 
   return { content: '', toolSteps, interrupted: true, continuationContext: [...conv] };
@@ -363,14 +364,13 @@ async function runAgentLoopAnthropic(
       return { content: text, toolSteps };
     }
 
-    // Execute tool use blocks
-    const toolResults: any[] = [];
-    for (const block of content) {
-      if (block.type !== 'tool_use') continue;
+    // Execute tool use blocks in parallel when the LLM batches multiple in one turn
+    const toolUseBlocks = content.filter((b: any) => b.type === 'tool_use');
+    const toolResults = await Promise.all(toolUseBlocks.map(async (block: any) => {
       const step = await executor(block.name, block.input ?? {});
       toolSteps.push(step);
-      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: step.result });
-    }
+      return { type: 'tool_result', tool_use_id: block.id, content: step.result };
+    }));
     conv.push({ role: 'user', content: toolResults });
   }
 

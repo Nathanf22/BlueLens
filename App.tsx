@@ -229,11 +229,12 @@ export default function App() {
         codeGraphs: codeGraph.codeGraphs,
         repos: workspaceRepos,
         workspaceId: activeWorkspaceId,
-        onCreateDiagram: (name, code) => {
+        onCreateFolder: (name, parentId) => createFolderProgrammatic(name, parentId),
+        onCreateDiagram: (name, code, folderId, description) => {
           const id = Math.random().toString(36).substr(2, 9);
           const newDiagram: import('./types').Diagram = {
-            id, name, code, comments: [], lastModified: Date.now(),
-            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+            id, name, code, description, comments: [], lastModified: Date.now(),
+            folderId: folderId ?? null, workspaceId: activeWorkspaceId, nodeLinks: [],
           };
           setDiagrams(prev => [...prev, newDiagram]);
           setActiveId(newDiagram.id);
@@ -241,6 +242,30 @@ export default function App() {
         },
         onUpdateDiagram: (id, code) => {
           setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
+        onAddNodeLink: (diagramId, nodeId, targetDiagramId, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.nodeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, nodeLinks: [...links, { nodeId, targetDiagramId, label }] };
+          }));
+        },
+        onRemoveNodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, nodeLinks: (d.nodeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
+        },
+        onAddCodeLink: (diagramId, nodeId, repoId, filePath, lineStart, lineEnd, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.codeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, codeLinks: [...links, { nodeId, repoId, filePath, lineStart, lineEnd, label }] };
+          }));
+        },
+        onRemoveCodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, codeLinks: (d.codeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
         },
       };
 
@@ -328,11 +353,12 @@ export default function App() {
         codeGraphs: codeGraph.codeGraphs,
         repos: workspaceRepos,
         workspaceId: activeWorkspaceId,
-        onCreateDiagram: (name, code) => {
+        onCreateFolder: (name, parentId) => createFolderProgrammatic(name, parentId),
+        onCreateDiagram: (name, code, folderId, description) => {
           const id = Math.random().toString(36).substr(2, 9);
           const newDiagram: import('./types').Diagram = {
-            id, name, code, comments: [], lastModified: Date.now(),
-            folderId: null, workspaceId: activeWorkspaceId, nodeLinks: [],
+            id, name, code, description, comments: [], lastModified: Date.now(),
+            folderId: folderId ?? null, workspaceId: activeWorkspaceId, nodeLinks: [],
           };
           setDiagrams(prev => [...prev, newDiagram]);
           setActiveId(newDiagram.id);
@@ -340,6 +366,30 @@ export default function App() {
         },
         onUpdateDiagram: (id, code) => {
           setDiagrams(prev => prev.map(d => d.id === id ? { ...d, code, lastModified: Date.now() } : d));
+        },
+        onAddNodeLink: (diagramId, nodeId, targetDiagramId, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.nodeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, nodeLinks: [...links, { nodeId, targetDiagramId, label }] };
+          }));
+        },
+        onRemoveNodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, nodeLinks: (d.nodeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
+        },
+        onAddCodeLink: (diagramId, nodeId, repoId, filePath, lineStart, lineEnd, label) => {
+          setDiagrams(prev => prev.map(d => {
+            if (d.id !== diagramId) return d;
+            const links = (d.codeLinks || []).filter(l => l.nodeId !== nodeId);
+            return { ...d, codeLinks: [...links, { nodeId, repoId, filePath, lineStart, lineEnd, label }] };
+          }));
+        },
+        onRemoveCodeLink: (diagramId, nodeId) => {
+          setDiagrams(prev => prev.map(d =>
+            d.id !== diagramId ? d : { ...d, codeLinks: (d.codeLinks || []).filter(l => l.nodeId !== nodeId) }
+          ));
         },
       };
 
@@ -486,6 +536,15 @@ export default function App() {
   }, [folders, diagrams, doExportFlows]);
 
   const handleCreateGraph = useCallback(async (repoId: string, commitSha?: string) => {
+    if (!commitSha) {
+      const existing = codeGraph.codeGraphs.find(g => g.repoId === repoId);
+      if (existing) {
+        codeGraph.selectGraph(existing.id);
+        showToast('A Code Graph already exists for this repo. Use Re-parse to regenerate it.', 'info');
+        return;
+      }
+    }
+
     const repo = workspaceRepos.find(r => r.id === repoId);
     graphCreationCancelledRef.current = false;
     setIsCreatingGraph(true);
@@ -522,12 +581,19 @@ export default function App() {
       progressLog.endLog();
       setIsCreatingGraph(false);
     }
-  }, [workspaceRepos, codeGraph.createGraph, codeGraph.createGithubGraph, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
+  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
     codeGraph.cancelCreateGraph();
   }, [codeGraph.cancelCreateGraph]);
+
+  const handleReparseGraph = useCallback(async () => {
+    if (!codeGraph.activeGraph) return;
+    const repoId = codeGraph.activeGraph.repoId;
+    codeGraph.deleteGraph(codeGraph.activeGraph.id);
+    await handleCreateGraph(repoId);
+  }, [codeGraph.activeGraph, codeGraph.deleteGraph, handleCreateGraph]);
 
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
@@ -924,6 +990,8 @@ export default function App() {
           onCodeGraphOpenFlowInEditor={handleOpenFlowInEditor}
           codeGraphIsGeneratingFlows={codeGraph.isGeneratingFlows}
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
+          codeGraphIsReparsing={isCreatingGraph}
+          onCodeGraphReparse={handleReparseGraph}
           progressLogEntries={progressLog.entries}
           isProgressLogActive={progressLog.isActive}
           isProgressLogExpanded={progressLog.isExpanded}

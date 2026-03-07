@@ -21,20 +21,33 @@ export const useRepoHandlers = (
     if (!result) return; // User cancelled
 
     // Check if this directory was previously registered (even after removal).
-    // Re-using the original ID preserves all CodeGraph and codeLink references.
+    // Re-using the original ID preserves all CodeGraph and codeLink references,
+    // but only when the existing entry belongs to the current workspace.
     const existingId = await fileSystemService.findPersistedIdForDirectory(result.handle);
     if (existingId) {
-      fileSystemService.storeHandle(existingId, result.handle);
-      await fileSystemService.persistHandle(existingId, result.handle);
-      setRepos(prev => {
-        const alreadyPresent = prev.some(r => r.id === existingId);
-        if (alreadyPresent) {
-          return prev.map(r => r.id === existingId ? { ...r, name: result.name } : r);
-        }
-        return [...prev, { id: existingId, name: result.name, workspaceId: activeWorkspaceId, addedAt: Date.now() }];
-      });
-      showToast?.(`Reconnected to ${result.name}`, 'success');
-      return;
+      const existingRepo = repos.find(r => r.id === existingId);
+
+      if (existingRepo && existingRepo.workspaceId === activeWorkspaceId) {
+        // Case 1: already in this workspace — reconnect and update name.
+        fileSystemService.storeHandle(existingId, result.handle);
+        await fileSystemService.persistHandle(existingId, result.handle);
+        setRepos(prev => prev.map(r => r.id === existingId ? { ...r, name: result.name } : r));
+        showToast?.(`Reconnected to ${result.name}`, 'success');
+        return;
+      }
+
+      if (!existingRepo) {
+        // Case 2: previously removed from this workspace — reuse ID to preserve
+        // any existing CodeGraph / codeLink references.
+        fileSystemService.storeHandle(existingId, result.handle);
+        await fileSystemService.persistHandle(existingId, result.handle);
+        setRepos(prev => [...prev, { id: existingId, name: result.name, workspaceId: activeWorkspaceId, addedAt: Date.now() }]);
+        showToast?.(`Reconnected to ${result.name}`, 'success');
+        return;
+      }
+
+      // Case 3: repo belongs to a different workspace — fall through to create
+      // a new independent entry so workspaces stay fully isolated.
     }
 
     const id = generateId();

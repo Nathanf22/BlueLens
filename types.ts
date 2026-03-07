@@ -527,6 +527,7 @@ export interface CodeGraph {
   repoId: string;
   createdAt: number;
   updatedAt: number;
+  parsedAt?: number;   // Timestamp of the last full codebase parse (set at creation and re-parse)
   nodes: Record<string, GraphNode>;
   relations: Record<string, GraphRelation>;
   domainNodes: Record<string, DomainNode>;
