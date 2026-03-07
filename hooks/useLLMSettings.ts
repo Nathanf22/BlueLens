@@ -3,6 +3,10 @@ import { LLMSettings, LLMProvider, LLMProviderConfig } from '../types';
 import { getDefaultSettings } from '../services/llmService';
 import { cryptoStorageService } from '../services/cryptoStorageService';
 
+/** True when the browser does not support encrypted storage (IndexedDB + Web Crypto).
+ *  In this case API keys are stored in plaintext localStorage. */
+export const storageInsecure = !cryptoStorageService.isSupported();
+
 const STORAGE_KEY = 'mermaidviz_llm_settings';
 const SECURE_KEY = 'llm_settings';
 

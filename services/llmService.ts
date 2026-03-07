@@ -4,7 +4,9 @@
  */
 
 import { GoogleGenAI, Type as GeminiType } from '@google/genai';
+import type { Content, Part } from '@google/genai';
 import OpenAI from 'openai';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig, AgentToolStep } from '../types';
 import type { AgentToolDefinition } from './agentToolService';
 
@@ -47,6 +49,23 @@ const DEFAULT_MODELS: Record<LLMProvider, string> = {
   anthropic: 'claude-sonnet-4-6',
 };
 
+// ─── Anthropic response shapes (raw fetch — no official browser SDK) ──────────
+
+interface AnthropicContentBlock {
+  type: 'text' | 'tool_use';
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+}
+
+interface AnthropicMessage {
+  role: 'user' | 'assistant';
+  content: string | AnthropicContentBlock[];
+}
+
+// ─── Simple send (no tool use) ────────────────────────────────────────────────
+
 async function sendGemini(
   messages: LLMMessage[],
   systemPrompt: string,
@@ -56,7 +75,7 @@ async function sendGemini(
   const ai = new GoogleGenAI({ apiKey: config.apiKey });
   const model = config.model || DEFAULT_MODELS.gemini;
 
-  const contents = messages.map(m => ({
+  const contents: Content[] = messages.map(m => ({
     role: m.role === 'assistant' ? 'model' as const : 'user' as const,
     parts: [{ text: m.content }],
   }));
@@ -76,9 +95,9 @@ async function sendGemini(
     if (!text) throw new Error('No response from Gemini');
 
     return { content: text, provider: 'gemini', model };
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof LLMConfigError || err instanceof LLMRateLimitError) throw err;
-    const msg: string = err?.message ?? '';
+    const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
       throw new LLMRateLimitError('Gemini');
     }
@@ -119,9 +138,9 @@ async function sendOpenAI(
     if (!text) throw new Error('No response from OpenAI');
 
     return { content: text, provider: 'openai', model };
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof LLMConfigError || err instanceof LLMRateLimitError) throw err;
-    const status: number | undefined = err?.status;
+    const status = err instanceof OpenAI.APIError ? err.status : undefined;
     if (status === 429) throw new LLMRateLimitError('OpenAI');
     if (status === 401 || status === 403) throw new LLMConfigError(`OpenAI API key is invalid. Open AI Settings.`);
     throw err;
@@ -168,7 +187,7 @@ async function sendAnthropic(
     throw new Error(`Anthropic API error (${response.status}): ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as { content: AnthropicContentBlock[] };
   const text = data.content?.[0]?.text;
   if (!text) throw new Error('No response from Anthropic');
 
@@ -190,10 +209,10 @@ async function runAgentLoopGemini(
   const model = config.model || DEFAULT_MODELS.gemini;
   const toolSteps: AgentToolStep[] = [];
 
-  const contents: any[] = continuationContext
-    ? [...continuationContext]
+  const contents: Content[] = continuationContext
+    ? [...continuationContext] as Content[]
     : messages.map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
+        role: m.role === 'assistant' ? 'model' as const : 'user' as const,
         parts: [{ text: m.content }],
       }));
 
@@ -233,21 +252,22 @@ async function runAgentLoopGemini(
     const candidate = response.candidates?.[0];
     if (!candidate?.content?.parts) throw new Error('No response from Gemini');
 
-    const parts = candidate.content.parts;
-    const fnParts = parts.filter((p: any) => p.functionCall);
-    const textParts = parts.filter((p: any) => p.text);
+    const parts: Part[] = candidate.content.parts;
+    const fnParts = parts.filter(p => p.functionCall != null);
+    const textParts = parts.filter(p => p.text != null);
 
     if (fnParts.length === 0) {
-      return { content: textParts.map((p: any) => p.text).join(''), toolSteps };
+      return { content: textParts.map(p => p.text ?? '').join(''), toolSteps };
     }
 
     // Add model turn with all parts
     contents.push({ role: 'model', parts });
 
     // Execute tool calls in parallel when the LLM batches multiple in one turn
-    const fnResponses = await Promise.all(fnParts.map(async (part: any) => {
-      const { name, args } = part.functionCall;
-      const step = await executor(name, args ?? {});
+    const fnResponses = await Promise.all(fnParts.map(async part => {
+      const { name, args } = part.functionCall!;
+      if (!name) throw new Error('Gemini returned a function call with no name');
+      const step = await executor(name, (args ?? {}) as Record<string, unknown>);
       toolSteps.push(step);
       return { functionResponse: { name, response: { output: step.result } } };
     }));
@@ -277,12 +297,11 @@ async function runAgentLoopOpenAI(
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
 
-  // continuationContext already includes the system message when resuming
-  const conv: any[] = continuationContext
-    ? [...continuationContext]
+  const conv: ChatCompletionMessageParam[] = continuationContext
+    ? [...continuationContext] as ChatCompletionMessageParam[]
     : [
         { role: 'system', content: systemPrompt },
-        ...messages.map(m => ({ role: m.role, content: m.content })),
+        ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       ];
 
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
@@ -305,8 +324,8 @@ async function runAgentLoopOpenAI(
     }
 
     // Execute tool calls in parallel when the LLM batches multiple in one turn
-    const toolMessages = await Promise.all(msg.tool_calls.map(async (tc: any) => {
-      const args = JSON.parse(tc.function.arguments || '{}');
+    const toolMessages = await Promise.all(msg.tool_calls.filter(tc => tc.type === 'function').map(async tc => {
+      const args = JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>;
       const step = await executor(tc.function.name, args);
       toolSteps.push(step);
       return { role: 'tool' as const, tool_call_id: tc.id, content: step.result };
@@ -338,9 +357,9 @@ async function runAgentLoopAnthropic(
     input_schema: t.parameters,
   }));
 
-  const conv: any[] = continuationContext
-    ? [...continuationContext]
-    : messages.map(m => ({ role: m.role, content: m.content }));
+  const conv: AnthropicMessage[] = continuationContext
+    ? [...continuationContext] as AnthropicMessage[]
+    : messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
     signal?.throwIfAborted();
@@ -368,26 +387,29 @@ async function runAgentLoopAnthropic(
       throw new Error(`Anthropic error (${res.status}): ${text}`);
     }
 
-    const data = await res.json();
-    const content: any[] = data.content ?? [];
-    const stopReason: string = data.stop_reason;
+    const data = await res.json() as { content: AnthropicContentBlock[]; stop_reason: string };
+    const content = data.content ?? [];
+    const stopReason = data.stop_reason;
 
     // Add assistant turn
     conv.push({ role: 'assistant', content });
 
     if (stopReason !== 'tool_use') {
-      const text = content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
+      const text = content
+        .filter(b => b.type === 'text')
+        .map(b => b.text ?? '')
+        .join('');
       return { content: text, toolSteps };
     }
 
     // Execute tool use blocks in parallel when the LLM batches multiple in one turn
-    const toolUseBlocks = content.filter((b: any) => b.type === 'tool_use');
-    const toolResults = await Promise.all(toolUseBlocks.map(async (block: any) => {
-      const step = await executor(block.name, block.input ?? {});
+    const toolUseBlocks = content.filter(b => b.type === 'tool_use');
+    const toolResults = await Promise.all(toolUseBlocks.map(async block => {
+      const step = await executor(block.name!, block.input ?? {});
       toolSteps.push(step);
-      return { type: 'tool_result', tool_use_id: block.id, content: step.result };
+      return { type: 'tool_result', tool_use_id: block.id!, content: step.result };
     }));
-    conv.push({ role: 'user', content: toolResults });
+    conv.push({ role: 'user', content: toolResults as unknown as AnthropicContentBlock[] });
   }
 
   return { content: '', toolSteps, interrupted: true, continuationContext: [...conv] };

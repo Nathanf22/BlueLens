@@ -25,7 +25,7 @@ import { useRepoHandlers } from './hooks/useRepoHandlers';
 import { useCodeLinkHandlers } from './hooks/useCodeLinkHandlers';
 import { useSplitPane } from './hooks/useSplitPane';
 import { useStoragePersistence } from './hooks/useStoragePersistence';
-import { useLLMSettings } from './hooks/useLLMSettings';
+import { useLLMSettings, storageInsecure } from './hooks/useLLMSettings';
 import { useChatHandlers } from './hooks/useChatHandlers';
 import { useScanHandlers } from './hooks/useScanHandlers'; // TODO(DELETE): SCAN FEATURE
 import { useCodebaseImport } from './hooks/useCodebaseImport';
@@ -1049,6 +1049,7 @@ export default function App() {
         onCloseAISettings={() => setIsAISettingsOpen(false)}
         onUpdateProvider={updateProvider}
         onSetActiveProvider={setActiveProvider}
+        storageInsecure={storageInsecure}
         // TODO(DELETE): SCAN FEATURE — remove these 11 props
         isScanResultsOpen={isScanResultsOpen}
         onCloseScanResults={() => { setIsScanResultsOpen(false); clearScanResult(); }}
