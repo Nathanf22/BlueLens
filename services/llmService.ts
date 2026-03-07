@@ -3,7 +3,7 @@
  * Supports Gemini, OpenAI, and Anthropic (via CORS proxy).
  */
 
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type as GeminiType } from '@google/genai';
 import OpenAI from 'openai';
 import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig, AgentToolStep } from '../types';
 import type { AgentToolDefinition } from './agentToolService';
@@ -68,8 +68,9 @@ async function sendGemini(
       config: {
         systemInstruction: systemPrompt,
         temperature: 0.3,
+        abortSignal: signal,
       },
-    }, signal ? { signal } : undefined);
+    });
 
     const text = response.text;
     if (!text) throw new Error('No response from Gemini');
@@ -196,10 +197,24 @@ async function runAgentLoopGemini(
         parts: [{ text: m.content }],
       }));
 
+  const geminiTypeMap: Record<string, GeminiType> = {
+    string: GeminiType.STRING,
+    number: GeminiType.NUMBER,
+    boolean: GeminiType.BOOLEAN,
+  };
   const functionDeclarations = tools.map(t => ({
     name: t.name,
     description: t.description,
-    parameters: t.parameters,
+    parameters: {
+      type: GeminiType.OBJECT,
+      properties: Object.fromEntries(
+        Object.entries(t.parameters.properties).map(([key, param]) => [
+          key,
+          { ...param, type: geminiTypeMap[param.type] ?? GeminiType.STRING },
+        ])
+      ),
+      required: t.parameters.required,
+    },
   }));
 
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
@@ -211,8 +226,9 @@ async function runAgentLoopGemini(
         systemInstruction: systemPrompt,
         temperature: 0.3,
         tools: [{ functionDeclarations }],
+        abortSignal: signal,
       },
-    }, signal ? { signal } : undefined);
+    });
 
     const candidate = response.candidates?.[0];
     if (!candidate?.content?.parts) throw new Error('No response from Gemini');

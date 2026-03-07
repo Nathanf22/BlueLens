@@ -541,7 +541,7 @@ export default function App() {
       if (existing) {
         codeGraph.selectGraph(existing.id);
         showToast('A Code Graph already exists for this repo. Use Re-parse to regenerate it.', 'info');
-        return;
+        return null;
       }
     }
 

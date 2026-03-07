@@ -336,12 +336,7 @@ export const Preview: React.FC<PreviewProps> = ({
              }}
              className="relative"
            >
-              {/* Sub-diagram badge */}
-              {currentDiagram?.hasSubDiagram && (
-                <SubDiagramBadge onZoomIn={onZoomIn} />
-              )}
-
-              <div 
+<div 
                  className="mermaid-svg-container"
                  dangerouslySetInnerHTML={{ __html: svgContent }} 
               />
