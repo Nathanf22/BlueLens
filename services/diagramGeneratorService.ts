@@ -4,7 +4,6 @@
  */
 
 import { CodebaseAnalysis, CodebaseModule, AnalyzedFile, DiagramGenerationResult } from '../types';
-import { DiffResult } from './ArchitectureDiff';
 
 const MAX_NODES = 25;
 
@@ -39,43 +38,17 @@ interface DiagramSpec {
 }
 
 /** L1: System Overview — modules as nodes, cross-module deps as edges */
-function generateSystemOverview(analysis: CodebaseAnalysis, diff?: DiffResult): DiagramSpec {
+function generateSystemOverview(analysis: CodebaseAnalysis): DiagramSpec {
   const lines: string[] = ['flowchart TD'];
   const modules = analysis.modules || [];
 
-  const addedIds: string[] = [];
-  const removedIds: string[] = [];
-  const modifiedIds: string[] = [];
-
-  // Add module nodes
-  const modulesToProcess = [...modules];
-
-  // If we have a diff, we should potentially add "removed" modules to the graph for visualization
-  if (diff) {
-    for (const path of diff.removed) {
-      // Very simple heuristic: if it looks like a module path (shallow)
-      if (!path.includes('/') || path.split('/').length <= 2) {
-        const name = path.split('/').pop() || path;
-        const id = sanitizeMermaidId(name) + '_REMOVED';
-        lines.push(`    ${id}["${escapeLabel(name)}\\n(REMOVED)"]`);
-        removedIds.push(id);
-      }
-    }
-  }
-
-  for (let i = 0; i < Math.min(modulesToProcess.length, MAX_NODES - 1); i++) {
-    const mod = modulesToProcess[i];
+  for (let i = 0; i < Math.min(modules.length, MAX_NODES - 1); i++) {
+    const mod = modules[i];
     const id = sanitizeMermaidId(mod.name);
     const fileCount = (mod.files || []).length;
     const symbolCount = (mod.files || []).reduce((sum, f) => sum + (f.symbols || []).length, 0);
     const label = `${mod.name}\\n${fileCount} files, ${symbolCount} symbols`;
 
-    if (diff) {
-      if (diff.added.includes(mod.path)) addedIds.push(id);
-      else if (diff.modified.includes(mod.path)) modifiedIds.push(id);
-    }
-
-    // Entry point modules get a different shape (stadium)
     const hasEntry = (mod.files || []).some(f =>
       (analysis.entryPoints || []).includes(f.filePath)
     );
@@ -109,38 +82,27 @@ function generateSystemOverview(analysis: CodebaseAnalysis, diff?: DiffResult): 
     }
   }
 
-  // Styling
-  if (diff) {
-    if (addedIds.length > 0) lines.push(`    style ${addedIds.join(',')} fill:#d4edda,stroke:#28a745,stroke-width:2px`);
-    if (removedIds.length > 0) lines.push(`    style ${removedIds.join(',')} fill:#f8d7da,stroke:#dc3545,stroke-dasharray: 5 5`);
-    if (modifiedIds.length > 0) lines.push(`    style ${modifiedIds.join(',')} stroke:#fd7e14,stroke-width:4px`);
-  } else {
-    // Default entry point styling if no diff
-    const entryModuleIds = modules
-      .filter(m => (m.files || []).some(f => (analysis.entryPoints || []).includes(f.filePath)))
-      .map(m => sanitizeMermaidId(m.name));
+  // Entry point styling
+  const entryModuleIds = modules
+    .filter(m => (m.files || []).some(f => (analysis.entryPoints || []).includes(f.filePath)))
+    .map(m => sanitizeMermaidId(m.name));
 
-    if (entryModuleIds.length > 0) {
-      lines.push(`    style ${entryModuleIds.join(',')} fill:#4a9eff,color:#fff`);
-    }
+  if (entryModuleIds.length > 0) {
+    lines.push(`    style ${entryModuleIds.join(',')} fill:#4a9eff,color:#fff`);
   }
 
   return {
     id: generateId(),
-    name: diff ? 'System Comparison' : 'System Overview',
+    name: 'System Overview',
     code: lines.join('\n'),
     level: 1,
   };
 }
 
 /** L2: Module Detail — files as nodes, internal import edges */
-function generateModuleDetail(module: CodebaseModule, analysis: CodebaseAnalysis, diff?: DiffResult): DiagramSpec {
+function generateModuleDetail(module: CodebaseModule, analysis: CodebaseAnalysis): DiagramSpec {
   const lines: string[] = ['flowchart TD'];
   const files = module.files || [];
-
-  const addedIds: string[] = [];
-  const removedIds: string[] = [];
-  const modifiedIds: string[] = [];
 
   // Filter out trivial files (no symbols and no exports)
   const significantFiles = files.filter(f =>
@@ -149,27 +111,10 @@ function generateModuleDetail(module: CodebaseModule, analysis: CodebaseAnalysis
 
   const filesToShow = significantFiles.slice(0, MAX_NODES - 1);
 
-  // If we have a diff, add removed files that belong to this module
-  if (diff) {
-    for (const path of diff.removed) {
-      if (path.startsWith(module.path + '/') || (module.path === '' && !path.includes('/'))) {
-        const name = path.split('/').pop() || path;
-        const id = sanitizeMermaidId(path) + '_REMOVED';
-        lines.push(`    ${id}["${escapeLabel(name)}\\n(REMOVED)"]`);
-        removedIds.push(id);
-      }
-    }
-  }
-
   // Render files
   for (const file of filesToShow) {
     const fileName = file.filePath.split('/').pop() || file.filePath;
     const id = sanitizeMermaidId(file.filePath);
-
-    if (diff) {
-      if (diff.added.includes(file.filePath)) addedIds.push(id);
-      else if (diff.modified.includes(file.filePath)) modifiedIds.push(id);
-    }
 
     const symbols = file.symbols || [];
     const classes = symbols.filter(s => s.kind === 'class');
@@ -225,16 +170,10 @@ function generateModuleDetail(module: CodebaseModule, analysis: CodebaseAnalysis
     }
   }
 
-  // Styling
-  if (diff) {
-    if (addedIds.length > 0) lines.push(`    style ${addedIds.join(',')} fill:#d4edda,stroke:#28a745,stroke-width:2px`);
-    if (removedIds.length > 0) lines.push(`    style ${removedIds.join(',')} fill:#f8d7da,stroke:#dc3545,stroke-dasharray: 5 5`);
-    if (modifiedIds.length > 0) lines.push(`    style ${modifiedIds.join(',')} stroke:#fd7e14,stroke-width:4px`);
-  } else {
-    const exportedIds = filesToShow.filter(f => (analysis.entryPoints || []).includes(f.filePath)).map(f => sanitizeMermaidId(f.filePath));
-    if (exportedIds.length > 0) {
-      lines.push(`    style ${exportedIds.join(',')} fill:#4a9eff,color:#fff`);
-    }
+  // Entry point styling
+  const exportedIds = filesToShow.filter(f => (analysis.entryPoints || []).includes(f.filePath)).map(f => sanitizeMermaidId(f.filePath));
+  if (exportedIds.length > 0) {
+    lines.push(`    style ${exportedIds.join(',')} fill:#4a9eff,color:#fff`);
   }
 
   return {
@@ -321,23 +260,21 @@ function generateFunctionFlowchart(file: AnalyzedFile, fileName: string): Diagra
 }
 
 export const diagramGeneratorService = {
-  generateAllDiagrams(analysis: CodebaseAnalysis, diff?: DiffResult): DiagramGenerationResult {
+  generateAllDiagrams(analysis: CodebaseAnalysis): DiagramGenerationResult {
     const diagrams: DiagramSpec[] = [];
     const nodeLinks: DiagramGenerationResult['nodeLinks'] = [];
 
-    const l1 = generateSystemOverview(analysis, diff);
+    const l1 = generateSystemOverview(analysis);
     diagrams.push(l1);
 
     const l2Map = new Map<string, DiagramSpec>();
     for (const module of (analysis.modules || [])) {
       const significantFiles = (module.files || []).filter(f => (f.symbols || []).length > 0 || (f.exportedSymbols || []).length > 0);
 
-      // If we have a diff, we might want to show empty modules if they are modified or added
-      const isModified = diff && (diff.modified.includes(module.path) || diff.added.includes(module.path));
-      if (module.files.length < 2 && !isModified) continue;
-      if (significantFiles.length === 0 && !isModified) continue;
+      if (module.files.length < 2) continue;
+      if (significantFiles.length === 0) continue;
 
-      const l2 = generateModuleDetail(module, analysis, diff);
+      const l2 = generateModuleDetail(module, analysis);
       diagrams.push(l2);
       l2Map.set(module.name, l2);
 

@@ -159,7 +159,6 @@ export default function App() {
     progress: codebaseImportProgress,
     isImporting: isCodebaseImporting,
     startImport: startCodebaseImport,
-    startComparison,
     resetProgress: resetCodebaseImport
   } = useCodebaseImport({
     diagrams,
@@ -486,7 +485,7 @@ export default function App() {
     }
   }, [folders, diagrams, doExportFlows]);
 
-  const handleCreateGraph = useCallback(async (repoId: string) => {
+  const handleCreateGraph = useCallback(async (repoId: string, commitSha?: string) => {
     const repo = workspaceRepos.find(r => r.id === repoId);
     graphCreationCancelledRef.current = false;
     setIsCreatingGraph(true);
@@ -504,7 +503,7 @@ export default function App() {
           (resolvedBranch) => handleUpdateGithubBranch(repoId, resolvedBranch),
         );
       } else {
-        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry);
+        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha);
       }
       if (result) triggerFlowExport(result);
       else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
@@ -1006,7 +1005,6 @@ export default function App() {
         isCodebaseImportOpen={!!codebaseImportProgress}
         onCloseCodebaseImport={resetCodebaseImport}
         onStartCodebaseImport={startCodebaseImport}
-        onStartComparison={startComparison}
         codebaseImportProgress={codebaseImportProgress}
         isCodebaseImporting={isCodebaseImporting}
         onResetCodebaseImport={resetCodebaseImport}

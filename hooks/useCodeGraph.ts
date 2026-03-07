@@ -112,6 +112,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     repoId: string,
     llmSettings?: LLMSettings,
     onLogEntry?: LogEntryFn,
+    commitSha?: string,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -122,9 +123,13 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
     try {
       setGraphCreationProgress({ step: 'Scanning codebase', current: 0, total: 1 });
-      onLogEntry?.('scan', 'Scanning codebase...');
+      onLogEntry?.('scan', commitSha ? `Scanning codebase @ ${commitSha.slice(0, 7)}...` : 'Scanning codebase...');
 
-      let analysis = await codebaseAnalyzerService.analyzeCodebase(new LocalFileSystemProvider(handle));
+      const provider = commitSha
+        ? new (await import('../services/GitFileSystemProvider')).GitFileSystemProvider(handle, commitSha)
+        : new LocalFileSystemProvider(handle);
+
+      let analysis = await codebaseAnalyzerService.analyzeCodebase(provider);
       onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
       // AI-powered grouping (required); throws LLMConfigError if no key configured
@@ -146,10 +151,12 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
       setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
 
+      const graphName = commitSha ? `${handle.name} @ ${commitSha.slice(0, 7)}` : handle.name;
+
       let graph = await codeToGraphParserService.parseCodebaseToGraph(
         analysis,
         repoId,
-        handle.name,
+        graphName,
         activeWorkspaceId,
         handle,
         undefined,

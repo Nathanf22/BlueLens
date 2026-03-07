@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2, Globe, Clock, ChevronDown, ChevronUp, GitCommit, ArrowRightLeft, History as GitHistory } from 'lucide-react';
+import { FolderOpen, Trash2, Plus, X, RefreshCw, AlertTriangle, GitBranch, Loader2, Globe, Clock, ChevronDown, ChevronUp, GitCommit, History as GitHistory } from 'lucide-react';
 import { RepoConfig } from '../types';
 import { fileSystemService } from '../services/fileSystemService';
 import { useGitHistory } from '../hooks/useGitHistory';
@@ -13,7 +13,6 @@ interface RepoManagerProps {
   onClose: () => void;
   onCreateGraph?: (repoId: string, commitSha?: string) => Promise<any>;
   onStartCodebaseImport?: (repoId: string, commitSha?: string) => void;
-  onStartComparison?: (repoId: string, commitSha: string) => void;
   hasConfiguredAI?: boolean;
 }
 
@@ -24,9 +23,8 @@ interface RepoManagerProps {
 const GitHistoryPanel: React.FC<{
   repoId: string;
   onSelectCommit: (repoId: string, sha: string) => void;
-  onCompareCommit?: (repoId: string, sha: string) => void;
   isProcessing?: boolean;
-}> = ({ repoId, onSelectCommit, onCompareCommit, isProcessing }) => {
+}> = ({ repoId, onSelectCommit, isProcessing }) => {
   const [expanded, setExpanded] = useState(false);
   const { commits, loading, error, loadCommits, clearError } = useGitHistory(20);
 
@@ -92,24 +90,14 @@ const GitHistoryPanel: React.FC<{
                   <p className="text-xs text-gray-200 truncate leading-snug font-medium group-hover:text-emerald-300">
                     {commit.message.split('\n')[0]}
                   </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => onSelectCommit(repoId, commit.sha)}
-                      disabled={isProcessing}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
-                    >
-                      <GitHistory className="w-3.5 h-3.5" />
-                      Time Travel
-                    </button>
-                    <button
-                      onClick={() => onCompareCommit?.(repoId, commit.sha)}
-                      disabled={isProcessing}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
-                    >
-                      <ArrowRightLeft className="w-3.5 h-3.5" />
-                      Compare
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => onSelectCommit(repoId, commit.sha)}
+                    disabled={isProcessing}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors"
+                  >
+                    <GitHistory className="w-3.5 h-3.5" />
+                    Time Travel
+                  </button>
                 </div>
                 <p className="text-[10px] text-gray-500 mt-0.5 italic">
                   <span className="font-mono text-brand-400/80 not-italic">{commit.sha.slice(0, 7)}</span>
@@ -138,7 +126,6 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
   onClose,
   onCreateGraph,
   onStartCodebaseImport,
-  onStartComparison,
   hasConfiguredAI = false,
 }) => {
   const [creatingGraphForRepo, setCreatingGraphForRepo] = useState<string | null>(null);
@@ -279,10 +266,6 @@ export const RepoManager: React.FC<RepoManagerProps> = ({
                             onClose();
                             onStartCodebaseImport?.(repoId, sha);
                           }
-                        }}
-                        onCompareCommit={(repoId, sha) => {
-                          onClose();
-                          onStartComparison?.(repoId, sha);
                         }}
                       />
                     )}
