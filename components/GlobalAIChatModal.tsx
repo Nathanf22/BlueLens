@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Sparkles, Loader2, Check, Trash2, ChevronDown, ChevronRight, Wrench, RotateCw, Square } from 'lucide-react';
-import { ChatMessage, LLMSettings, AgentToolStep, TokenUsage } from '../types';
+import { ChatMessage, LLMSettings, AgentToolStep } from '../types';
 import { MarkdownContent } from './MarkdownContent';
 import { InlineDiagramPreview } from './InlineDiagramPreview';
 
@@ -38,13 +38,6 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
 
-  const totalUsage: TokenUsage = messages.reduce(
-    (acc, m) => m.usage
-      ? { inputTokens: acc.inputTokens + m.usage.inputTokens, outputTokens: acc.outputTokens + m.usage.outputTokens, totalTokens: acc.totalTokens + m.usage.totalTokens }
-      : acc,
-    { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
-  );
-  const hasUsage = totalUsage.totalTokens > 0;
 
   useEffect(() => {
     if (isOpen) {
@@ -155,6 +148,11 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
             ) : (
               <MarkdownContent content={msg.content} />
             )}
+            {msg.usage && !isPending && (
+              <div className="mt-1.5 text-[10px] text-gray-600 font-mono" title={`Input: ${msg.usage.inputTokens.toLocaleString()} · Output: ${msg.usage.outputTokens.toLocaleString()}`}>
+                {msg.usage.totalTokens.toLocaleString()} tokens
+              </div>
+            )}
             {hasCode && (
               <InlineDiagramPreview code={msg.diagramCodeSnapshot!} />
             )}
@@ -209,14 +207,6 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
             <span className="text-xs px-1.5 py-0.5 bg-gray-800 text-gray-400 rounded font-mono">
               {activeProvider}
             </span>
-            {hasUsage && (
-              <span
-                className="text-xs px-1.5 py-0.5 bg-gray-800/60 text-gray-500 rounded font-mono"
-                title={`Input: ${totalUsage.inputTokens.toLocaleString()} · Output: ${totalUsage.outputTokens.toLocaleString()}`}
-              >
-                {totalUsage.totalTokens.toLocaleString()} tok
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-1">
             {messages.length > 0 && (
