@@ -301,6 +301,7 @@ export default function App() {
             toolSteps: m.toolSteps && m.toolSteps.length > 0 ? m.toolSteps : undefined,
             interrupted: result.interrupted ?? false,
             continuationContext: result.continuationContext,
+            usage: result.usage,
           }
           : m
       ));
