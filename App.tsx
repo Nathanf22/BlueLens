@@ -28,6 +28,7 @@ import { useStoragePersistence } from './hooks/useStoragePersistence';
 import { useLLMSettings, storageInsecure } from './hooks/useLLMSettings';
 import { useChatHandlers } from './hooks/useChatHandlers';
 import { useScanHandlers } from './hooks/useScanHandlers'; // TODO(DELETE): SCAN FEATURE
+import { useTokenUsage } from './hooks/useTokenUsage';
 import { useCodebaseImport } from './hooks/useCodebaseImport';
 import { useCodeGraph } from './hooks/useCodeGraph';
 import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
@@ -41,11 +42,16 @@ import {
   materializePlan,
 } from './services/codeGraphExportService';
 import { FlowExportModal } from './components/FlowExportModal';
+import { TokenDashboardModal } from './components/TokenDashboardModal';
 import { CodeGraph } from './types';
 
 export default function App() {
   // --- Toast Notifications ---
   const { toasts, showToast, dismissToast } = useToast();
+
+  // --- Token Usage ---
+  const { records: tokenRecords, recordUsage, clearUsage } = useTokenUsage();
+  const [isTokenDashboardOpen, setIsTokenDashboardOpen] = useState(false);
 
   // --- State Management ---
   const {
@@ -291,6 +297,12 @@ export default function App() {
         { signal: abortController.signal },
       );
 
+      // Record token usage for the dashboard
+      if (result.usage) {
+        const activeConfig = llmSettings.providers[llmSettings.activeProvider];
+        recordUsage(result.usage, llmSettings.activeProvider, activeConfig?.model ?? llmSettings.activeProvider);
+      }
+
       // Finalise the pending message with the response text (or mark interrupted)
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === pendingId
@@ -413,6 +425,11 @@ export default function App() {
         llmSettings,
         { continuationContext: msg.continuationContext, signal: abortController.signal },
       );
+
+      if (result.usage) {
+        const activeConfig = llmSettings.providers[llmSettings.activeProvider];
+        recordUsage(result.usage, llmSettings.activeProvider, activeConfig?.model ?? llmSettings.activeProvider);
+      }
 
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === msgId
@@ -851,6 +868,7 @@ export default function App() {
         onOpenGlobalAI={() => setIsGlobalAIOpen(true)}
         onOpenAISettings={() => setIsAISettingsOpen(true)}
         onOpenRepoManager={() => setIsRepoManagerOpen(true)}
+        onOpenTokenDashboard={() => setIsTokenDashboardOpen(true)}
         isSidebarOpen={isSidebarOpen}
         repoCount={workspaceRepos.length}
       />
@@ -1097,6 +1115,13 @@ export default function App() {
           onClose={() => setPendingFlowExport(null)}
         />
       )}
+
+      <TokenDashboardModal
+        isOpen={isTokenDashboardOpen}
+        onClose={() => setIsTokenDashboardOpen(false)}
+        records={tokenRecords}
+        onClear={clearUsage}
+      />
     </div>
   );
 }

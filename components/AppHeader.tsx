@@ -1,11 +1,12 @@
 import React from 'react';
-import { Sparkles, Menu, Settings, FolderGit2 } from 'lucide-react';
+import { Sparkles, Menu, Settings, FolderGit2, BarChart3 } from 'lucide-react';
 
 interface AppHeaderProps {
   onToggleSidebar: () => void;
   onOpenGlobalAI: () => void;
   onOpenAISettings: () => void;
   onOpenRepoManager: () => void;
+  onOpenTokenDashboard: () => void;
   isSidebarOpen: boolean;
   repoCount: number;
 }
@@ -15,6 +16,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenGlobalAI,
   onOpenAISettings,
   onOpenRepoManager,
+  onOpenTokenDashboard,
   isSidebarOpen,
   repoCount,
 }) => {
@@ -48,6 +50,13 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          onClick={onOpenTokenDashboard}
+          className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+          title="Token Usage Dashboard"
+        >
+          <BarChart3 className="w-5 h-5" />
+        </button>
         <button
           onClick={onOpenAISettings}
           className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"

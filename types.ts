@@ -150,6 +150,16 @@ export interface LLMMessage { role: 'user' | 'assistant'; content: string; }
 export interface TokenUsage { inputTokens: number; outputTokens: number; totalTokens: number; }
 export interface LLMResponse { content: string; provider: LLMProvider; model: string; usage?: TokenUsage; }
 
+export interface TokenUsageRecord {
+  id: string;
+  timestamp: number;
+  provider: LLMProvider;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 export interface AgentToolStep {
   toolName: string;
   args: Record<string, unknown>;
