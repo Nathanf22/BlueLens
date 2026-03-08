@@ -7,7 +7,7 @@ import { GoogleGenAI, Type as GeminiType } from '@google/genai';
 import type { Content, Part } from '@google/genai';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig, AgentToolStep } from '../types';
+import { LLMMessage, LLMResponse, LLMSettings, LLMProvider, LLMProviderConfig, AgentToolStep, TokenUsage } from '../types';
 import type { AgentToolDefinition } from './agentToolService';
 
 const MAX_AGENT_ITERATIONS = 20;
@@ -17,6 +17,7 @@ export interface AgentLoopResult {
   toolSteps: AgentToolStep[];
   interrupted?: boolean;       // true when MAX_AGENT_ITERATIONS was reached without a final answer
   continuationContext?: unknown[]; // provider-specific conv state; pass back to resume
+  usage?: TokenUsage;          // cumulative token consumption across all iterations
 }
 
 /**
@@ -94,7 +95,14 @@ async function sendGemini(
     const text = response.text;
     if (!text) throw new Error('No response from Gemini');
 
-    return { content: text, provider: 'gemini', model };
+    const meta = response.usageMetadata;
+    const usage: TokenUsage | undefined = meta ? {
+      inputTokens: meta.promptTokenCount ?? 0,
+      outputTokens: meta.candidatesTokenCount ?? 0,
+      totalTokens: meta.totalTokenCount ?? 0,
+    } : undefined;
+
+    return { content: text, provider: 'gemini', model, usage };
   } catch (err: unknown) {
     if (err instanceof LLMConfigError || err instanceof LLMRateLimitError) throw err;
     const msg = err instanceof Error ? err.message : String(err);
@@ -137,7 +145,13 @@ async function sendOpenAI(
     const text = response.choices[0]?.message?.content;
     if (!text) throw new Error('No response from OpenAI');
 
-    return { content: text, provider: 'openai', model };
+    const usage: TokenUsage | undefined = response.usage ? {
+      inputTokens: response.usage.prompt_tokens,
+      outputTokens: response.usage.completion_tokens,
+      totalTokens: response.usage.total_tokens,
+    } : undefined;
+
+    return { content: text, provider: 'openai', model, usage };
   } catch (err: unknown) {
     if (err instanceof LLMConfigError || err instanceof LLMRateLimitError) throw err;
     const status = err instanceof OpenAI.APIError ? err.status : undefined;
@@ -187,11 +201,20 @@ async function sendAnthropic(
     throw new Error(`Anthropic API error (${response.status}): ${errorText}`);
   }
 
-  const data = await response.json() as { content: AnthropicContentBlock[] };
+  const data = await response.json() as {
+    content: AnthropicContentBlock[];
+    usage?: { input_tokens: number; output_tokens: number };
+  };
   const text = data.content?.[0]?.text;
   if (!text) throw new Error('No response from Anthropic');
 
-  return { content: text, provider: 'anthropic', model };
+  const usage: TokenUsage | undefined = data.usage ? {
+    inputTokens: data.usage.input_tokens,
+    outputTokens: data.usage.output_tokens,
+    totalTokens: data.usage.input_tokens + data.usage.output_tokens,
+  } : undefined;
+
+  return { content: text, provider: 'anthropic', model, usage };
 }
 
 // ─── Agentic loop — Gemini ───────────────────────────────────────────────────
@@ -215,6 +238,8 @@ async function runAgentLoopGemini(
         role: m.role === 'assistant' ? 'model' as const : 'user' as const,
         parts: [{ text: m.content }],
       }));
+
+  let totalInput = 0, totalOutput = 0;
 
   const geminiTypeMap: Record<string, GeminiType> = {
     string: GeminiType.STRING,
@@ -252,12 +277,16 @@ async function runAgentLoopGemini(
     const candidate = response.candidates?.[0];
     if (!candidate?.content?.parts) throw new Error('No response from Gemini');
 
+    const meta = response.usageMetadata;
+    if (meta) { totalInput += meta.promptTokenCount ?? 0; totalOutput += meta.candidatesTokenCount ?? 0; }
+
     const parts: Part[] = candidate.content.parts;
     const fnParts = parts.filter(p => p.functionCall != null);
     const textParts = parts.filter(p => p.text != null);
 
     if (fnParts.length === 0) {
-      return { content: textParts.map(p => p.text ?? '').join(''), toolSteps };
+      const usage: TokenUsage = { inputTokens: totalInput, outputTokens: totalOutput, totalTokens: totalInput + totalOutput };
+      return { content: textParts.map(p => p.text ?? '').join(''), toolSteps, usage };
     }
 
     // Add model turn with all parts
@@ -274,7 +303,8 @@ async function runAgentLoopGemini(
     contents.push({ role: 'user', parts: fnResponses });
   }
 
-  return { content: '', toolSteps, interrupted: true, continuationContext: [...contents] };
+  const usage: TokenUsage = { inputTokens: totalInput, outputTokens: totalOutput, totalTokens: totalInput + totalOutput };
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...contents], usage };
 }
 
 // ─── Agentic loop — OpenAI ───────────────────────────────────────────────────
@@ -304,6 +334,8 @@ async function runAgentLoopOpenAI(
         ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       ];
 
+  let totalInput = 0, totalOutput = 0;
+
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
     signal?.throwIfAborted();
     const response = await client.chat.completions.create({
@@ -317,10 +349,13 @@ async function runAgentLoopOpenAI(
     const msg = response.choices[0]?.message;
     if (!msg) throw new Error('No response from OpenAI');
 
+    if (response.usage) { totalInput += response.usage.prompt_tokens; totalOutput += response.usage.completion_tokens; }
+
     conv.push(msg);
 
     if (!msg.tool_calls?.length) {
-      return { content: msg.content ?? '', toolSteps };
+      const usage: TokenUsage = { inputTokens: totalInput, outputTokens: totalOutput, totalTokens: totalInput + totalOutput };
+      return { content: msg.content ?? '', toolSteps, usage };
     }
 
     // Execute tool calls in parallel when the LLM batches multiple in one turn
@@ -333,7 +368,8 @@ async function runAgentLoopOpenAI(
     toolMessages.forEach(m => conv.push(m));
   }
 
-  return { content: '', toolSteps, interrupted: true, continuationContext: [...conv] };
+  const usage: TokenUsage = { inputTokens: totalInput, outputTokens: totalOutput, totalTokens: totalInput + totalOutput };
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...conv], usage };
 }
 
 // ─── Agentic loop — Anthropic ────────────────────────────────────────────────
@@ -361,6 +397,8 @@ async function runAgentLoopAnthropic(
     ? [...continuationContext] as AnthropicMessage[]
     : messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
+  let totalInput = 0, totalOutput = 0;
+
   for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
     signal?.throwIfAborted();
     const res = await fetch(`${baseUrl}/v1/messages`, {
@@ -387,9 +425,15 @@ async function runAgentLoopAnthropic(
       throw new Error(`Anthropic error (${res.status}): ${text}`);
     }
 
-    const data = await res.json() as { content: AnthropicContentBlock[]; stop_reason: string };
+    const data = await res.json() as {
+      content: AnthropicContentBlock[];
+      stop_reason: string;
+      usage?: { input_tokens: number; output_tokens: number };
+    };
     const content = data.content ?? [];
     const stopReason = data.stop_reason;
+
+    if (data.usage) { totalInput += data.usage.input_tokens; totalOutput += data.usage.output_tokens; }
 
     // Add assistant turn
     conv.push({ role: 'assistant', content });
@@ -399,7 +443,8 @@ async function runAgentLoopAnthropic(
         .filter(b => b.type === 'text')
         .map(b => b.text ?? '')
         .join('');
-      return { content: text, toolSteps };
+      const usage: TokenUsage = { inputTokens: totalInput, outputTokens: totalOutput, totalTokens: totalInput + totalOutput };
+      return { content: text, toolSteps, usage };
     }
 
     // Execute tool use blocks in parallel when the LLM batches multiple in one turn
@@ -412,7 +457,8 @@ async function runAgentLoopAnthropic(
     conv.push({ role: 'user', content: toolResults as unknown as AnthropicContentBlock[] });
   }
 
-  return { content: '', toolSteps, interrupted: true, continuationContext: [...conv] };
+  const usage: TokenUsage = { inputTokens: totalInput, outputTokens: totalOutput, totalTokens: totalInput + totalOutput };
+  return { content: '', toolSteps, interrupted: true, continuationContext: [...conv], usage };
 }
 
 export function cleanMermaidResponse(text: string): string {

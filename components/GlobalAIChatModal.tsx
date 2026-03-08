@@ -38,6 +38,7 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
 
+
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 50);
@@ -146,6 +147,11 @@ export const GlobalAIChatModal: React.FC<GlobalAIChatModalProps> = ({
               <span className="text-xs text-gray-600 mt-1 block">Stopped.</span>
             ) : (
               <MarkdownContent content={msg.content} />
+            )}
+            {msg.usage && !isPending && (
+              <div className="mt-1.5 text-[10px] text-gray-600 font-mono" title={`Input: ${msg.usage.inputTokens.toLocaleString()} · Output: ${msg.usage.outputTokens.toLocaleString()}`}>
+                {msg.usage.totalTokens.toLocaleString()} tokens
+              </div>
             )}
             {hasCode && (
               <InlineDiagramPreview code={msg.diagramCodeSnapshot!} />
