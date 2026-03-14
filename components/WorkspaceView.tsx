@@ -87,6 +87,10 @@ interface WorkspaceViewProps {
   // CodeGraph re-parse
   codeGraphIsReparsing?: boolean;
   onCodeGraphReparse?: () => void;
+  // CodeGraph incremental sync status
+  codeGraphSyncStatus?: SyncStatus;
+  codeGraphIsCheckingSync?: boolean;
+  onCodeGraphCheckSync?: () => void;
   // Progress Log
   progressLogEntries?: ProgressLogEntry[];
   isProgressLogActive?: boolean;
@@ -169,6 +173,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onCodeGraphRegenerateFlows,
   codeGraphIsReparsing = false,
   onCodeGraphReparse,
+  codeGraphSyncStatus,
+  codeGraphIsCheckingSync = false,
+  onCodeGraphCheckSync,
   progressLogEntries = [],
   isProgressLogActive = false,
   isProgressLogExpanded = false,
@@ -245,6 +252,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onRegenerateFlows={onCodeGraphRegenerateFlows}
                 isReparsing={codeGraphIsReparsing}
                 onReparseGraph={onCodeGraphReparse}
+                syncStatus={codeGraphSyncStatus}
+                isCheckingSync={codeGraphIsCheckingSync}
+                onCheckSync={onCodeGraphCheckSync}
               />
             </div>
           ) : (

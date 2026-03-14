@@ -32,6 +32,7 @@ import { useTokenUsage } from './hooks/useTokenUsage';
 import { useCodebaseImport } from './hooks/useCodebaseImport';
 import { useCodeGraph } from './hooks/useCodeGraph';
 import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
+import { useSyncHandlers } from './hooks/useSyncHandlers';
 import { useProgressLog } from './hooks/useProgressLog';
 import { useToast } from './hooks/useToast';
 import { ToastContainer } from './components/ToastContainer';
@@ -43,6 +44,7 @@ import {
 } from './services/codeGraphExportService';
 import { FlowExportModal } from './components/FlowExportModal';
 import { TokenDashboardModal } from './components/TokenDashboardModal';
+import { SyncDiffModal } from './components/SyncDiffModal';
 import { CodeGraph } from './types';
 
 export default function App() {
@@ -181,6 +183,21 @@ export default function App() {
   // --- CodeGraph ---
   const codeGraph = useCodeGraph(activeWorkspaceId);
   const codeGraphHandlers = useCodeGraphHandlers(codeGraph.activeGraph, codeGraph.updateGraph);
+
+  // --- Incremental Sync ---
+  const {
+    syncMode: graphSyncMode,
+    pendingProposals,
+    graphSyncStatuses,
+    isCheckingSync,
+    isSyncingGraph,
+    handleCheckSync,
+    handleIncrementalSync,
+    handleApplyProposal,
+    handleDismissProposal,
+    handleSetSyncMode: handleSetGraphSyncMode,
+  } = useSyncHandlers();
+  const [isSyncDiffModalOpen, setIsSyncDiffModalOpen] = useState(false);
 
   // --- Global AI Chat ---
   const [globalChatMessages, setGlobalChatMessages] = useState<ChatMessage[]>([]);
@@ -637,6 +654,42 @@ export default function App() {
     codeGraphStorageService.saveCodeGraphConfig(config);
   }, []);
 
+  // --- Sync diagram update (from incremental sync proposals) ---
+  const handleUpdateDiagramFromSync = useCallback((
+    id: string,
+    code: string,
+    generatedFromGraphAt: number
+  ) => {
+    setDiagrams(prev => prev.map(d =>
+      d.id === id ? { ...d, code, generatedFromGraphAt, lastModified: Date.now() } : d
+    ));
+  }, [setDiagrams]);
+
+  const handleCodeGraphCheckSync = useCallback(() => {
+    if (!codeGraph.activeGraph) return;
+    const handle = fileSystemService.getHandle(codeGraph.activeGraph.repoId) ?? null;
+    handleCheckSync(codeGraph.activeGraph, handle, codeGraph.updateGraph);
+  }, [codeGraph.activeGraph, codeGraph.updateGraph, handleCheckSync]);
+
+  const handleCodeGraphIncrementalSync = useCallback(() => {
+    if (!codeGraph.activeGraph) return;
+    const handle = fileSystemService.getHandle(codeGraph.activeGraph.repoId) ?? null;
+    const repoName = codeGraph.activeGraph.name;
+    handleIncrementalSync(
+      codeGraph.activeGraph,
+      handle,
+      repoName,
+      diagrams,
+      llmSettings,
+      codeGraph.updateGraph,
+      (id, code) => {
+        setDiagrams(prev => prev.map(d =>
+          d.id === id ? { ...d, code, lastModified: Date.now() } : d
+        ));
+      }
+    );
+  }, [codeGraph.activeGraph, codeGraph.updateGraph, diagrams, handleIncrementalSync, llmSettings, setDiagrams]);
+
   const handleCodeGraphViewCode = useCallback(async (nodeId: string) => {
     if (!codeGraph.activeGraph) return;
     const node = codeGraph.activeGraph.nodes[nodeId];
@@ -992,7 +1045,7 @@ export default function App() {
           onCodeGraphFocusUp={codeGraph.focusUp}
           onCodeGraphFocusRoot={codeGraph.focusRoot}
           onCodeGraphNavigateBreadcrumb={codeGraph.navigateBreadcrumb}
-          onCodeGraphSync={codeGraph.syncGraph}
+          onCodeGraphSync={handleCodeGraphIncrementalSync}
           onCodeGraphGetAnomalies={codeGraph.getGraphAnomalies}
           onCodeGraphDelete={() => codeGraph.activeGraphId && codeGraph.deleteGraph(codeGraph.activeGraphId)}
           onCodeGraphRename={codeGraphHandlers.handleRenameCodeGraph}
@@ -1011,6 +1064,9 @@ export default function App() {
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
           codeGraphIsReparsing={isCreatingGraph}
           onCodeGraphReparse={handleReparseGraph}
+          codeGraphSyncStatus={graphSyncStatuses[codeGraph.activeGraph?.id ?? ''] ?? 'unknown'}
+          codeGraphIsCheckingSync={isCheckingSync}
+          onCodeGraphCheckSync={handleCodeGraphCheckSync}
           progressLogEntries={progressLog.entries}
           isProgressLogActive={progressLog.isActive}
           isProgressLogExpanded={progressLog.isExpanded}
@@ -1069,6 +1125,8 @@ export default function App() {
         onUpdateProvider={updateProvider}
         onSetActiveProvider={setActiveProvider}
         storageInsecure={storageInsecure}
+        graphSyncMode={graphSyncMode}
+        onSetGraphSyncMode={handleSetGraphSyncMode}
         // TODO(DELETE): SCAN FEATURE — remove these 11 props
         isScanResultsOpen={isScanResultsOpen}
         onCloseScanResults={() => { setIsScanResultsOpen(false); clearScanResult(); }}
@@ -1122,6 +1180,19 @@ export default function App() {
         records={tokenRecords}
         onClear={clearUsage}
       />
+
+      {/* Sync Diff Modal — shown when there are pending sync proposals */}
+      {(isSyncDiffModalOpen || pendingProposals.length > 0) && pendingProposals.length > 0 && (
+        <SyncDiffModal
+          proposals={pendingProposals}
+          diagrams={diagrams}
+          onApply={(proposalId, selectedIds) =>
+            handleApplyProposal(proposalId, selectedIds, handleUpdateDiagramFromSync)
+          }
+          onDismiss={handleDismissProposal}
+          onClose={() => setIsSyncDiffModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -14,11 +14,12 @@ import { ConfirmModal } from './ConfirmModal';
 import {
   ChevronRight, Layers, Box, File, Code,
   GitBranch, RefreshCw, AlertTriangle, Trash2, Home,
-  Brain, Settings, Eye, ArrowRight, Play, X, Plus, RotateCw,
+  Brain, Settings, Eye, ArrowRight, Play, Plus, RotateCw,
+  CheckCircle, CircleDot,
 } from 'lucide-react';
 import {
   CodeGraph, ViewLens, GraphNode, GraphRelation,
-  CodeGraphAnomaly, SyncLockStatus, GraphFlow,
+  CodeGraphAnomaly, SyncLockStatus, GraphFlow, SyncStatus,
 } from '../types';
 
 interface CodeGraphPanelProps {
@@ -52,6 +53,10 @@ interface CodeGraphPanelProps {
   // Re-parse
   isReparsing?: boolean;
   onReparseGraph?: () => void;
+  // Incremental sync status
+  syncStatus?: SyncStatus;
+  isCheckingSync?: boolean;
+  onCheckSync?: () => void;
 }
 
 const KIND_ICONS: Record<string, React.ReactNode> = {
@@ -119,6 +124,9 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
   onRegenerateFlows,
   isReparsing = false,
   onReparseGraph,
+  syncStatus,
+  isCheckingSync = false,
+  onCheckSync,
 }) => {
   const [showAnomalies, setShowAnomalies] = useState(false);
   const [anomalies, setAnomalies] = useState<CodeGraphAnomaly[]>([]);
@@ -220,26 +228,43 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
 
       {/* Action Bar */}
       <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-800">
-        <button
-          onClick={onSyncGraph}
-          disabled={isSyncing}
-          className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-dark-700 text-gray-400 hover:text-green-400 transition-colors disabled:opacity-50"
-          title="Sync with codebase"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-          <span>Sync</span>
-        </button>
 
-        {onReparseGraph && (
-          <button
-            onClick={() => setShowReparseConfirm(true)}
-            disabled={isReparsing}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-dark-700 text-gray-400 hover:text-brand-400 transition-colors disabled:opacity-50"
-            title="Re-parse codebase from scratch"
+        {/* Adaptive sync button */}
+        {syncStatus === 'synced' ? (
+          <span
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-green-400"
+            title="All tracked files are in sync"
           >
-            <RotateCw className={`w-3.5 h-3.5 ${isReparsing ? 'animate-spin' : ''}`} />
-            <span>Re-parse</span>
+            <CheckCircle className="w-3.5 h-3.5" />
+            <span>Synced</span>
+          </span>
+        ) : syncStatus === 'suggestions' || syncStatus === 'conflicts' ? (
+          <button
+            onClick={onSyncGraph}
+            disabled={isSyncing}
+            className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50 ${
+              syncStatus === 'conflicts'
+                ? 'text-red-400 hover:bg-red-900/20'
+                : 'text-yellow-400 hover:bg-yellow-900/20'
+            }`}
+            title={syncStatus === 'conflicts' ? 'Missing files detected — sync to rebuild' : 'Files changed — click to sync'}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Syncing…' : syncStatus === 'conflicts' ? 'Conflicts' : 'Sync'}</span>
           </button>
+        ) : (
+          /* unknown or no status — show Check button */
+          onCheckSync && (
+            <button
+              onClick={onCheckSync}
+              disabled={isCheckingSync}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-400 hover:text-blue-400 hover:bg-dark-700 transition-colors disabled:opacity-50"
+              title="Check for file changes"
+            >
+              <CircleDot className={`w-3.5 h-3.5 ${isCheckingSync ? 'animate-pulse' : ''}`} />
+              <span>{isCheckingSync ? 'Checking…' : 'Check'}</span>
+            </button>
+          )
         )}
 
         {isDomainLens && (
@@ -250,16 +275,26 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
             title="Analyze domain structure with LLM"
           >
             <Brain className={`w-3.5 h-3.5 ${isAnalyzingDomain ? 'animate-pulse' : ''}`} />
-            <span>{isAnalyzingDomain ? 'Analyzing...' : 'Analyze'}</span>
+            <span>{isAnalyzingDomain ? 'Analyzing…' : 'Analyze'}</span>
           </button>
         )}
 
         <div className="flex-1" />
 
+        {onReparseGraph && (
+          <button
+            onClick={() => setShowReparseConfirm(true)}
+            disabled={isReparsing}
+            className="p-1 rounded hover:bg-dark-700 text-gray-600 hover:text-gray-300 transition-colors disabled:opacity-50"
+            title="Re-parse codebase from scratch (full rebuild)"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isReparsing ? 'animate-spin' : ''}`} />
+          </button>
+        )}
         <button
           onClick={onOpenConfig}
           className="p-1 rounded hover:bg-dark-700 text-gray-500 hover:text-gray-300 transition-colors"
-          title="Settings"
+          title="Graph settings"
         >
           <Settings className="w-3.5 h-3.5" />
         </button>
