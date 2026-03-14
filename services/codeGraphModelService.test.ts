@@ -241,10 +241,11 @@ describe('getVisibleNodes', () => {
     const { graph: g2 } = makeNode(g, 'Pkg', 'package', 1, g.rootNodeId);
     const { graph: g3 } = makeNode(g2, 'Fn', 'function', 1, g.rootNodeId);
     const componentLens = g3.lenses.find(l => l.type === 'component')!;
-    // component lens includes 'system','package','module','class','interface' but NOT 'function'
+    // component lens includes system/package/module/class/interface/function/method/variable/field
     const visible = getVisibleNodes(g3, componentLens);
     const kinds = visible.map(n => n.kind);
-    expect(kinds).not.toContain('function');
+    expect(kinds).toContain('package');
+    expect(kinds).toContain('function');
   });
 
   it('respects per-node lensConfig visibility override', () => {
