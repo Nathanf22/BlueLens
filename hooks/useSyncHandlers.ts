@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { CodeGraph, Diagram, SyncMode, SyncStatus, SyncProposal, LLMSettings } from '../types';
+import { CodeGraph, Diagram, GraphDiff, SyncMode, SyncStatus, SyncProposal, LLMSettings } from '../types';
 import { codeGraphSyncService } from '../services/codeGraphSyncService';
 import { diagramSyncService } from '../services/diagramSyncService';
 
@@ -36,6 +36,7 @@ export const useSyncHandlers = () => {
   const [graphSyncStatuses, setGraphSyncStatuses] = useState<Record<string, SyncStatus>>({});
   const [isCheckingSync, setIsCheckingSync] = useState(false);
   const [isSyncingGraph, setIsSyncingGraph] = useState(false);
+  const [lastSyncDiff, setLastSyncDiff] = useState<GraphDiff | null>(null);
 
   const handleCheckSync = useCallback(async (
     graph: CodeGraph,
@@ -76,6 +77,7 @@ export const useSyncHandlers = () => {
       );
       updateGraph(updatedGraph);
       setGraphSyncStatuses(prev => ({ ...prev, [graph.id]: 'synced' }));
+      setLastSyncDiff(diff);
 
       const proposal = await diagramSyncService.buildSyncProposal(graph, diff, diagrams, updatedGraph, llmSettings);
 
@@ -147,6 +149,7 @@ export const useSyncHandlers = () => {
     graphSyncStatuses,
     isCheckingSync,
     isSyncingGraph,
+    lastSyncDiff,
     handleCheckSync,
     handleIncrementalSync,
     handleApplyProposal,

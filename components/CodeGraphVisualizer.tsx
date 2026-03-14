@@ -63,6 +63,9 @@ interface CodeGraphVisualizerProps {
   onNodeDoubleClick: (nodeId: string) => void;
   onBackgroundClick: () => void;
   onOpenInEditor?: (flow: GraphFlow) => void;
+  highlightedNodes?: Record<string, 'added' | 'modified' | 'removed'>;
+  removedNodeNames?: string[];
+  onDismissHighlights?: () => void;
 }
 
 export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
@@ -75,6 +78,9 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
   onNodeDoubleClick,
   onBackgroundClick,
   onOpenInEditor,
+  highlightedNodes,
+  removedNodeNames,
+  onDismissHighlights,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -180,6 +186,13 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
     const feMerge = shadowFilter.append('feMerge');
     feMerge.append('feMergeNode').attr('in', 'offsetBlur');
     feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+    // Glow filter for 'added' highlight
+    const glowFilter = defs.append('filter').attr('id', 'glow-added').attr('height', '140%').attr('width', '140%').attr('x', '-20%').attr('y', '-20%');
+    glowFilter.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', 3).attr('result', 'blur');
+    const glowMerge = glowFilter.append('feMerge');
+    glowMerge.append('feMergeNode').attr('in', 'blur');
+    glowMerge.append('feMergeNode').attr('in', 'SourceGraphic');
 
     // Arrow markers
     const mkMarker = (id: string, color: string, refX: number) => {
@@ -314,6 +327,34 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
         .style('user-select', 'none');
     });
 
+    // Sync diff highlight rings
+    if (highlightedNodes && Object.keys(highlightedNodes).length > 0) {
+      node.each(function(d) {
+        const highlightKind = highlightedNodes[d.id];
+        if (!highlightKind) return;
+        const el = d3.select(this);
+        const w = d.isDomain ? DOMAIN_W : NODE_W;
+        const h = d.isDomain ? DOMAIN_H : NODE_H;
+        const r = d.isDomain ? 30 : 8;
+        const padding = 3;
+        const strokeColor = highlightKind === 'added' ? '#22c55e' : highlightKind === 'modified' ? '#f59e0b' : '#ef4444';
+        el.append('rect')
+          .attr('class', 'highlight-ring')
+          .attr('width', w + padding * 2)
+          .attr('height', h + padding * 2)
+          .attr('x', -w / 2 - padding)
+          .attr('y', -h / 2 - padding)
+          .attr('rx', r + padding)
+          .attr('ry', r + padding)
+          .attr('fill', 'none')
+          .attr('stroke', strokeColor)
+          .attr('stroke-width', 2.5)
+          .attr('opacity', 0.9)
+          .attr('pointer-events', 'none')
+          .attr('filter', highlightKind === 'added' ? 'url(#glow-added)' : null);
+      });
+    }
+
     // Tick
     simulation.on('tick', () => {
       link
@@ -338,7 +379,7 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
       clearTimeout(fitTimer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphData, dimensions]);
+  }, [graphData, dimensions, highlightedNodes]);
 
   // Selection highlight effect — updates stroke only, no simulation restart
   useEffect(() => {
@@ -416,6 +457,34 @@ export const CodeGraphVisualizer: React.FC<CodeGraphVisualizerProps> = ({
         <defs />
         {/* .graph-container created by D3 */}
       </svg>
+
+      {/* Sync diff legend badge */}
+      {((highlightedNodes && Object.keys(highlightedNodes).length > 0) || removedNodeNames?.length) && (() => {
+        const isLeaf = (id: string) => (graph.nodes[id]?.depth ?? 0) >= 3;
+        const added    = Object.entries(highlightedNodes ?? {}).filter(([id, v]) => v === 'added' && isLeaf(id)).length;
+        const modified = Object.entries(highlightedNodes ?? {}).filter(([id, v]) => v === 'modified' && isLeaf(id)).length;
+        const removed  = removedNodeNames?.length ?? 0;
+        return (
+          <div className="absolute top-2 left-2 flex flex-col gap-1 text-[10px] bg-gray-900/90 border border-gray-700 rounded px-2 py-1.5 max-w-[180px]">
+            <div className="flex items-center justify-between gap-3 mb-0.5">
+              <span className="text-gray-500 font-semibold uppercase tracking-wider">Last sync</span>
+              {onDismissHighlights && (
+                <button onClick={onDismissHighlights} className="text-gray-600 hover:text-gray-300 leading-none">✕</button>
+              )}
+            </div>
+            {added    > 0 && <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 flex-shrink-0 rounded-full bg-green-500" /><span className="text-green-400">+{added} added</span></span>}
+            {modified > 0 && <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 flex-shrink-0 rounded-full bg-amber-400" /><span className="text-amber-300">~{modified} modified</span></span>}
+            {removed  > 0 && (
+              <div className="flex flex-col gap-0.5">
+                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 flex-shrink-0 rounded-full bg-red-500" /><span className="text-red-400">-{removed} removed</span></span>
+                {removedNodeNames!.map(name => (
+                  <span key={name} className="pl-3 text-red-500/70 truncate" title={name}>{name}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Zoom controls */}
       <div className="absolute top-4 right-4 flex flex-col gap-0 opacity-70 group-hover:opacity-100 transition-opacity">

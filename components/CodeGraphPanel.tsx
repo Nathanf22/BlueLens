@@ -231,13 +231,15 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
 
         {/* Adaptive sync button */}
         {syncStatus === 'synced' ? (
-          <span
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-green-400"
-            title="All tracked files are in sync"
+          <button
+            onClick={onCheckSync}
+            disabled={isCheckingSync}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-green-400 hover:bg-dark-700 transition-colors disabled:opacity-50"
+            title="In sync — click to re-check"
           >
-            <CheckCircle className="w-3.5 h-3.5" />
-            <span>Synced</span>
-          </span>
+            <CheckCircle className={`w-3.5 h-3.5 ${isCheckingSync ? 'animate-pulse' : ''}`} />
+            <span>{isCheckingSync ? 'Checking…' : 'Synced'}</span>
+          </button>
         ) : syncStatus === 'suggestions' || syncStatus === 'conflicts' ? (
           <button
             onClick={onSyncGraph}
@@ -318,15 +320,28 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
       {isFlowLens && (
         <div className="border-b border-gray-800">
           <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-              Flows ({contextualFlows.length})
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex-shrink-0">
+                Flows ({contextualFlows.length})
+              </span>
+              {(() => {
+                const scopeName = graph.nodes[currentScopeId]?.name;
+                return scopeName ? (
+                  <span
+                    className="text-[10px] text-gray-600 truncate"
+                    title={`Scope: ${scopeName}`}
+                  >
+                    — {scopeName}
+                  </span>
+                ) : null;
+              })()}
+            </div>
             {onRegenerateFlows && (
               <button
                 onClick={() => onRegenerateFlows({ scopeNodeId: currentScopeId })}
                 disabled={isGeneratingFlows}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:text-cyan-400 hover:bg-dark-700 transition-colors disabled:opacity-50"
-                title="Regenerate flows at this level"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:text-cyan-400 hover:bg-dark-700 transition-colors disabled:opacity-50 flex-shrink-0"
+                title={`Regenerate flows for ${graph.nodes[currentScopeId]?.name ?? 'this scope'}`}
               >
                 <RefreshCw className={`w-3 h-3 ${isGeneratingFlows ? 'animate-spin' : ''}`} />
                 <span>{isGeneratingFlows ? 'Generating...' : 'Regenerate'}</span>

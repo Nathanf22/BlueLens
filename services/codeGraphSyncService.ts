@@ -139,11 +139,14 @@ function diffGraphs(before: CodeGraph, after: CodeGraph): GraphDiff {
   }
 
   // Modified: same ID but different name, kind, or contentHash
+  // Ignore hash changes where prevHash was '' — that's initialization, not a real modification
   for (const id of Object.keys(afterNodes)) {
     if (beforeNodes[id]) {
       const b = beforeNodes[id];
       const a = afterNodes[id];
-      const hashChanged = b.sourceRef?.contentHash !== a.sourceRef?.contentHash;
+      const prevHash = b.sourceRef?.contentHash ?? '';
+      const newHash = a.sourceRef?.contentHash ?? '';
+      const hashChanged = prevHash !== '' && prevHash !== newHash;
       if (b.name !== a.name || b.kind !== a.kind || hashChanged) {
         modifiedNodes.push({ before: b, after: a });
       }
@@ -226,6 +229,23 @@ async function incrementalResync(
         currentD3Children.map(n => [`${n.name}::${n.kind}`, n])
       );
 
+      // Update existing D3 nodes with per-symbol content hash
+      for (const sym of newSymbols) {
+        const key = `${sym.name}::${sym.kind}`;
+        const existing = existingD3Map.get(key);
+        if (existing) {
+          const lines = content.split('\n');
+          const symBody = lines.slice(Math.max(0, sym.lineStart - 1), sym.lineEnd).join('\n');
+          const symHash = await codeParserService.computeContentHash(symBody);
+          updatedNodes[existing.id] = {
+            ...existing,
+            sourceRef: existing.sourceRef
+              ? { ...existing.sourceRef, lineStart: sym.lineStart, lineEnd: sym.lineEnd, contentHash: symHash }
+              : null,
+          };
+        }
+      }
+
       // Add new symbols not in existing D3 children
       for (const sym of newSymbols) {
         const key = `${sym.name}::${sym.kind}`;
@@ -237,6 +257,9 @@ async function incrementalResync(
             interface: 'interface',
             variable: 'variable',
           };
+          const lines = content.split('\n');
+          const symBody = lines.slice(Math.max(0, sym.lineStart - 1), sym.lineEnd).join('\n');
+          const symHash = await codeParserService.computeContentHash(symBody);
           const newNode: GraphNode = {
             id: newId,
             name: sym.name,
@@ -248,7 +271,7 @@ async function incrementalResync(
               filePath,
               lineStart: sym.lineStart,
               lineEnd: sym.lineEnd,
-              contentHash: newHash,
+              contentHash: symHash,
             },
             tags: [],
             lensConfig: {},

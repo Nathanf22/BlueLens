@@ -18,7 +18,7 @@ function getDefaultLenses(): ViewLens[] {
     name: 'Component',
     type: 'component',
     nodeFilter: {
-      kinds: ['system', 'package', 'module', 'class', 'interface'],
+      kinds: ['system', 'package', 'module', 'class', 'interface', 'function', 'method', 'variable', 'field'],
       minDepth: 0,
       maxDepth: 3,
     },
