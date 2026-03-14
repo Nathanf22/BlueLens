@@ -50,7 +50,7 @@ export const useChatHandlers = (
       const allMessages = [...session.messages, userMsg];
       const llmMessages = aiChatService.chatMessagesToLLMMessages(allMessages);
 
-      const response = await llmService.sendMessage(llmMessages, systemPrompt, llmSettings);
+      const response = await llmService.sendMessage(llmMessages, systemPrompt, llmSettings, { source: 'diagram-chat' });
 
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now()}-${++sessionIdRef.current}`,

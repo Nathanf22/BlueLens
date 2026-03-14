@@ -484,12 +484,29 @@ export function getDefaultSettings(): LLMSettings {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Global usage listener — set once from App.tsx to capture all LLM calls
+// ---------------------------------------------------------------------------
+
+type UsageListener = (usage: TokenUsage, provider: LLMProvider, model: string, source: string) => void;
+let _usageListener: UsageListener | null = null;
+
+export function setUsageListener(fn: UsageListener): void {
+  _usageListener = fn;
+}
+
+function notifyUsage(usage: TokenUsage | undefined, provider: LLMProvider, model: string, source: string): void {
+  if (usage && usage.totalTokens > 0 && _usageListener) {
+    _usageListener(usage, provider, model, source);
+  }
+}
+
 export const llmService = {
   async sendMessage(
     messages: LLMMessage[],
     systemPrompt: string,
     settings: LLMSettings,
-    signal?: AbortSignal
+    options?: { signal?: AbortSignal; source?: string } | AbortSignal
   ): Promise<LLMResponse> {
     const config = settings.providers[settings.activeProvider];
     if (!config?.apiKey) {
@@ -497,17 +514,19 @@ export const llmService = {
         `No API key configured for ${settings.activeProvider}. Open AI Settings to configure.`
       );
     }
+    // Back-compat: options can be a bare AbortSignal (old callers)
+    const signal = options instanceof AbortSignal ? options : options?.signal;
+    const source = options instanceof AbortSignal ? 'unknown' : (options?.source ?? 'unknown');
 
+    let response: LLMResponse;
     switch (settings.activeProvider) {
-      case 'gemini':
-        return sendGemini(messages, systemPrompt, config, signal);
-      case 'openai':
-        return sendOpenAI(messages, systemPrompt, config, signal);
-      case 'anthropic':
-        return sendAnthropic(messages, systemPrompt, config, signal);
-      default:
-        throw new Error(`Unknown provider: ${settings.activeProvider}`);
+      case 'gemini':    response = await sendGemini(messages, systemPrompt, config, signal); break;
+      case 'openai':    response = await sendOpenAI(messages, systemPrompt, config, signal); break;
+      case 'anthropic': response = await sendAnthropic(messages, systemPrompt, config, signal); break;
+      default: throw new Error(`Unknown provider: ${settings.activeProvider}`);
     }
+    notifyUsage(response.usage, settings.activeProvider, config.model, source);
+    return response;
   },
 
   async runAgentLoop(
@@ -516,7 +535,7 @@ export const llmService = {
     tools: AgentToolDefinition[],
     executor: (name: string, args: Record<string, unknown>) => Promise<AgentToolStep>,
     settings: LLMSettings,
-    options?: { continuationContext?: unknown[]; signal?: AbortSignal },
+    options?: { continuationContext?: unknown[]; signal?: AbortSignal; source?: string },
   ): Promise<AgentLoopResult> {
     const config = settings.providers[settings.activeProvider];
     if (!config?.apiKey) {
@@ -524,12 +543,17 @@ export const llmService = {
     }
     const ctx = options?.continuationContext;
     const sig = options?.signal;
+    const source = options?.source ?? 'unknown';
+
+    let result: AgentLoopResult;
     switch (settings.activeProvider) {
-      case 'gemini':    return runAgentLoopGemini(messages, systemPrompt, tools, executor, config, ctx, sig);
-      case 'openai':    return runAgentLoopOpenAI(messages, systemPrompt, tools, executor, config, ctx, sig);
-      case 'anthropic': return runAgentLoopAnthropic(messages, systemPrompt, tools, executor, config, ctx, sig);
+      case 'gemini':    result = await runAgentLoopGemini(messages, systemPrompt, tools, executor, config, ctx, sig); break;
+      case 'openai':    result = await runAgentLoopOpenAI(messages, systemPrompt, tools, executor, config, ctx, sig); break;
+      case 'anthropic': result = await runAgentLoopAnthropic(messages, systemPrompt, tools, executor, config, ctx, sig); break;
       default: throw new Error(`Unknown provider: ${settings.activeProvider}`);
     }
+    notifyUsage(result.usage, settings.activeProvider, config.model, source);
+    return result;
   },
 
   async testConnection(provider: LLMProvider, config: LLMProviderConfig): Promise<boolean> {

@@ -5,7 +5,7 @@ import { AppFooter } from './components/AppFooter';
 import { WorkspaceView } from './components/WorkspaceView';
 import { ModalManager } from './components/ModalManager';
 import { BlueprintImportResult } from './services/exportService';
-import { llmService, LLMConfigError, LLMRateLimitError } from './services/llmService';
+import { llmService, LLMConfigError, LLMRateLimitError, setUsageListener } from './services/llmService';
 import { aiChatService } from './services/aiChatService';
 import { fileSystemService } from './services/fileSystemService';
 import { DEMO_REPO_ID, DEMO_RAW_BASE, buildRawBase } from './services/githubDemoService';
@@ -54,6 +54,11 @@ export default function App() {
   // --- Token Usage ---
   const { records: tokenRecords, recordUsage, clearUsage } = useTokenUsage();
   const [isTokenDashboardOpen, setIsTokenDashboardOpen] = useState(false);
+
+  // Register global listener — captures ALL llmService.sendMessage/runAgentLoop calls
+  useEffect(() => {
+    setUsageListener(recordUsage);
+  }, [recordUsage]);
 
   // --- State Management ---
   const {
@@ -367,14 +372,8 @@ export default function App() {
         AGENT_TOOLS,
         trackingExecutor,
         llmSettings,
-        { signal: abortController.signal },
+        { signal: abortController.signal, source: 'ai-chat' },
       );
-
-      // Record token usage for the dashboard
-      if (result.usage) {
-        const activeConfig = llmSettings.providers[llmSettings.activeProvider];
-        recordUsage(result.usage, llmSettings.activeProvider, activeConfig?.model ?? llmSettings.activeProvider);
-      }
 
       // Finalise the pending message with the response text (or mark interrupted)
       setGlobalChatMessages(prev => prev.map(m =>
@@ -496,13 +495,8 @@ export default function App() {
         AGENT_TOOLS,
         trackingExecutor,
         llmSettings,
-        { continuationContext: msg.continuationContext, signal: abortController.signal },
+        { continuationContext: msg.continuationContext, signal: abortController.signal, source: 'ai-chat' },
       );
-
-      if (result.usage) {
-        const activeConfig = llmSettings.providers[llmSettings.activeProvider];
-        recordUsage(result.usage, llmSettings.activeProvider, activeConfig?.model ?? llmSettings.activeProvider);
-      }
 
       setGlobalChatMessages(prev => prev.map(m =>
         m.id === msgId

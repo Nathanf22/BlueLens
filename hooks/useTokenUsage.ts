@@ -5,12 +5,13 @@ import { appendRecord, getRecords, clearRecords } from '../services/tokenUsageSe
 export const useTokenUsage = () => {
   const [records, setRecords] = useState<TokenUsageRecord[]>(() => getRecords());
 
-  const recordUsage = useCallback((usage: TokenUsage, provider: LLMProvider, model: string) => {
+  const recordUsage = useCallback((usage: TokenUsage, provider: LLMProvider, model: string, source = 'unknown') => {
     if (usage.totalTokens <= 0) return;
     const record = appendRecord({
       timestamp: Date.now(),
       provider,
       model,
+      source,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       totalTokens: usage.totalTokens,

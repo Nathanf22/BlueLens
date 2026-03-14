@@ -156,6 +156,7 @@ export interface TokenUsageRecord {
   timestamp: number;
   provider: LLMProvider;
   model: string;
+  source: string;   // feature that triggered the call, e.g. 'ai-chat', 'diagram-sync'
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
