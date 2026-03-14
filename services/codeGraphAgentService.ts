@@ -88,7 +88,16 @@ function extractJSON(text: string): string {
   const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
   if (fenced) return fenced[1].trim();
 
-  // Object before array — avoids matching internal arrays of an object
+  // Detect array vs object by whichever opening bracket comes first
+  const firstBracket = text.indexOf('[');
+  const firstBrace = text.indexOf('{');
+  const isArray = firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace);
+
+  if (isArray) {
+    const arrayMatch = text.match(/\[[\s\S]*\]/);
+    if (arrayMatch) return arrayMatch[0];
+  }
+
   const objMatch = text.match(/\{[\s\S]*\}/);
   if (objMatch) return objMatch[0];
 

@@ -60,7 +60,7 @@ export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code
 
       {/* Content */}
       {view === 'diagram' ? (
-        <div className="p-3 bg-gray-950/50 overflow-auto max-h-72 flex items-start justify-center">
+        <div className="p-3 bg-gray-950/50 overflow-auto max-h-96 flex items-start justify-center">
           {error ? (
             <span className="text-red-400">{error}</span>
           ) : svg ? (

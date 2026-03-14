@@ -780,7 +780,18 @@ export default function App() {
           d.id === id ? { ...d, code, lastModified: Date.now() } : d
         ));
       }
-    );
+    ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied }) => {
+      if (linkedDiagrams === 0) {
+        showToast('No diagrams linked to this code graph — link diagrams via the sidebar first.', 'warning');
+      } else if (proposalsGenerated === 0 && proposalsApplied === 0) {
+        showToast(`${linkedDiagrams} linked diagram${linkedDiagrams > 1 ? 's' : ''} checked — no updates needed.`, 'info');
+      } else {
+        const parts: string[] = [];
+        if (proposalsApplied > 0) parts.push(`${proposalsApplied} updated automatically`);
+        if (proposalsGenerated > 0) parts.push(`${proposalsGenerated} pending review — click the button in the top bar`);
+        showToast(parts.join(' · '), proposalsGenerated > 0 ? 'success' : 'info');
+      }
+    });
   }, [codeGraph.activeGraph, codeGraph.updateGraph, diagrams, handleIncrementalSync, llmSettings, setDiagrams]);
 
   const handleCodeGraphViewCode = useCallback(async (nodeId: string) => {
@@ -1017,6 +1028,9 @@ export default function App() {
         onOpenTokenDashboard={() => setIsTokenDashboardOpen(true)}
         isSidebarOpen={isSidebarOpen}
         repoCount={workspaceRepos.length}
+        pendingProposalCount={pendingProposals.reduce((n, p) => n + p.diagramDiffs.length, 0)}
+        onReviewProposals={() => setIsSyncDiffModalOpen(true)}
+        isSyncingDiagrams={isCheckingSync || isSyncingGraph}
       />
 
       {/* Main Layout */}
@@ -1051,6 +1065,11 @@ export default function App() {
             onOpenRepoManager={() => setIsRepoManagerOpen(true)}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onLinkDiagramToGraph={(diagramId, graphId) => {
+              setDiagrams(prev => prev.map(d =>
+                d.id === diagramId ? { ...d, sourceGraphId: graphId ?? undefined } : d
+              ));
+            }}
             repos={workspaceRepos}
             codeGraphs={codeGraph.codeGraphs}
             activeGraphId={codeGraph.activeGraphId}
@@ -1160,6 +1179,8 @@ export default function App() {
           codeGraphSyncStatus={graphSyncStatuses[codeGraph.activeGraph?.id ?? ''] ?? 'unknown'}
           codeGraphIsCheckingSync={isCheckingSync}
           onCodeGraphCheckSync={handleCodeGraphCheckSync}
+          codeGraphPendingProposalCount={pendingProposals.reduce((n, p) => n + p.diagramDiffs.length, 0)}
+          onCodeGraphReviewProposals={() => setIsSyncDiffModalOpen(true)}
           progressLogEntries={progressLog.entries}
           isProgressLogActive={progressLog.isActive}
           isProgressLogExpanded={progressLog.isExpanded}
@@ -1281,8 +1302,9 @@ export default function App() {
         onClear={clearUsage}
       />
 
-      {/* Sync Diff Modal — shown when there are pending sync proposals */}
-      {(isSyncDiffModalOpen || pendingProposals.length > 0) && pendingProposals.length > 0 && (
+
+      {/* Sync Diff Modal */}
+      {isSyncDiffModalOpen && pendingProposals.length > 0 && (
         <SyncDiffModal
           proposals={pendingProposals}
           diagrams={diagrams}

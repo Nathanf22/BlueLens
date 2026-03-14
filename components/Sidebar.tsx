@@ -37,6 +37,7 @@ interface SidebarProps {
   onOpenRepoManager: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onLinkDiagramToGraph?: (diagramId: string, graphId: string | null) => void;
   // CodeGraph
   repos?: RepoConfig[];
   codeGraphs?: CodeGraph[];
@@ -80,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenRepoManager,
   isCollapsed,
   onToggleCollapse,
+  onLinkDiagramToGraph,
   repos = [],
   codeGraphs = [],
   activeGraphId,
@@ -239,15 +241,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
         {diagram.nodeLinks && diagram.nodeLinks.length > 0 && (
-          <span 
-            className="text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-full font-medium" 
+          <span
+            className="text-[10px] bg-brand-600 text-white px-1.5 py-0.5 rounded-full font-medium"
             title={`${diagram.nodeLinks.length} node link${diagram.nodeLinks.length > 1 ? 's' : ''}`}
           >
             {diagram.nodeLinks.length}
           </span>
         )}
+        {diagram.sourceGraphId && (
+          <span title={`Linked to code graph: ${codeGraphs.find(g => g.id === diagram.sourceGraphId)?.name ?? diagram.sourceGraphId}`}>
+            <Link2 className="w-3 h-3 text-brand-400 flex-shrink-0" />
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onLinkDiagramToGraph && activeGraphId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const alreadyLinked = diagram.sourceGraphId === activeGraphId;
+              onLinkDiagramToGraph(diagram.id, alreadyLinked ? null : activeGraphId);
+              showToast?.(alreadyLinked ? 'Diagram unlinked from code graph.' : 'Diagram linked to code graph.', 'info');
+            }}
+            className={`p-1 rounded hover:bg-dark-700 transition-colors ${diagram.sourceGraphId === activeGraphId ? 'text-brand-400 hover:text-red-400' : 'text-gray-500 hover:text-brand-400'}`}
+            title={diagram.sourceGraphId === activeGraphId ? 'Unlink from code graph' : 'Link to active code graph'}
+          >
+            {diagram.sourceGraphId === activeGraphId ? <Unlink className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+          </button>
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation();

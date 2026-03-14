@@ -19,7 +19,7 @@ function loadSyncMode(): SyncMode {
   } catch {
     // localStorage unavailable
   }
-  return 'semi-auto';
+  return 'manual';
 }
 
 function saveSyncMode(mode: SyncMode): void {
@@ -66,8 +66,8 @@ export const useSyncHandlers = () => {
     llmSettings: LLMSettings,
     updateGraph: (g: CodeGraph) => void,
     updateDiagram: (id: string, code: string) => void
-  ) => {
-    if (!handle) return;
+  ): Promise<{ linkedDiagrams: number; proposalsGenerated: number; proposalsApplied: number }> => {
+    if (!handle) return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0 };
     setIsSyncingGraph(true);
     try {
       const { graph: updatedGraph, diff } = await codeGraphSyncService.incrementalResync(
@@ -80,22 +80,26 @@ export const useSyncHandlers = () => {
       setLastSyncDiff(diff);
 
       const proposal = await diagramSyncService.buildSyncProposal(graph, diff, diagrams, updatedGraph, llmSettings);
+      const linkedDiagrams = diagrams.filter(d => d.sourceGraphId === graph.id).length;
 
       if (proposal.diagramDiffs.length === 0) {
-        return;
+        return { linkedDiagrams, proposalsGenerated: 0, proposalsApplied: 0 };
       }
+
+      let proposalsApplied = 0;
 
       if (syncMode === 'auto') {
         for (const d of proposal.diagramDiffs) {
           updateDiagram(d.diagramId, d.proposedCode);
         }
+        proposalsApplied = proposal.diagramDiffs.length;
       } else if (syncMode === 'semi-auto') {
-        // Auto-apply additions-only diffs; store the rest as pending
         const pending: typeof proposal.diagramDiffs = [];
         for (const d of proposal.diagramDiffs) {
-          const additionsOnly = d.removedNodes.length === 0 && d.removedEdges.length === 0;
+          const additionsOnly = d.addedNodes.length > 0 && d.removedNodes.length === 0 && d.removedEdges.length === 0;
           if (additionsOnly) {
             updateDiagram(d.diagramId, d.proposedCode);
+            proposalsApplied++;
           } else {
             pending.push(d);
           }
@@ -104,11 +108,13 @@ export const useSyncHandlers = () => {
           setPendingProposals(prev => [...prev, { ...proposal, diagramDiffs: pending }]);
         }
       } else {
-        // manual: store all as pending
         setPendingProposals(prev => [...prev, proposal]);
       }
+
+      return { linkedDiagrams, proposalsGenerated: proposal.diagramDiffs.length - proposalsApplied, proposalsApplied };
     } catch (err) {
       console.error('[useSyncHandlers] handleIncrementalSync error:', err);
+      return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0 };
     } finally {
       setIsSyncingGraph(false);
     }

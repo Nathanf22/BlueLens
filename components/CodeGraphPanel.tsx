@@ -57,6 +57,9 @@ interface CodeGraphPanelProps {
   syncStatus?: SyncStatus;
   isCheckingSync?: boolean;
   onCheckSync?: () => void;
+  // Pending diagram sync proposals
+  pendingProposalCount?: number;
+  onReviewProposals?: () => void;
 }
 
 const KIND_ICONS: Record<string, React.ReactNode> = {
@@ -127,6 +130,8 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
   syncStatus,
   isCheckingSync = false,
   onCheckSync,
+  pendingProposalCount = 0,
+  onReviewProposals,
 }) => {
   const [showAnomalies, setShowAnomalies] = useState(false);
   const [anomalies, setAnomalies] = useState<CodeGraphAnomaly[]>([]);
@@ -267,6 +272,17 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
               <span>{isCheckingSync ? 'Checking…' : 'Check'}</span>
             </button>
           )
+        )}
+
+        {pendingProposalCount > 0 && onReviewProposals && (
+          <button
+            onClick={onReviewProposals}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-brand-600 hover:bg-brand-500 text-white transition-colors animate-pulse"
+            title="Diagram updates proposed — click to review"
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            <span>{pendingProposalCount} proposal{pendingProposalCount > 1 ? 's' : ''}</span>
+          </button>
         )}
 
         {isDomainLens && (

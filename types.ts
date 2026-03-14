@@ -497,8 +497,11 @@ export interface DiagramDiff {
   removedNodes: string[];  // node labels removed
   addedEdges: Array<{ from: string; to: string; label?: string }>;
   removedEdges: Array<{ from: string; to: string; label?: string }>;
+  currentCode: string;     // original diagram code (before)
   proposedCode: string;
   annotatedCode: string;   // Mermaid with classDef color annotations
+  explanation?: string;    // LLM-generated explanation of the change
+  brokenNodeLinkIds?: string[]; // nodeLink IDs whose Mermaid node ID no longer exists in proposedCode
 }
 
 export interface SyncProposal {
