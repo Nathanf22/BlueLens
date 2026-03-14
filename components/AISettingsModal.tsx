@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Check, AlertCircle, Loader2, ChevronDown, ShieldAlert } from 'lucide-react';
+import { X, Check, AlertCircle, Loader2, ChevronDown, ShieldAlert, Bot, RefreshCw } from 'lucide-react';
 import { Button } from './Button';
-import { LLMProvider, LLMProviderConfig, LLMSettings } from '../types';
+import { LLMProvider, LLMProviderConfig, LLMSettings, SyncMode } from '../types';
 import { llmService } from '../services/llmService';
 
 interface AISettingsModalProps {
@@ -11,6 +11,8 @@ interface AISettingsModalProps {
   onUpdateProvider: (provider: LLMProvider, config: LLMProviderConfig | null) => void;
   onSetActiveProvider: (provider: LLMProvider) => void;
   storageInsecure?: boolean;
+  syncMode?: SyncMode;
+  onSetSyncMode?: (mode: SyncMode) => void;
 }
 
 const PROVIDER_INFO: Record<LLMProvider, { label: string; description: string }> = {
@@ -19,7 +21,6 @@ const PROVIDER_INFO: Record<LLMProvider, { label: string; description: string }>
   anthropic: { label: 'Anthropic', description: 'Claude models. Requires a CORS proxy for browser use.' },
 };
 
-/** Known models per provider. The first entry is the service default. */
 const PROVIDER_MODELS: Record<LLMProvider, { id: string; label: string }[]> = {
   gemini: [
     { id: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite Preview' },
@@ -60,6 +61,31 @@ const PROVIDER_MODELS: Record<LLMProvider, { id: string; label: string }[]> = {
 
 const PROVIDER_ORDER: LLMProvider[] = ['gemini', 'anthropic', 'openai'];
 
+const SYNC_MODE_OPTIONS: { value: SyncMode; label: string; description: string }[] = [
+  {
+    value: 'semi-auto',
+    label: 'Semi-auto',
+    description: 'Additions are applied automatically after a resync. Removals are queued for review before being applied.',
+  },
+  {
+    value: 'manual',
+    label: 'Manual',
+    description: 'Nothing is applied automatically. All sync changes are queued and require explicit review.',
+  },
+  {
+    value: 'auto',
+    label: 'Auto',
+    description: 'All changes — additions and removals — are applied immediately after a resync.',
+  },
+];
+
+type Tab = 'providers' | 'sync';
+
+const TABS: { id: Tab; label: string; icon: React.ReactNode; badge?: string }[] = [
+  { id: 'providers', label: 'AI Providers', icon: <Bot className="w-4 h-4" /> },
+  { id: 'sync', label: 'Sync', icon: <RefreshCw className="w-4 h-4" /> },
+];
+
 export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   isOpen,
   onClose,
@@ -67,7 +93,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   onUpdateProvider,
   onSetActiveProvider,
   storageInsecure = false,
+  syncMode = 'semi-auto',
+  onSetSyncMode,
 }) => {
+  const [activeTab, setActiveTab] = useState<Tab>('providers');
   const [testingProvider, setTestingProvider] = useState<LLMProvider | null>(null);
   const [testResults, setTestResults] = useState<Record<string, 'success' | 'error' | null>>({});
   const [testError, setTestError] = useState<string | null>(null);
@@ -80,7 +109,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       onUpdateProvider(provider, {
         provider,
         apiKey: apiKey.trim(),
-        // Preserve existing model selection, or initialize to the first known model (default)
         model: existing?.model || PROVIDER_MODELS[provider][0].id,
         proxyUrl: existing?.proxyUrl,
       });
@@ -123,150 +151,216 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
       <div className="bg-dark-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-dark-800/50 shrink-0">
-          <h2 className="font-semibold text-white">AI Provider Settings</h2>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-dark-800/50 shrink-0">
+          <h2 className="font-semibold text-white">Settings</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-6 overflow-y-auto">
-          {storageInsecure && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-              <ShieldAlert className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-yellow-300 leading-relaxed">
-                <span className="font-semibold">Encrypted storage unavailable.</span> Your browser does not support IndexedDB or Web Crypto API. API keys are stored in plaintext localStorage. Use a modern Chromium-based browser (Chrome, Edge, Brave) for encrypted key storage.
-              </p>
-            </div>
-          )}
-          {PROVIDER_ORDER.map(provider => {
-            const info = PROVIDER_INFO[provider];
-            const config = llmSettings.providers[provider];
-            const isActive = llmSettings.activeProvider === provider;
-            const testResult = testResults[provider];
-
-            return (
-              <div
-                key={provider}
-                className={`border rounded-lg transition-colors ${
-                  isActive ? 'border-brand-500 bg-brand-500/5' : 'border-gray-700 hover:border-gray-600'
+        <div className="flex flex-1 min-h-0">
+          {/* Sidebar navigation */}
+          <nav className="w-44 shrink-0 border-r border-gray-800 bg-dark-800/30 p-2 flex flex-col gap-0.5">
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left transition-colors w-full ${
+                  activeTab === tab.id
+                    ? 'bg-brand-500/15 text-brand-400 font-medium'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
                 }`}
               >
-                {/* Clickable header — entire row selects this provider */}
-                <div
-                  className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
-                  onClick={() => onSetActiveProvider(provider)}
-                >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="radio"
-                      name="activeProvider"
-                      checked={isActive}
-                      onChange={() => onSetActiveProvider(provider)}
-                      onClick={e => e.stopPropagation()}
-                      className="accent-brand-500 cursor-pointer"
-                    />
-                    <span className="font-medium text-white">{info.label}</span>
-                    {isActive ? (
-                      <span className="text-xs px-2 py-0.5 bg-brand-600/30 text-brand-400 rounded-full">Active</span>
-                    ) : config?.apiKey ? (
-                      <span className="text-xs px-2 py-0.5 bg-green-900/30 text-green-500 rounded-full">Ready</span>
-                    ) : (
-                      <span className="text-xs text-gray-600">No API key</span>
-                    )}
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Tab content */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+            {/* ── AI Providers tab ── */}
+            {activeTab === 'providers' && (
+              <>
+                {storageInsecure && (
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                    <ShieldAlert className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-yellow-300 leading-relaxed">
+                      <span className="font-semibold">Encrypted storage unavailable.</span> Your browser does not support IndexedDB or Web Crypto API. API keys are stored in plaintext localStorage. Use a modern Chromium-based browser for encrypted key storage.
+                    </p>
                   </div>
-                  {config?.apiKey && (
-                    <button
-                      onClick={e => { e.stopPropagation(); handleTestConnection(provider); }}
-                      disabled={testingProvider !== null}
-                      className="text-xs px-3 py-1 rounded border border-gray-600 text-gray-300 hover:bg-gray-700 disabled:opacity-50 flex items-center gap-1"
+                )}
+
+                {PROVIDER_ORDER.map(provider => {
+                  const info = PROVIDER_INFO[provider];
+                  const config = llmSettings.providers[provider];
+                  const isActive = llmSettings.activeProvider === provider;
+                  const testResult = testResults[provider];
+
+                  return (
+                    <div
+                      key={provider}
+                      className={`border rounded-lg transition-colors ${
+                        isActive ? 'border-brand-500 bg-brand-500/5' : 'border-gray-700 hover:border-gray-600'
+                      }`}
                     >
-                      {testingProvider === provider ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : testResult === 'success' ? (
-                        <Check className="w-3 h-3 text-green-400" />
-                      ) : testResult === 'error' ? (
-                        <AlertCircle className="w-3 h-3 text-red-400" />
-                      ) : null}
-                      Test
-                    </button>
-                  )}
-                </div>
-
-                {/* Config fields */}
-                <div className="px-4 pb-4 space-y-3 border-t border-gray-800/60 pt-3">
-                  <p className="text-xs text-gray-500">{info.description}</p>
-
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">API Key</label>
-                    <input
-                      type="password"
-                      value={config?.apiKey || ''}
-                      onChange={e => handleApiKeyChange(provider, e.target.value)}
-                      placeholder={`Enter ${info.label} API key`}
-                      className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                    />
-                  </div>
-
-                  {(() => {
-                    const models = PROVIDER_MODELS[provider];
-                    const defaultModel = models[0];
-                    const selectedId = config?.model || defaultModel.id;
-                    return (
-                      <div>
-                        <label className="text-xs text-gray-400 block mb-1">Model</label>
-                        <div className="relative">
-                          <select
-                            value={selectedId}
-                            onChange={e => handleModelChange(provider, e.target.value)}
-                            className="w-full appearance-none bg-dark-800 border border-gray-700 rounded px-3 py-2 pr-8 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
-                          >
-                            {models.map((m, i) => (
-                              <option key={m.id} value={m.id}>
-                                {i === 0 ? `${m.label} (default)` : m.label}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                      <div
+                        className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
+                        onClick={() => onSetActiveProvider(provider)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="activeProvider"
+                            checked={isActive}
+                            onChange={() => onSetActiveProvider(provider)}
+                            onClick={e => e.stopPropagation()}
+                            className="accent-brand-500 cursor-pointer"
+                          />
+                          <span className="font-medium text-white">{info.label}</span>
+                          {isActive ? (
+                            <span className="text-xs px-2 py-0.5 bg-brand-600/30 text-brand-400 rounded-full">Active</span>
+                          ) : config?.apiKey ? (
+                            <span className="text-xs px-2 py-0.5 bg-green-900/30 text-green-500 rounded-full">Ready</span>
+                          ) : (
+                            <span className="text-xs text-gray-600">No API key</span>
+                          )}
                         </div>
-                        {selectedId === defaultModel.id && (
-                          <p className="text-xs text-gray-600 mt-1">Modèle recommandé pour ce fournisseur.</p>
+                        {config?.apiKey && (
+                          <button
+                            onClick={e => { e.stopPropagation(); handleTestConnection(provider); }}
+                            disabled={testingProvider !== null}
+                            className="text-xs px-3 py-1 rounded border border-gray-600 text-gray-300 hover:bg-gray-700 disabled:opacity-50 flex items-center gap-1"
+                          >
+                            {testingProvider === provider ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : testResult === 'success' ? (
+                              <Check className="w-3 h-3 text-green-400" />
+                            ) : testResult === 'error' ? (
+                              <AlertCircle className="w-3 h-3 text-red-400" />
+                            ) : null}
+                            Test
+                          </button>
                         )}
                       </div>
-                    );
-                  })()}
 
-                  {provider === 'anthropic' && (
-                    <div>
-                      <label className="text-xs text-gray-400 block mb-1">CORS Proxy URL</label>
-                      <input
-                        type="text"
-                        value={config?.proxyUrl || ''}
-                        onChange={e => handleProxyUrlChange(provider, e.target.value)}
-                        placeholder="e.g., https://your-proxy.example.com"
-                        className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                      />
-                      <p className="text-xs text-gray-600 mt-1">
-                        The Anthropic API does not support browser requests (CORS). You need a proxy server that forwards requests to api.anthropic.com. Without a proxy, direct API calls will fail.
-                      </p>
+                      <div className="px-4 pb-4 space-y-3 border-t border-gray-800/60 pt-3">
+                        <p className="text-xs text-gray-500">{info.description}</p>
+
+                        <div>
+                          <label className="text-xs text-gray-400 block mb-1">API Key</label>
+                          <input
+                            type="password"
+                            value={config?.apiKey || ''}
+                            onChange={e => handleApiKeyChange(provider, e.target.value)}
+                            placeholder={`Enter ${info.label} API key`}
+                            className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                          />
+                        </div>
+
+                        {(() => {
+                          const models = PROVIDER_MODELS[provider];
+                          const defaultModel = models[0];
+                          const selectedId = config?.model || defaultModel.id;
+                          return (
+                            <div>
+                              <label className="text-xs text-gray-400 block mb-1">Model</label>
+                              <div className="relative">
+                                <select
+                                  value={selectedId}
+                                  onChange={e => handleModelChange(provider, e.target.value)}
+                                  className="w-full appearance-none bg-dark-800 border border-gray-700 rounded px-3 py-2 pr-8 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
+                                >
+                                  {models.map((m, i) => (
+                                    <option key={m.id} value={m.id}>
+                                      {i === 0 ? `${m.label} (default)` : m.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {provider === 'anthropic' && (
+                          <div>
+                            <label className="text-xs text-gray-400 block mb-1">CORS Proxy URL</label>
+                            <input
+                              type="text"
+                              value={config?.proxyUrl || ''}
+                              onChange={e => handleProxyUrlChange(provider, e.target.value)}
+                              placeholder="e.g., https://your-proxy.example.com"
+                              className="w-full bg-dark-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                            />
+                            <p className="text-xs text-gray-600 mt-1">
+                              The Anthropic API does not support browser requests (CORS). You need a proxy server that forwards requests to api.anthropic.com.
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                  );
+                })}
 
-          {testError && (
-            <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded border border-red-900/50">
-              {testError}
-            </div>
-          )}
+                {testError && (
+                  <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded border border-red-900/50">
+                    {testError}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── Sync tab ── */}
+            {activeTab === 'sync' && (
+              <>
+                <div>
+                  <h3 className="text-sm font-medium text-white mb-1">Diagram sync mode</h3>
+                  <p className="text-xs text-gray-500 mb-4">
+                    Controls how diagram updates are applied when the codebase changes after a resync. Only diagrams generated from a CodeGraph are affected.
+                  </p>
+                  <div className="space-y-2">
+                    {SYNC_MODE_OPTIONS.map(opt => (
+                      <label
+                        key={opt.value}
+                        className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition-colors ${
+                          syncMode === opt.value
+                            ? 'border-brand-500 bg-brand-500/5'
+                            : 'border-gray-700 hover:border-gray-600'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="syncMode"
+                          value={opt.value}
+                          checked={syncMode === opt.value}
+                          onChange={() => onSetSyncMode?.(opt.value)}
+                          className="accent-brand-500 mt-0.5 cursor-pointer"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-white">{opt.label}</span>
+                            {opt.value === 'semi-auto' && (
+                              <span className="text-xs px-1.5 py-0.5 bg-gray-700 text-gray-400 rounded">default</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end p-4 border-t border-gray-800 shrink-0">
+        <div className="flex justify-end px-4 py-3 border-t border-gray-800 shrink-0">
           <Button variant="secondary" onClick={onClose}>Done</Button>
         </div>
       </div>

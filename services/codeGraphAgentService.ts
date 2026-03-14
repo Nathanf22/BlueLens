@@ -85,15 +85,15 @@ function buildPathResolver(allFilePaths: Set<string>): (candidate: string) => st
 
 function extractJSON(text: string): string {
   // Try to extract JSON from markdown code fences first
-  const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)```/);
+  const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
   if (fenced) return fenced[1].trim();
 
-  // Try to find array or object
-  const arrayMatch = text.match(/\[[\s\S]*\]/);
-  if (arrayMatch) return arrayMatch[0];
-
+  // Object before array — avoids matching internal arrays of an object
   const objMatch = text.match(/\{[\s\S]*\}/);
   if (objMatch) return objMatch[0];
+
+  const arrayMatch = text.match(/\[[\s\S]*\]/);
+  if (arrayMatch) return arrayMatch[0];
 
   return text.trim();
 }

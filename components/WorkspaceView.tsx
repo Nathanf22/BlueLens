@@ -87,6 +87,10 @@ interface WorkspaceViewProps {
   // CodeGraph re-parse
   codeGraphIsReparsing?: boolean;
   onCodeGraphReparse?: () => void;
+  // CodeGraph incremental sync status
+  codeGraphSyncStatus?: SyncStatus;
+  codeGraphIsCheckingSync?: boolean;
+  onCodeGraphCheckSync?: () => void;
   // Progress Log
   progressLogEntries?: ProgressLogEntry[];
   isProgressLogActive?: boolean;
@@ -96,6 +100,10 @@ interface WorkspaceViewProps {
   // Source CodeGraph context (when viewing an exported flow diagram)
   sourceGraph?: CodeGraph | null;
   onGoToSourceGraph?: (graphId: string) => void;
+  // Sync diff highlights
+  codeGraphHighlightedNodes?: Record<string, 'added' | 'modified' | 'removed'>;
+  codeGraphRemovedNodeNames?: string[];
+  onDismissSyncHighlights?: () => void;
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
@@ -169,6 +177,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onCodeGraphRegenerateFlows,
   codeGraphIsReparsing = false,
   onCodeGraphReparse,
+  codeGraphSyncStatus,
+  codeGraphIsCheckingSync = false,
+  onCodeGraphCheckSync,
   progressLogEntries = [],
   isProgressLogActive = false,
   isProgressLogExpanded = false,
@@ -176,6 +187,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onDismissProgressLog,
   sourceGraph,
   onGoToSourceGraph,
+  codeGraphHighlightedNodes,
+  codeGraphRemovedNodeNames,
+  onDismissSyncHighlights,
 }) => {
   const { codePanelWidthPercent, isDraggingCodePanel, handleCodePanelMouseDown } = useCodePanelResize(containerRef);
 
@@ -245,6 +259,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onRegenerateFlows={onCodeGraphRegenerateFlows}
                 isReparsing={codeGraphIsReparsing}
                 onReparseGraph={onCodeGraphReparse}
+                syncStatus={codeGraphSyncStatus}
+                isCheckingSync={codeGraphIsCheckingSync}
+                onCheckSync={onCodeGraphCheckSync}
               />
             </div>
           ) : (
@@ -287,6 +304,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onNodeDoubleClick={onCodeGraphFocusNode || (() => {})}
                 onBackgroundClick={onCodeGraphDeselectNode || (() => {})}
                 onOpenInEditor={onCodeGraphOpenFlowInEditor}
+                highlightedNodes={codeGraphHighlightedNodes}
+                removedNodeNames={codeGraphRemovedNodeNames}
+                onDismissHighlights={onDismissSyncHighlights}
               />
             </div>
           ) : (

@@ -196,7 +196,7 @@ function buildGraphSummary(graph: CodeGraph, scopeNodeId?: string): GraphSummary
 // ── Layer 2: LLM Flow Generation ───────────────────────────────────
 
 function extractJSON(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)```/);
+  const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
   if (fenced) return fenced[1].trim();
 
   const objMatch = text.match(/\{[\s\S]*\}/);
@@ -310,6 +310,7 @@ function validateLLMFlows(
   validNodeIds: Set<string>,
   rootNodeId: string,
   moduleNodeIds: Set<string>,
+  graph: CodeGraph,
 ): Record<string, GraphFlow> | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const obj = raw as Record<string, unknown>;
@@ -317,8 +318,26 @@ function validateLLMFlows(
   const flowsArr = Array.isArray(obj.flows) ? obj.flows : (Array.isArray(raw) ? raw : null);
   if (!flowsArr) return null;
 
+  // Build name→nodeId lookup so the LLM can use names instead of opaque IDs
+  const nameToNodeId = new Map<string, string>();
+  for (const node of Object.values(graph.nodes)) {
+    const lower = node.name.toLowerCase();
+    if (!nameToNodeId.has(lower)) nameToNodeId.set(lower, node.id);
+    // also index without extension
+    const noExt = node.name.replace(/\.[^.]+$/, '').toLowerCase();
+    if (!nameToNodeId.has(noExt)) nameToNodeId.set(noExt, node.id);
+  }
+
+  const resolveNodeId = (id: string): string | null => {
+    if (validNodeIds.has(id)) return id;
+    const byName = nameToNodeId.get(id.toLowerCase());
+    if (byName && validNodeIds.has(byName)) return byName;
+    return null;
+  };
+
   const flows: Record<string, GraphFlow> = {};
   let validCount = 0;
+  let skippedScope = 0, skippedSteps = 0;
 
   for (const item of flowsArr) {
     if (typeof item !== 'object' || item === null) continue;
@@ -328,29 +347,39 @@ function validateLLMFlows(
     if (typeof scopeNodeId !== 'string') continue;
     if (!Array.isArray(steps) || steps.length < 2) continue;
 
-    // Validate scopeNodeId
-    const validScope = scopeNodeId === rootNodeId || moduleNodeIds.has(scopeNodeId);
-    if (!validScope) continue;
+    // Validate scopeNodeId — accept exact match OR name-based match OR any valid D1/root
+    let resolvedScope = scopeNodeId === rootNodeId || moduleNodeIds.has(scopeNodeId)
+      ? scopeNodeId
+      : resolveNodeId(scopeNodeId);
+    // If still unresolved, default to root rather than dropping the flow
+    if (!resolvedScope) {
+      resolvedScope = rootNodeId;
+      skippedScope++;
+    }
 
-    // Validate steps
+    // Validate steps — resolve by ID or name
     const validSteps: GraphFlowStep[] = [];
     for (const step of steps) {
       if (typeof step !== 'object' || step === null) continue;
       const s = step as Record<string, unknown>;
-      if (typeof s.nodeId !== 'string' || !validNodeIds.has(s.nodeId)) continue;
+      if (typeof s.nodeId !== 'string') continue;
+      const resolved = resolveNodeId(s.nodeId);
+      if (!resolved) continue;
       validSteps.push({
-        nodeId: s.nodeId,
+        nodeId: resolved,
         label: typeof s.label === 'string' ? s.label : s.nodeId,
         order: typeof s.order === 'number' ? s.order : validSteps.length,
       });
     }
 
-    if (validSteps.length < 2) continue;
+    if (validSteps.length < 2) {
+      skippedSteps++;
+      continue;
+    }
 
-    // Validate sequence diagram
+    // Build or preserve sequence diagram
     let seqDiagram = typeof sequenceDiagram === 'string' ? sequenceDiagram : '';
     if (!seqDiagram.startsWith('sequenceDiagram')) {
-      // Build a basic one from steps
       const participants = validSteps.map(
         s => `  participant ${s.nodeId} as ${s.label.replace(/\.[^.]+$/, '')}`
       ).join('\n');
@@ -365,17 +394,18 @@ function validateLLMFlows(
       id,
       name,
       description: typeof description === 'string' ? description : '',
-      scopeNodeId,
+      scopeNodeId: resolvedScope,
       steps: validSteps,
       sequenceDiagram: seqDiagram,
     };
     validCount++;
   }
 
-  // Accept if at least 50% of entries passed validation
-  if (validCount === 0) return null;
-  if (flowsArr.length > 0 && validCount / flowsArr.length < 0.5) return null;
+  if (skippedScope > 0 || skippedSteps > 0) {
+    console.warn(`[CodeGraph Flows] Validation: ${validCount} accepted, ${skippedScope} scope-fixed, ${skippedSteps} dropped (< 2 valid steps)`);
+  }
 
+  if (validCount === 0) return null;
   return flows;
 }
 
@@ -433,7 +463,7 @@ async function generateFlowsWithLLM(
 
       const jsonStr = extractJSON(response.content);
       const parsed = JSON.parse(jsonStr);
-      const validated = validateLLMFlows(parsed, validNodeIds, summary.rootNodeId, moduleNodeIds);
+      const validated = validateLLMFlows(parsed, validNodeIds, summary.rootNodeId, moduleNodeIds, graph);
 
       if (validated && Object.keys(validated).length > 0) {
         console.log(`[CodeGraph Flows] LLM generated ${Object.keys(validated).length} flows`);

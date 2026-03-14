@@ -50,6 +50,8 @@ interface ModalManagerProps {
   onUpdateProvider: (provider: LLMProvider, config: LLMProviderConfig | null) => void;
   onSetActiveProvider: (provider: LLMProvider) => void;
   storageInsecure?: boolean;
+  graphSyncMode?: SyncMode;
+  onSetGraphSyncMode?: (mode: SyncMode) => void;
   // Scan Results
   isScanResultsOpen: boolean;
   onCloseScanResults: () => void;
@@ -127,6 +129,8 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
   onUpdateProvider,
   onSetActiveProvider,
   storageInsecure,
+  graphSyncMode,
+  onSetGraphSyncMode,
   isScanResultsOpen,
   onCloseScanResults,
   scanResult,
@@ -224,6 +228,8 @@ export const ModalManager: React.FC<ModalManagerProps> = ({
         onUpdateProvider={onUpdateProvider}
         onSetActiveProvider={onSetActiveProvider}
         storageInsecure={storageInsecure}
+        syncMode={graphSyncMode}
+        onSetSyncMode={onSetGraphSyncMode}
       />
 
       {/* Scan Results Panel */}

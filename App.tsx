@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { AppHeader } from './components/AppHeader';
 import { AppFooter } from './components/AppFooter';
@@ -32,6 +32,7 @@ import { useTokenUsage } from './hooks/useTokenUsage';
 import { useCodebaseImport } from './hooks/useCodebaseImport';
 import { useCodeGraph } from './hooks/useCodeGraph';
 import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
+import { useSyncHandlers } from './hooks/useSyncHandlers';
 import { useProgressLog } from './hooks/useProgressLog';
 import { useToast } from './hooks/useToast';
 import { ToastContainer } from './components/ToastContainer';
@@ -43,6 +44,7 @@ import {
 } from './services/codeGraphExportService';
 import { FlowExportModal } from './components/FlowExportModal';
 import { TokenDashboardModal } from './components/TokenDashboardModal';
+import { SyncDiffModal } from './components/SyncDiffModal';
 import { CodeGraph } from './types';
 
 export default function App() {
@@ -181,6 +183,77 @@ export default function App() {
   // --- CodeGraph ---
   const codeGraph = useCodeGraph(activeWorkspaceId);
   const codeGraphHandlers = useCodeGraphHandlers(codeGraph.activeGraph, codeGraph.updateGraph);
+
+  // --- Incremental Sync ---
+  const {
+    syncMode: graphSyncMode,
+    pendingProposals,
+    graphSyncStatuses,
+    isCheckingSync,
+    isSyncingGraph,
+    lastSyncDiff,
+    handleCheckSync,
+    handleIncrementalSync,
+    handleApplyProposal,
+    handleDismissProposal,
+    handleSetSyncMode: handleSetGraphSyncMode,
+  } = useSyncHandlers();
+  const [isSyncDiffModalOpen, setIsSyncDiffModalOpen] = useState(false);
+  const SYNC_HIGHLIGHTS_KEY = `bluelens_sync_highlights_${codeGraph.activeGraph?.id ?? ''}`;
+  const [syncHighlights, setSyncHighlights] = useState<Record<string, 'added' | 'modified' | 'removed'>>(() => {
+    try { return JSON.parse(localStorage.getItem(SYNC_HIGHLIGHTS_KEY) ?? 'null') ?? {}; } catch { return {}; }
+  });
+  const [syncRemovedNames, setSyncRemovedNames] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(SYNC_HIGHLIGHTS_KEY + '_removed') ?? 'null') ?? []; } catch { return []; }
+  });
+
+  // React to new sync diffs: build highlight map, show toast, auto-clear after 8s
+  useEffect(() => {
+    if (!lastSyncDiff) return;
+    const highlights: Record<string, 'added' | 'modified' | 'removed'> = {};
+    const graph = codeGraph.activeGraph;
+
+    const propagateToAncestors = (nodeId: string) => {
+      if (!graph) return;
+      let current = graph.nodes[nodeId];
+      while (current?.parentId) {
+        highlights[current.parentId] = 'modified'; // ancestors always show orange
+        current = graph.nodes[current.parentId];
+      }
+    };
+
+    // First pass: propagate ancestors (orange) for all changed nodes
+    for (const node of lastSyncDiff.addedNodes) propagateToAncestors(node.id);
+    for (const { after } of lastSyncDiff.modifiedNodes) propagateToAncestors(after.id);
+    for (const node of lastSyncDiff.removedNodes) propagateToAncestors(node.id);
+
+    // Second pass: apply direct colors — overrides any ancestor propagation that may have
+    // incorrectly colored a node that is itself directly added/modified/removed
+    for (const node of lastSyncDiff.addedNodes) highlights[node.id] = 'added';
+    for (const { after } of lastSyncDiff.modifiedNodes) highlights[after.id] = 'modified';
+    for (const node of lastSyncDiff.removedNodes) highlights[node.id] = 'removed';
+
+    setSyncHighlights(highlights);
+    // Show removed D3 symbols + removed D2 files in the legend
+    const removedD3 = lastSyncDiff.removedNodes.filter(n => n.depth === 3).map(n => n.name);
+    const removedD2 = lastSyncDiff.removedNodes.filter(n => n.depth === 2).map(n => n.name);
+    const removed = [...removedD2.map(name => `📄 ${name}`), ...removedD3];
+    setSyncRemovedNames(removed);
+    try {
+      localStorage.setItem(SYNC_HIGHLIGHTS_KEY, JSON.stringify(highlights));
+      localStorage.setItem(SYNC_HIGHLIGHTS_KEY + '_removed', JSON.stringify(removed));
+    } catch { /* quota */ }
+
+    const addedCount    = lastSyncDiff.addedNodes.length;
+    const modifiedCount = lastSyncDiff.modifiedNodes.length;
+    const removedCount  = lastSyncDiff.removedNodes.length;
+    const parts: string[] = [];
+    if (addedCount    > 0) parts.push(`+${addedCount} ${addedCount === 1 ? 'node' : 'nodes'}`);
+    if (modifiedCount > 0) parts.push(`~${modifiedCount} modified`);
+    if (removedCount  > 0) parts.push(`-${removedCount} removed`);
+    const summary = parts.length > 0 ? `Sync: ${parts.join(' · ')}` : 'Sync complete — no changes';
+    showToast(summary, 'info');
+  }, [lastSyncDiff, showToast]);
 
   // --- Global AI Chat ---
   const [globalChatMessages, setGlobalChatMessages] = useState<ChatMessage[]>([]);
@@ -637,6 +710,79 @@ export default function App() {
     codeGraphStorageService.saveCodeGraphConfig(config);
   }, []);
 
+  // --- Sync diagram update (from incremental sync proposals) ---
+  const handleUpdateDiagramFromSync = useCallback((
+    id: string,
+    code: string,
+    generatedFromGraphAt: number
+  ) => {
+    setDiagrams(prev => prev.map(d =>
+      d.id === id ? { ...d, code, generatedFromGraphAt, lastModified: Date.now() } : d
+    ));
+  }, [setDiagrams]);
+
+  const resolveHandle = useCallback(async (repoId: string): Promise<FileSystemDirectoryHandle | null> => {
+    let handle = fileSystemService.getHandle(repoId) ?? null;
+    if (!handle) {
+      await fileSystemService.reconnectRepo(repoId);
+      handle = fileSystemService.getHandle(repoId) ?? null;
+    }
+    return handle;
+  }, []);
+
+  const handleCodeGraphCheckSync = useCallback(async () => {
+    if (!codeGraph.activeGraph) return;
+    const handle = await resolveHandle(codeGraph.activeGraph.repoId);
+    if (!handle) { showToast('Cannot access files — please reopen the repository folder.', 'error'); return; }
+    handleCheckSync(codeGraph.activeGraph, handle, codeGraph.updateGraph);
+  }, [codeGraph.activeGraph, codeGraph.updateGraph, handleCheckSync, resolveHandle, showToast]);
+
+  // Auto-check on graph selection — runs silently when a graph becomes active
+  useEffect(() => {
+    if (!codeGraph.activeGraph) return;
+    const graph = codeGraph.activeGraph;
+    if (Object.keys(graph.syncLock).length === 0) return;
+    const timer = setTimeout(async () => {
+      const handle = await resolveHandle(graph.repoId);
+      if (!handle) return;
+      handleCheckSync(graph, handle, codeGraph.updateGraph);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [codeGraph.activeGraph?.id]);
+
+  // Auto-check on window focus — user comes back from their editor
+  useEffect(() => {
+    const onFocus = async () => {
+      const graph = codeGraph.activeGraph;
+      if (!graph || Object.keys(graph.syncLock).length === 0) return;
+      const handle = await resolveHandle(graph.repoId);
+      if (!handle) return;
+      handleCheckSync(graph, handle, codeGraph.updateGraph);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [codeGraph.activeGraph, codeGraph.updateGraph, resolveHandle, handleCheckSync]);
+
+  const handleCodeGraphIncrementalSync = useCallback(async () => {
+    if (!codeGraph.activeGraph) return;
+    const handle = await resolveHandle(codeGraph.activeGraph.repoId);
+    if (!handle) { showToast('Cannot access files — please reopen the repository folder.', 'error'); return; }
+    const repoName = codeGraph.activeGraph.name;
+    handleIncrementalSync(
+      codeGraph.activeGraph,
+      handle,
+      repoName,
+      diagrams,
+      llmSettings,
+      codeGraph.updateGraph,
+      (id, code) => {
+        setDiagrams(prev => prev.map(d =>
+          d.id === id ? { ...d, code, lastModified: Date.now() } : d
+        ));
+      }
+    );
+  }, [codeGraph.activeGraph, codeGraph.updateGraph, diagrams, handleIncrementalSync, llmSettings, setDiagrams]);
+
   const handleCodeGraphViewCode = useCallback(async (nodeId: string) => {
     if (!codeGraph.activeGraph) return;
     const node = codeGraph.activeGraph.nodes[nodeId];
@@ -992,7 +1138,7 @@ export default function App() {
           onCodeGraphFocusUp={codeGraph.focusUp}
           onCodeGraphFocusRoot={codeGraph.focusRoot}
           onCodeGraphNavigateBreadcrumb={codeGraph.navigateBreadcrumb}
-          onCodeGraphSync={codeGraph.syncGraph}
+          onCodeGraphSync={handleCodeGraphIncrementalSync}
           onCodeGraphGetAnomalies={codeGraph.getGraphAnomalies}
           onCodeGraphDelete={() => codeGraph.activeGraphId && codeGraph.deleteGraph(codeGraph.activeGraphId)}
           onCodeGraphRename={codeGraphHandlers.handleRenameCodeGraph}
@@ -1011,6 +1157,9 @@ export default function App() {
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
           codeGraphIsReparsing={isCreatingGraph}
           onCodeGraphReparse={handleReparseGraph}
+          codeGraphSyncStatus={graphSyncStatuses[codeGraph.activeGraph?.id ?? ''] ?? 'unknown'}
+          codeGraphIsCheckingSync={isCheckingSync}
+          onCodeGraphCheckSync={handleCodeGraphCheckSync}
           progressLogEntries={progressLog.entries}
           isProgressLogActive={progressLog.isActive}
           isProgressLogExpanded={progressLog.isExpanded}
@@ -1022,6 +1171,13 @@ export default function App() {
           onGoToSourceGraph={(graphId) => {
             codeGraph.selectGraph(graphId);
             setActiveGraphId(graphId);
+          }}
+          codeGraphHighlightedNodes={syncHighlights}
+          codeGraphRemovedNodeNames={syncRemovedNames}
+          onDismissSyncHighlights={() => {
+            setSyncHighlights({});
+            setSyncRemovedNames([]);
+            try { localStorage.removeItem(SYNC_HIGHLIGHTS_KEY); localStorage.removeItem(SYNC_HIGHLIGHTS_KEY + '_removed'); } catch { /* quota */ }
           }}
         />
       </div>
@@ -1069,6 +1225,8 @@ export default function App() {
         onUpdateProvider={updateProvider}
         onSetActiveProvider={setActiveProvider}
         storageInsecure={storageInsecure}
+        graphSyncMode={graphSyncMode}
+        onSetGraphSyncMode={handleSetGraphSyncMode}
         // TODO(DELETE): SCAN FEATURE — remove these 11 props
         isScanResultsOpen={isScanResultsOpen}
         onCloseScanResults={() => { setIsScanResultsOpen(false); clearScanResult(); }}
@@ -1122,6 +1280,19 @@ export default function App() {
         records={tokenRecords}
         onClear={clearUsage}
       />
+
+      {/* Sync Diff Modal — shown when there are pending sync proposals */}
+      {(isSyncDiffModalOpen || pendingProposals.length > 0) && pendingProposals.length > 0 && (
+        <SyncDiffModal
+          proposals={pendingProposals}
+          diagrams={diagrams}
+          onApply={(proposalId, selectedIds) =>
+            handleApplyProposal(proposalId, selectedIds, handleUpdateDiagramFromSync)
+          }
+          onDismiss={handleDismissProposal}
+          onClose={() => setIsSyncDiffModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

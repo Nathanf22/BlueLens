@@ -38,6 +38,7 @@ export interface Diagram {
   // If generated from a CodeGraph flow, tracks the source graph + scope
   sourceGraphId?: string;
   sourceScopeNodeId?: string; // scopeNodeId of the flow (null/rootNodeId = root-level)
+  generatedFromGraphAt?: number; // timestamp of graph state when this diagram was last generated/synced
 }
 
 export interface NodeLink {
@@ -479,6 +480,37 @@ export interface SyncLockEntry {
   sourceRef: SourceReference;
   status: SyncLockStatus;
   lastChecked: number;
+}
+
+export interface GraphDiff {
+  addedNodes: GraphNode[];
+  removedNodes: GraphNode[];
+  modifiedNodes: Array<{ before: GraphNode; after: GraphNode }>;
+  addedRelations: GraphRelation[];
+  removedRelations: GraphRelation[];
+}
+
+export interface DiagramDiff {
+  diagramId: string;
+  diagramName: string;
+  addedNodes: string[];    // node labels added
+  removedNodes: string[];  // node labels removed
+  addedEdges: Array<{ from: string; to: string; label?: string }>;
+  removedEdges: Array<{ from: string; to: string; label?: string }>;
+  proposedCode: string;
+  annotatedCode: string;   // Mermaid with classDef color annotations
+}
+
+export interface SyncProposal {
+  id: string;
+  graphId: string;
+  graphDiff: GraphDiff;
+  diagramDiffs: DiagramDiff[];
+  createdAt: number;
+}
+
+export interface SyncConfig {
+  mode: SyncMode; // 'manual' | 'semi-auto' | 'auto'
 }
 
 export type CodeGraphAnomalyType =
