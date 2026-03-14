@@ -222,22 +222,22 @@ export default function App() {
       }
     };
 
-    // Leaf nodes get their real color; ancestors always get 'modified' (orange)
-    for (const node of lastSyncDiff.addedNodes) {
-      highlights[node.id] = 'added';
-      propagateToAncestors(node.id);
-    }
-    for (const { after } of lastSyncDiff.modifiedNodes) {
-      highlights[after.id] = 'modified';
-      propagateToAncestors(after.id);
-    }
-    for (const node of lastSyncDiff.removedNodes) {
-      highlights[node.id] = 'removed';
-      propagateToAncestors(node.id);
-    }
+    // First pass: propagate ancestors (orange) for all changed nodes
+    for (const node of lastSyncDiff.addedNodes) propagateToAncestors(node.id);
+    for (const { after } of lastSyncDiff.modifiedNodes) propagateToAncestors(after.id);
+    for (const node of lastSyncDiff.removedNodes) propagateToAncestors(node.id);
+
+    // Second pass: apply direct colors — overrides any ancestor propagation that may have
+    // incorrectly colored a node that is itself directly added/modified/removed
+    for (const node of lastSyncDiff.addedNodes) highlights[node.id] = 'added';
+    for (const { after } of lastSyncDiff.modifiedNodes) highlights[after.id] = 'modified';
+    for (const node of lastSyncDiff.removedNodes) highlights[node.id] = 'removed';
 
     setSyncHighlights(highlights);
-    const removed = lastSyncDiff.removedNodes.filter(n => n.depth === 3).map(n => n.name);
+    // Show removed D3 symbols + removed D2 files in the legend
+    const removedD3 = lastSyncDiff.removedNodes.filter(n => n.depth === 3).map(n => n.name);
+    const removedD2 = lastSyncDiff.removedNodes.filter(n => n.depth === 2).map(n => n.name);
+    const removed = [...removedD2.map(name => `📄 ${name}`), ...removedD3];
     setSyncRemovedNames(removed);
     try {
       localStorage.setItem(SYNC_HIGHLIGHTS_KEY, JSON.stringify(highlights));

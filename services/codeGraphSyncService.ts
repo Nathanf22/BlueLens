@@ -9,11 +9,34 @@ import { codeParserService } from './codeParserService';
 import { codebaseAnalyzerService } from './codebaseAnalyzerService';
 import { codeToGraphParserService } from './codeToGraphParserService';
 import { LocalFileSystemProvider } from './LocalFileSystemProvider';
+import { CODE_EXTENSIONS } from './IFileSystemProvider';
+
+const IGNORED_DIRS = new Set(['.git', 'node_modules', '__pycache__', '.next', '.nuxt', 'dist', 'build', '.vite', 'coverage']);
 
 interface ChangeReport {
   modified: SyncLockEntry[];
   missing: SyncLockEntry[];
   unchanged: SyncLockEntry[];
+  newFilePaths: string[];
+}
+
+async function walkCodeFiles(
+  dirHandle: FileSystemDirectoryHandle,
+  prefix: string,
+  results: string[]
+): Promise<void> {
+  for await (const [name, entry] of (dirHandle as any).entries()) {
+    if (entry.kind === 'directory') {
+      if (!IGNORED_DIRS.has(name) && !name.startsWith('.')) {
+        await walkCodeFiles(entry as FileSystemDirectoryHandle, `${prefix}${name}/`, results);
+      }
+    } else {
+      const ext = name.includes('.') ? '.' + name.split('.').pop()! : '';
+      if (CODE_EXTENSIONS.has(ext)) {
+        results.push(`${prefix}${name}`);
+      }
+    }
+  }
 }
 
 async function detectChanges(
@@ -24,6 +47,7 @@ async function detectChanges(
     modified: [],
     missing: [],
     unchanged: [],
+    newFilePaths: [],
   };
 
   for (const entry of Object.values(graph.syncLock)) {
@@ -38,6 +62,16 @@ async function detectChanges(
       }
     } catch {
       report.missing.push({ ...entry, status: 'missing' });
+    }
+  }
+
+  // Detect new files not yet in syncLock
+  const knownPaths = new Set(Object.values(graph.syncLock).map(e => e.sourceRef.filePath));
+  const allFiles: string[] = [];
+  await walkCodeFiles(handle, '', allFiles);
+  for (const path of allFiles) {
+    if (!knownPaths.has(path)) {
+      report.newFilePaths.push(path);
     }
   }
 
@@ -186,7 +220,7 @@ async function incrementalResync(
     removedRelations: [],
   };
 
-  if (report.modified.length === 0 && report.missing.length === 0) {
+  if (report.modified.length === 0 && report.missing.length === 0 && report.newFilePaths.length === 0) {
     return { graph, diff: emptyDiff };
   }
 
@@ -318,13 +352,102 @@ async function incrementalResync(
     }
   }
 
-  // Process missing files: update syncLock but don't remove nodes
+  // Process missing files: remove D2 + D3 nodes from graph, remove syncLock entry
   for (const entry of report.missing) {
-    updatedSyncLock[entry.nodeId] = {
-      ...entry,
-      status: 'missing',
-      lastChecked: Date.now(),
-    };
+    const d2Node = Object.values(graph.nodes).find(
+      n => n.depth === 2 && n.sourceRef?.filePath === entry.sourceRef.filePath
+    );
+    if (d2Node) {
+      // Remove all D3 children
+      const d3Children = Object.values(graph.nodes).filter(n => n.depth === 3 && n.parentId === d2Node.id);
+      for (const child of d3Children) {
+        delete updatedNodes[child.id];
+      }
+      // Remove D2 node itself
+      delete updatedNodes[d2Node.id];
+      // Remove from D1 parent children list
+      if (d2Node.parentId && updatedNodes[d2Node.parentId]) {
+        updatedNodes[d2Node.parentId] = {
+          ...updatedNodes[d2Node.parentId],
+          children: updatedNodes[d2Node.parentId].children.filter(cid => cid !== d2Node.id),
+        };
+      }
+    }
+    // Remove from syncLock entirely
+    delete updatedSyncLock[entry.nodeId];
+  }
+
+  // Process new files: add D2 + D3 nodes
+  for (const filePath of report.newFilePaths) {
+    try {
+      const content = await fileSystemService.readFile(handle, filePath);
+      const language = detectLanguage(filePath);
+      const fileHash = await codeParserService.computeContentHash(content);
+      const symbols = codeParserService.extractSymbols(content, language);
+
+      // Find D1 parent by matching path prefix, or fall back to root
+      const fileName = filePath.split('/').pop() ?? filePath;
+      const dirPath = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
+      const d1Node = Object.values(graph.nodes).find(
+        n => n.depth === 1 && (
+          (dirPath && n.sourceRef?.filePath === dirPath) ||
+          (!dirPath && n.parentId === graph.rootNodeId)
+        )
+      ) ?? Object.values(graph.nodes).find(n => n.depth === 1);
+
+      if (!d1Node) continue;
+
+      // Create D2 node
+      const d2Id = Math.random().toString(36).substr(2, 9);
+      const d2Node: GraphNode = {
+        id: d2Id,
+        name: fileName,
+        kind: 'module',
+        depth: 2 as GraphDepth,
+        parentId: d1Node.id,
+        children: [],
+        sourceRef: { filePath, lineStart: 1, lineEnd: 1, contentHash: fileHash },
+        tags: [],
+        lensConfig: {},
+        domainProjections: [],
+      };
+      updatedNodes[d2Id] = d2Node;
+      updatedNodes[d1Node.id] = { ...updatedNodes[d1Node.id], children: [...updatedNodes[d1Node.id].children, d2Id] };
+
+      // Create D3 nodes for symbols
+      const kindMap: Record<string, GraphNodeKind> = { class: 'class', function: 'function', interface: 'interface', variable: 'variable' };
+      const d3Ids: string[] = [];
+      for (const sym of symbols) {
+        const lines = content.split('\n');
+        const symBody = lines.slice(Math.max(0, sym.lineStart - 1), sym.lineEnd).join('\n');
+        const symHash = await codeParserService.computeContentHash(symBody);
+        const d3Id = Math.random().toString(36).substr(2, 9);
+        updatedNodes[d3Id] = {
+          id: d3Id,
+          name: sym.name,
+          kind: (kindMap[sym.kind] ?? 'function') as GraphNodeKind,
+          depth: 3 as GraphDepth,
+          parentId: d2Id,
+          children: [],
+          sourceRef: { filePath, lineStart: sym.lineStart, lineEnd: sym.lineEnd, contentHash: symHash },
+          tags: [],
+          lensConfig: {},
+          domainProjections: [],
+        };
+        d3Ids.push(d3Id);
+      }
+      updatedNodes[d2Id] = { ...updatedNodes[d2Id], children: d3Ids };
+
+      // Add to syncLock
+      updatedSyncLock[d2Id] = {
+        nodeId: d2Id,
+        sourceRef: { filePath, lineStart: 1, lineEnd: 1, contentHash: fileHash },
+        status: 'locked',
+        lastChecked: Date.now(),
+      };
+    } catch {
+      // Skip unreadable new files
+    }
   }
 
   const updatedGraph: CodeGraph = {
