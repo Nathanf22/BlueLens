@@ -96,7 +96,7 @@ export const useSyncHandlers = () => {
       } else if (syncMode === 'semi-auto') {
         const pending: typeof proposal.diagramDiffs = [];
         for (const d of proposal.diagramDiffs) {
-          const additionsOnly = d.removedNodes.length === 0 && d.removedEdges.length === 0;
+          const additionsOnly = d.addedNodes.length > 0 && d.removedNodes.length === 0 && d.removedEdges.length === 0;
           if (additionsOnly) {
             updateDiagram(d.diagramId, d.proposedCode);
             proposalsApplied++;

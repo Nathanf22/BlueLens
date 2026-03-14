@@ -1030,6 +1030,7 @@ export default function App() {
         repoCount={workspaceRepos.length}
         pendingProposalCount={pendingProposals.reduce((n, p) => n + p.diagramDiffs.length, 0)}
         onReviewProposals={() => setIsSyncDiffModalOpen(true)}
+        isSyncingDiagrams={isCheckingSync || isSyncingGraph}
       />
 
       {/* Main Layout */}

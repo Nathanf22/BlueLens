@@ -372,7 +372,12 @@ If an update IS needed, apply MINIMAL SURGICAL changes to the existing diagram:
 - DO NOT remove nodes unless they are explicitly listed as removed in the diff
 - ONLY add new nodes/edges for entities listed as added in the diff
 - PRESERVE all existing node descriptions, styles, and diagram conventions
-- Return ONLY a valid Mermaid diagram code block, nothing else
+
+When you update the diagram, respond in this exact format:
+REASON: <one or two sentences explaining what changed in the code and what was updated in the diagram>
+\`\`\`mermaid
+<updated diagram code>
+\`\`\`
 
 Be conservative: when in doubt, return NO_CHANGE rather than making unnecessary changes.`;
 
@@ -389,7 +394,7 @@ export async function proposeDiagramUpdate(
   graphDiff: GraphDiff,
   llmSettings: LLMSettings,
   minDistance: number = 0
-): Promise<string | null> {
+): Promise<{ code: string; explanation: string } | null> {
   const scopeNode = diagram.sourceScopeNodeId
     ? updatedGraph.nodes[diagram.sourceScopeNodeId]
     : updatedGraph.nodes[updatedGraph.rootNodeId];
@@ -432,18 +437,27 @@ Decide: does this diagram need updating given the changes above? If not, respond
     // LLM decided no update needed
     if (content === 'NO_CHANGE' || content.startsWith('NO_CHANGE')) return null;
 
+    // Parse REASON + mermaid block
+    let explanation = '';
+    let codeContent = content;
+    const reasonMatch = content.match(/^REASON:\s*(.+?)(?=\n|```)/s);
+    if (reasonMatch) {
+      explanation = reasonMatch[1].trim();
+    }
+
     const extracted = extractMermaidBlock(content);
-    if (extracted && extracted.length > 0) return extracted;
+    if (extracted && extracted.length > 0) return { code: extracted, explanation };
 
     if (content.startsWith('flowchart') || content.startsWith('graph ') || content.startsWith('sequenceDiagram')) {
-      return content;
+      return { code: codeContent, explanation };
     }
   } catch (err) {
     console.warn('[diagramSyncService] LLM proposeDiagramUpdate failed, falling back to deterministic:', err);
   }
 
   // Fallback: deterministic regeneration
-  return generateMermaidFromGraph(updatedGraph, diagram.sourceScopeNodeId);
+  const fallbackCode = generateMermaidFromGraph(updatedGraph, diagram.sourceScopeNodeId);
+  return { code: fallbackCode, explanation: '' };
 }
 
 // ---------------------------------------------------------------------------
@@ -571,11 +585,11 @@ export async function buildSyncProposal(
       console.log(`[diagramSync] "${diagram.name}" → NO_CHANGE`);
       continue;
     }
-    const diff = computeDiagramDiff(diagram, proposed);
+    const diff = computeDiagramDiff(diagram, proposed.code);
     console.log(`[diagramSync] "${diagram.name}" → proposed: +${diff.addedNodes.length}nodes -${diff.removedNodes.length}nodes +${diff.addedEdges.length}edges -${diff.removedEdges.length}edges`);
     if (diff.addedNodes.length > 0 || diff.removedNodes.length > 0 ||
         diff.addedEdges.length > 0 || diff.removedEdges.length > 0) {
-      diagramDiffs.push(diff);
+      diagramDiffs.push({ ...diff, explanation: proposed.explanation || undefined });
     }
   }
 

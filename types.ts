@@ -500,6 +500,7 @@ export interface DiagramDiff {
   currentCode: string;     // original diagram code (before)
   proposedCode: string;
   annotatedCode: string;   // Mermaid with classDef color annotations
+  explanation?: string;    // LLM-generated explanation of the change
   brokenNodeLinkIds?: string[]; // nodeLink IDs whose Mermaid node ID no longer exists in proposedCode
 }
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Menu, Settings, FolderGit2, BarChart3, GitBranch } from 'lucide-react';
+import { Sparkles, Menu, Settings, FolderGit2, BarChart3, GitBranch, RefreshCw } from 'lucide-react';
 
 interface AppHeaderProps {
   onToggleSidebar: () => void;
@@ -11,6 +11,7 @@ interface AppHeaderProps {
   repoCount: number;
   pendingProposalCount?: number;
   onReviewProposals?: () => void;
+  isSyncingDiagrams?: boolean;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -23,6 +24,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   repoCount,
   pendingProposalCount = 0,
   onReviewProposals,
+  isSyncingDiagrams = false,
 }) => {
   return (
     <header className="flex items-center justify-between px-4 py-2 bg-dark-800 border-b border-gray-700 shadow-md z-20 shrink-0 h-14">
@@ -54,6 +56,12 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        {isSyncingDiagrams && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 bg-dark-700 border border-gray-600">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-brand-400" />
+            <span>Checking diagrams…</span>
+          </div>
+        )}
         {pendingProposalCount > 0 && onReviewProposals && (
           <button
             onClick={onReviewProposals}
