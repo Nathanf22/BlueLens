@@ -76,7 +76,8 @@ export const useScanHandlers = (
         const response = await llmService.sendMessage(
           [{ role: 'user', content: prompt }],
           'You are a Mermaid.js diagram expert. Return only the complete updated diagram in a mermaid code block.',
-          llmSettings
+          llmSettings,
+          { source: 'scan' }
         );
         const cleaned = cleanMermaidResponse(response.content);
         if (cleaned) {

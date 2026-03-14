@@ -125,6 +125,30 @@ export function aggregateByProvider(records: TokenUsageRecord[]): ProviderStats[
   return [...map.values()].sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
+export interface SourceStats {
+  source: string;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  callCount: number;
+}
+
+export function aggregateBySource(records: TokenUsageRecord[]): SourceStats[] {
+  const map = new Map<string, SourceStats>();
+  for (const r of records) {
+    const s = r.source ?? 'unknown';
+    const existing = map.get(s) ?? { source: s, totalTokens: 0, inputTokens: 0, outputTokens: 0, callCount: 0 };
+    map.set(s, {
+      ...existing,
+      totalTokens:  existing.totalTokens  + r.totalTokens,
+      inputTokens:  existing.inputTokens  + r.inputTokens,
+      outputTokens: existing.outputTokens + r.outputTokens,
+      callCount:    existing.callCount    + 1,
+    });
+  }
+  return [...map.values()].sort((a, b) => b.totalTokens - a.totalTokens);
+}
+
 export interface DailyStats {
   date: string; // YYYY-MM-DD
   totalTokens: number;

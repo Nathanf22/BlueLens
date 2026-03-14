@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, Trash2, AlertCircle } from 'lucide-react';
 import { TokenUsageRecord } from '../types';
 import {
-  Period, filterByPeriod, aggregateByProvider, aggregateByDay,
+  Period, filterByPeriod, aggregateByProvider, aggregateByDay, aggregateBySource,
   estimateCost, hasKnownPricing,
 } from '../services/tokenUsageService';
 
@@ -71,6 +71,7 @@ export const TokenDashboardModal: React.FC<TokenDashboardModalProps> = ({
 
   const filtered = useMemo(() => filterByPeriod(records, period), [records, period]);
   const byProvider = useMemo(() => aggregateByProvider(filtered), [filtered]);
+  const bySource = useMemo(() => aggregateBySource(filtered), [filtered]);
   const dailyData = useMemo(() => aggregateByDay(filtered, period === '30d' ? 30 : 14), [filtered, period]);
 
   const totalTokens   = filtered.reduce((s, r) => s + r.totalTokens, 0);
@@ -179,6 +180,32 @@ export const TokenDashboardModal: React.FC<TokenDashboardModalProps> = ({
                           <div
                             className={`h-full rounded-full ${PROVIDER_COLORS[p.provider] ?? 'bg-brand-500'}`}
                             style={{ width: `${totalTokens > 0 ? (p.totalTokens / totalTokens * 100) : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* By source */}
+              {bySource.length > 0 && (
+                <div className="bg-dark-800 border border-gray-800 rounded-lg p-4">
+                  <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3">By feature</h3>
+                  <div className="space-y-3">
+                    {bySource.map(s => (
+                      <div key={s.source}>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-medium text-gray-300 capitalize">{s.source.replace(/-/g, ' ')}</span>
+                          <div className="flex items-center gap-3 text-gray-400">
+                            <span className="text-gray-500">{s.callCount} call{s.callCount !== 1 ? 's' : ''}</span>
+                            <span className="font-mono">{fmt(s.totalTokens)} tok</span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-brand-500/70"
+                            style={{ width: `${totalTokens > 0 ? (s.totalTokens / totalTokens * 100) : 0}%` }}
                           />
                         </div>
                       </div>

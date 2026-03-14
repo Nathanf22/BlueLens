@@ -124,7 +124,8 @@ export async function analyzeDomain(
   const response = await llmService.sendMessage(
     [{ role: 'user', content: prompt }],
     SYSTEM_PROMPT,
-    llmSettings
+    llmSettings,
+    { source: 'domain-analysis' }
   );
 
   const parsed = parseResponse(response.content);

@@ -458,7 +458,7 @@ async function generateFlowsWithLLM(
         [{ role: 'user', content: userContent }],
         systemPrompt,
         llmSettings,
-        signal,
+        { signal, source: 'flow-generation' },
       );
 
       const jsonStr = extractJSON(response.content);

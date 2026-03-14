@@ -18,7 +18,8 @@ export const scaffoldService = {
     const response = await llmService.sendMessage(
       [{ role: 'user', content: `Generate ${language} code scaffolding from this diagram. Return only the code.` }],
       systemPrompt,
-      llmSettings
+      llmSettings,
+      { source: 'scaffold' }
     );
 
     // Extract code block from response

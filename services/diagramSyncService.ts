@@ -429,7 +429,8 @@ Decide: does this diagram need updating given the changes above? If not, respond
     const response = await llmService.sendMessage(
       [{ role: 'user', content: userMessage }],
       SYNC_SYSTEM_PROMPT,
-      llmSettings
+      llmSettings,
+      { source: 'diagram-sync' }
     );
 
     const content = response.content.trim();

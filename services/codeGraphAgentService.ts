@@ -189,7 +189,7 @@ async function analyzeFilesBatch(
         [{ role: 'user', content: userContent }],
         FILE_ANALYST_SYSTEM,
         llmSettings,
-        signal,
+        { signal, source: 'code-agent' },
       );
 
       const jsonStr = extractJSON(response.content);
@@ -387,7 +387,7 @@ async function buildArchitecture(
         [{ role: 'user', content: userContent }],
         systemPrompt,
         llmSettings,
-        signal,
+        { signal, source: 'code-agent' },
       );
 
       const jsonStr = extractJSON(response.content);
