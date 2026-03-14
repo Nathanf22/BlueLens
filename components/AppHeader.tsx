@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Menu, Settings, FolderGit2, BarChart3 } from 'lucide-react';
+import { Sparkles, Menu, Settings, FolderGit2, BarChart3, GitBranch } from 'lucide-react';
 
 interface AppHeaderProps {
   onToggleSidebar: () => void;
@@ -9,6 +9,8 @@ interface AppHeaderProps {
   onOpenTokenDashboard: () => void;
   isSidebarOpen: boolean;
   repoCount: number;
+  pendingProposalCount?: number;
+  onReviewProposals?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -19,6 +21,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenTokenDashboard,
   isSidebarOpen,
   repoCount,
+  pendingProposalCount = 0,
+  onReviewProposals,
 }) => {
   return (
     <header className="flex items-center justify-between px-4 py-2 bg-dark-800 border-b border-gray-700 shadow-md z-20 shrink-0 h-14">
@@ -50,6 +54,16 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        {pendingProposalCount > 0 && onReviewProposals && (
+          <button
+            onClick={onReviewProposals}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors animate-pulse"
+            title="Diagram updates proposed by sync"
+          >
+            <GitBranch className="w-4 h-4" />
+            <span>{pendingProposalCount} diagram update{pendingProposalCount > 1 ? 's' : ''}</span>
+          </button>
+        )}
         <button
           onClick={onOpenTokenDashboard}
           className="p-2 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"

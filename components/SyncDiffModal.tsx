@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GitBranch, Plus, Minus, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { SyncProposal, Diagram, DiagramDiff } from '../types';
+import { InlineDiagramPreview } from './InlineDiagramPreview';
 
 interface SyncDiffModalProps {
   proposals: SyncProposal[];
@@ -68,6 +69,11 @@ const DiagramDiffRow: React.FC<{
               {diff.removedEdges.length} edges
             </span>
           )}
+          {diff.brokenNodeLinkIds && diff.brokenNodeLinkIds.length > 0 && (
+            <span className="flex items-center gap-0.5 text-amber-400" title={`Node links broken: ${diff.brokenNodeLinkIds.join(', ')}`}>
+              ⚠ {diff.brokenNodeLinkIds.length} link{diff.brokenNodeLinkIds.length > 1 ? 's' : ''} broken
+            </span>
+          )}
           {!hasChanges && (
             <span className="text-gray-500 text-xs">No changes</span>
           )}
@@ -83,12 +89,27 @@ const DiagramDiffRow: React.FC<{
         </button>
       </div>
 
-      {/* Expanded code preview */}
+      {/* Expanded visual diff */}
       {expanded && (
-        <div className="border-t border-gray-700 bg-dark-900">
-          <pre className="p-3 text-[11px] text-gray-300 overflow-x-auto font-mono leading-relaxed max-h-48 overflow-y-auto whitespace-pre">
-            {diff.annotatedCode}
-          </pre>
+        <div className="border-t border-gray-700 bg-dark-900 p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-4 min-h-[300px]">
+            <div className="flex flex-col">
+              <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5">Before</p>
+              <div className="flex-1">
+                <InlineDiagramPreview code={diff.currentCode} />
+              </div>
+            </div>
+            <div className="flex flex-col">
+              <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5">
+                After
+                {diff.addedNodes.length > 0 && <span className="ml-2 text-green-400">+{diff.addedNodes.length}</span>}
+                {diff.removedNodes.length > 0 && <span className="ml-1 text-red-400">-{diff.removedNodes.length}</span>}
+              </p>
+              <div className="flex-1">
+                <InlineDiagramPreview code={diff.annotatedCode} />
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -178,7 +199,7 @@ const ProposalCard: React.FC<{
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 hover:bg-dark-700 transition-colors"
         >
           <X className="w-3.5 h-3.5" />
-          Dismiss
+          Ignore
         </button>
         <button
           onClick={() => onApply([...selected])}
@@ -211,7 +232,7 @@ export const SyncDiffModal: React.FC<SyncDiffModalProps> = ({
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl bg-dark-900 border border-gray-700 shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-5xl max-h-[90vh] flex flex-col rounded-2xl bg-dark-900 border border-gray-700 shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700 shrink-0">
           <div className="flex items-center gap-2">

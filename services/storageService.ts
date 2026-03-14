@@ -70,7 +70,10 @@ export const storageService = {
               folderId: d.folderId || null,
               workspaceId: d.workspaceId || DEFAULT_WORKSPACE_ID,
               nodeLinks: nodeLinks,
-              codeLinks: Array.isArray(d.codeLinks) ? d.codeLinks : []
+              codeLinks: Array.isArray(d.codeLinks) ? d.codeLinks : [],
+              ...(d.sourceGraphId && { sourceGraphId: d.sourceGraphId }),
+              ...(d.sourceScopeNodeId && { sourceScopeNodeId: d.sourceScopeNodeId }),
+              ...(d.generatedFromGraphAt && { generatedFromGraphAt: d.generatedFromGraphAt }),
             };
           });
         }

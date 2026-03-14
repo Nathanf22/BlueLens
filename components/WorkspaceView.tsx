@@ -91,6 +91,8 @@ interface WorkspaceViewProps {
   codeGraphSyncStatus?: SyncStatus;
   codeGraphIsCheckingSync?: boolean;
   onCodeGraphCheckSync?: () => void;
+  codeGraphPendingProposalCount?: number;
+  onCodeGraphReviewProposals?: () => void;
   // Progress Log
   progressLogEntries?: ProgressLogEntry[];
   isProgressLogActive?: boolean;
@@ -180,6 +182,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   codeGraphSyncStatus,
   codeGraphIsCheckingSync = false,
   onCodeGraphCheckSync,
+  codeGraphPendingProposalCount = 0,
+  onCodeGraphReviewProposals,
   progressLogEntries = [],
   isProgressLogActive = false,
   isProgressLogExpanded = false,
@@ -262,6 +266,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 syncStatus={codeGraphSyncStatus}
                 isCheckingSync={codeGraphIsCheckingSync}
                 onCheckSync={onCodeGraphCheckSync}
+                pendingProposalCount={codeGraphPendingProposalCount}
+                onReviewProposals={onCodeGraphReviewProposals}
               />
             </div>
           ) : (
