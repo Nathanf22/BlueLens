@@ -268,11 +268,18 @@ async function runAnalysteAgent(
       { signal, source: 'code-agent-analyste' },
     );
 
+    if (result.interrupted) {
+      onLog?.('ai-cluster', `Analyste: agent reached max iterations without producing output — falling back to heuristic`);
+      return null;
+    }
     onLog?.('ai-cluster', `Analyste: ${result.toolSteps.length} tool calls — parsing clusters`);
 
     const jsonStr = extractJSON(result.content);
     const parsed = JSON.parse(jsonStr);
-    if (!Array.isArray(parsed.clusters)) return null;
+    if (!Array.isArray(parsed.clusters)) {
+      onLog?.('ai-cluster', 'Analyste: response missing "clusters" array — falling back to heuristic');
+      return null;
+    }
 
     const assigned = new Set<string>();
     const clusters: SemanticCluster[] = [];
@@ -287,13 +294,20 @@ async function runAnalysteAgent(
       }
     }
 
+    // Warn if LLM returned mostly invalid file paths
+    const rejectedFileRate = 1 - (assigned.size / Math.max(allFilePaths.size, 1));
+    if (rejectedFileRate > 0.5) {
+      onLog?.('ai-cluster', `Analyste warning: ${Math.round(rejectedFileRate * 100)}% of files had unresolvable paths — LLM may have hallucinated paths`);
+    }
+
     // Unassigned files go to "Other"
     const unassigned = [...allFilePaths].filter(f => !assigned.has(f));
     if (unassigned.length > 0) {
+      onLog?.('ai-cluster', `Analyste: ${unassigned.length} unassigned files → "Other" cluster`);
       clusters.push({ name: 'Other', description: 'Files not assigned to a specific domain', files: unassigned });
     }
 
-    onLog?.('ai-cluster', `Analyste: ${clusters.length} domains identified`);
+    onLog?.('ai-cluster', `Analyste: ${clusters.length} domains identified (${assigned.size}/${allFilePaths.size} files assigned)`);
     return clusters;
 
   } catch (err) {
@@ -582,6 +596,10 @@ async function runSyntheseurAgent(
       { signal, source: 'code-agent-syntheseur' },
     );
 
+    if (result.interrupted) {
+      onLog?.('ai-synth', 'Synthétiseur: agent reached max iterations without producing output — no flows generated');
+      return null;
+    }
     onLog?.('ai-synth', `Synthétiseur: ${result.toolSteps.length} tool calls — parsing flows`);
 
     const jsonStr = extractJSON(result.content);

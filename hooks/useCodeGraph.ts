@@ -14,7 +14,7 @@ import { codeGraphDomainService } from '../services/codeGraphDomainService';
 import { type LogEntryFn } from '../services/codeGraphAgentService';
 import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGrouper';
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
-import { orchestrateCodebaseAnalysis, orchestrateFlowGeneration } from '../services/codeGraphOrchestrator';
+import { orchestrateCodebaseAnalysis, orchestrateFlowGeneration, type SemanticCluster } from '../services/codeGraphOrchestrator';
 import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
 import { LocalFileSystemProvider } from '../services/LocalFileSystemProvider';
@@ -136,7 +136,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       // Agentic clustering (required); throws LLMConfigError if no key configured
       requireLLMKey(llmSettings);
       onLogEntry?.('info', 'Starting agentic analysis pipeline');
-      let clusters: import('../services/codeGraphOrchestrator').SemanticCluster[] = [];
+      let clusters: SemanticCluster[] = [];
       try {
         const orchestrated = await orchestrateCodebaseAnalysis(
           analysis,
@@ -247,7 +247,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       // Agentic clustering (GitHub: no provider, read_file degrades gracefully)
       requireLLMKey(llmSettings);
       onLogEntry?.('info', 'Starting agentic analysis pipeline');
-      let clusters: import('../services/codeGraphOrchestrator').SemanticCluster[] = [];
+      let clusters: SemanticCluster[] = [];
       try {
         const orchestrated = await orchestrateCodebaseAnalysis(
           analysis,
@@ -357,7 +357,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       // Step 2: Agentic clustering (demo: no local provider)
       requireLLMKey(llmSettings);
       onLogEntry?.('info', 'Starting agentic analysis pipeline');
-      let demoClusters: import('../services/codeGraphOrchestrator').SemanticCluster[] = [];
+      let demoClusters: SemanticCluster[] = [];
       try {
         const orchestrated = await orchestrateCodebaseAnalysis(
           analysis,
