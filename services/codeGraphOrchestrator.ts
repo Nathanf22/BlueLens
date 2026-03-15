@@ -419,24 +419,26 @@ Output ONLY this JSON:
 
 const SYNTHESEUR_SYSTEM = `You are a senior software architect identifying RUNTIME FLOWS in a codebase.
 
-A flow = a named sequence of operations that actually happens at runtime, not just a static dependency.
+A flow = a named END-TO-END sequence spanning MULTIPLE files/modules, tracing how a user action or system event propagates through the system.
 
 You have tools:
-- get_cluster_files(cluster_name): list files (with nodeIds) in a semantic cluster
-- get_node_relations(node_id): call/import relations for a graph node (from AST ground truth)
-- read_file(path): actual source code (first 200 lines). Use for entry points and key orchestrators.
+- find_entry_points(): returns all codebase entry points (files with no or few incoming dependencies). START HERE.
+- get_node_relations(node_id): call/import relations for a graph node. Use to trace WHERE calls go next.
+- get_cluster_files(cluster_name): list files in a cluster. Use only to explore a specific domain once you know you need it.
+- read_file(path): actual source code (first 200 lines). Use to understand HOW a file orchestrates calls.
 
 STRATEGY:
-1. Call get_cluster_files() on 2-3 clusters to find candidate entry points
-2. Use get_node_relations() to trace the call graph from entry points
-3. Use read_file() on key orchestrators to confirm how they chain calls (max 6 reads)
-4. Generate 5-15 flows that each tell a RUNTIME STORY
+1. ALWAYS start with find_entry_points() to get a global view of where flows begin
+2. For each entry point, call get_node_relations() to find what it calls/imports
+3. Follow the chain: entry → service → data layer → response. Each hop is a new step.
+4. Use read_file() on orchestrator files to confirm the sequence of calls
+5. Generate 5-15 flows, PRIORITIZING cross-file end-to-end flows over single-file internal flows
 
-FLOW QUALITY:
-- Each flow: 3-9 steps. Each step references a real file nodeId from the graph.
-- Steps must follow real import/call paths (confirmed via get_node_relations)
-- Sequence diagrams: rich, with alt/loop/opt blocks and labeled arrows
-- Use descriptive participant aliases, NOT node IDs
+CRITICAL FLOW RULES:
+- A good flow spans AT LEAST 2 different files. Single-file flows are only acceptable for isolated utilities.
+- Steps must follow ACTUAL import/call edges (from get_node_relations), not assumed dependencies
+- Each step = a different file doing something meaningful in the flow
+- Sequence diagrams: use descriptive participant aliases (NOT node IDs), rich arrows, alt/loop blocks
 
 When ready, output ONLY this JSON:
 {
@@ -456,17 +458,13 @@ When ready, output ONLY this JSON:
 function buildSyntheseurTools(): AgentToolDefinition[] {
   return [
     {
-      name: 'get_cluster_files',
-      description: 'List all files (with graph nodeIds) in a semantic cluster. Use to find entry points.',
-      parameters: {
-        type: 'object',
-        properties: { cluster_name: { type: 'string', description: 'Cluster/domain name' } },
-        required: ['cluster_name'],
-      },
+      name: 'find_entry_points',
+      description: 'Returns all codebase entry points: files with no or few incoming dependencies (index, main, App, handlers). Start here to identify where flows begin.',
+      parameters: { type: 'object', properties: {}, required: [] },
     },
     {
       name: 'get_node_relations',
-      description: 'Get all call/import relations for a graph node (from AST ground truth). Use to trace call chains.',
+      description: 'Get all outgoing/incoming call/import relations for a graph node. Use to follow where calls go next and trace cross-file chains.',
       parameters: {
         type: 'object',
         properties: { node_id: { type: 'string', description: 'Graph node ID' } },
@@ -474,8 +472,17 @@ function buildSyntheseurTools(): AgentToolDefinition[] {
       },
     },
     {
+      name: 'get_cluster_files',
+      description: 'List all files (with graph nodeIds) in a semantic cluster. Use to explore a specific domain.',
+      parameters: {
+        type: 'object',
+        properties: { cluster_name: { type: 'string', description: 'Cluster/domain name' } },
+        required: ['cluster_name'],
+      },
+    },
+    {
       name: 'read_file',
-      description: 'Read source code of a file (first 200 lines). Use for key orchestrators/entry points only.',
+      description: 'Read source code of a file (first 200 lines). Use for orchestrator files to confirm call sequences.',
       parameters: {
         type: 'object',
         properties: { path: { type: 'string', description: 'Relative file path from repo root' } },
@@ -497,6 +504,39 @@ function buildSyntheseurExecutor(ctx: GraphBuildContext, graph: CodeGraph) {
 
   return async (name: string, args: Record<string, unknown>): Promise<AgentToolStep> => {
     switch (name) {
+      case 'find_entry_points': {
+        // D2 nodes with no incoming depends_on edges, or matching entry-point filename patterns
+        const d2Nodes = Object.values(graph.nodes).filter(n => n.depth === 2);
+        const incomingCount = new Map<string, number>();
+        for (const n of d2Nodes) incomingCount.set(n.id, 0);
+        for (const rel of Object.values(graph.relations)) {
+          if (rel.type === 'depends_on' && incomingCount.has(rel.targetId)) {
+            incomingCount.set(rel.targetId, (incomingCount.get(rel.targetId) || 0) + 1);
+          }
+        }
+        const ENTRY_PATTERN = /^(index|main|app|server|cli|background|content|handler)\./i;
+        const entries = d2Nodes
+          .filter(n => (incomingCount.get(n.id) || 0) === 0 || ENTRY_PATTERN.test(n.name))
+          .map(n => {
+            const cluster = ctx.semanticClusters?.find(c => c.files.includes(n.sourceRef?.filePath || ''));
+            return {
+              nodeId: n.id,
+              name: n.name,
+              filePath: n.sourceRef?.filePath || null,
+              cluster: cluster?.name || null,
+              outgoingRelations: Object.values(graph.relations)
+                .filter(r => r.sourceId === n.id && r.type !== 'contains').length,
+            };
+          })
+          .sort((a, b) => b.outgoingRelations - a.outgoingRelations)
+          .slice(0, 20);
+        return {
+          toolName: name, args,
+          result: JSON.stringify(entries, null, 2),
+          label: 'find_entry_points()',
+        };
+      }
+
       case 'get_cluster_files': {
         const clusterName = String(args.cluster_name || '');
         const cluster = ctx.semanticClusters?.find(c => c.name === clusterName);
