@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { CodeGraph, GraphDepth, ViewLens, CodeGraphAnomaly, LLMSettings, GraphFlow } from '../types';
+import { CodeGraph, GraphDepth, ViewLens, CodeGraphAnomaly, LLMSettings, GraphFlow, AgentEventFn, AgentBlackboardFn } from '../types';
 import { codeGraphStorageService } from '../services/codeGraphStorageService';
 import { codeGraphModelService } from '../services/codeGraphModelService';
 import { codeGraphSyncService } from '../services/codeGraphSyncService';
@@ -114,6 +114,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     llmSettings?: LLMSettings,
     onLogEntry?: LogEntryFn,
     commitSha?: string,
+    onAgentEvent?: AgentEventFn,
+    onBlackboard?: AgentBlackboardFn,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -145,6 +147,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
+          onAgentEvent,
+          onBlackboard,
         );
         analysis = orchestrated.analysis;
         clusters = orchestrated.clusters;
@@ -181,6 +185,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
+          onAgentEvent,
+          onBlackboard,
         );
         if (Object.keys(flows).length > 0) {
           graph = { ...graph, flows, updatedAt: Date.now() };
@@ -224,6 +230,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     llmSettings?: LLMSettings,
     onLogEntry?: LogEntryFn,
     onBranchResolved?: (resolvedBranch: string) => void,
+    onAgentEvent?: AgentEventFn,
+    onBlackboard?: AgentBlackboardFn,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -256,6 +264,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
+          onAgentEvent,
+          onBlackboard,
         );
         analysis = orchestrated.analysis;
         clusters = orchestrated.clusters;
@@ -288,6 +298,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
+          onAgentEvent,
+          onBlackboard,
         );
         if (Object.keys(flows).length > 0) {
           graph = { ...graph, flows, updatedAt: Date.now() };
@@ -335,6 +347,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const loadDemoGraph = useCallback(async (
     llmSettings?: LLMSettings,
     onLogEntry?: LogEntryFn,
+    onAgentEvent?: AgentEventFn,
+    onBlackboard?: AgentBlackboardFn,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -366,6 +380,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
+          onAgentEvent,
+          onBlackboard,
         );
         analysis = orchestrated.analysis;
         demoClusters = orchestrated.clusters;
@@ -400,6 +416,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
+          onAgentEvent,
+          onBlackboard,
         );
         if (Object.keys(flows).length > 0) {
           graph = { ...graph, flows, updatedAt: Date.now() };

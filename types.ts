@@ -169,6 +169,46 @@ export interface AgentToolStep {
   label: string; // human-readable summary, e.g. 'get_diagram("Auth Service")'
 }
 
+export type AgentId = 'analyste' | 'syntheseur' | 'evaluateur';
+
+export interface AgentToolEvent {
+  id: string;
+  agent: AgentId;
+  elapsedMs: number;    // ms since mission start
+  toolName: string;
+  argsSummary: string;  // compact representation of args, e.g. "public/app.js" or ""
+  resultSummary: string; // first 300 chars of result
+  durationMs: number;   // how long the tool call took
+}
+
+export type AgentEventFn = (event: Omit<AgentToolEvent, 'id' | 'elapsedMs'>) => void;
+
+export interface AgentBlackboardCluster {
+  name: string;
+  fileCount: number;
+  files: string[];
+}
+
+export interface AgentBlackboardFlow {
+  name: string;
+  stepCount: number;
+}
+
+export interface AgentBlackboardIssue {
+  severity: 'error' | 'warning';
+  message: string;
+  target?: string;
+}
+
+export interface AgentBlackboard {
+  clusters: AgentBlackboardCluster[];
+  flows: AgentBlackboardFlow[];
+  clusterIssues: AgentBlackboardIssue[];
+  flowIssues: AgentBlackboardIssue[];
+}
+
+export type AgentBlackboardFn = (update: Partial<AgentBlackboard>) => void;
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';

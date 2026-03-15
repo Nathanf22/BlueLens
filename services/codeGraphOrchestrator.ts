@@ -16,7 +16,7 @@
 
 import {
   CodebaseAnalysis, CodebaseModule, AnalyzedFile,
-  LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep,
+  LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep, AgentEventFn, AgentBlackboardFn,
 } from '../types';
 import { llmService, LLMConfigError, LLMRateLimitError } from './llmService';
 import { groupByFunctionalHeuristics } from './codeGraphHeuristicGrouper';
@@ -240,6 +240,7 @@ async function runAnalysteAgent(
   onLog?: LogEntryFn,
   signal?: AbortSignal,
   previousIssues?: ValidationIssue[],
+  onAgentEvent?: AgentEventFn,
 ): Promise<SemanticCluster[] | null> {
   const allFiles = ctx.analysis.modules.flatMap(m => m.files);
   const allFilePaths = new Set(allFiles.map(f => f.filePath));
@@ -259,11 +260,27 @@ async function runAnalysteAgent(
   onLog?.('ai-cluster', 'Analyste: exploring codebase structure...');
 
   try {
+    const rawAnalysteExecutor = buildAnalysteExecutor(ctx);
+    const analysteExecutor = onAgentEvent
+      ? async (name: string, args: Record<string, unknown>) => {
+          const t0 = Date.now();
+          const step = await rawAnalysteExecutor(name, args);
+          onAgentEvent({
+            agent: 'analyste',
+            toolName: name,
+            argsSummary: (args.path as string) || (args.query as string) || Object.values(args).join(', ') || '',
+            resultSummary: step.result.slice(0, 300),
+            durationMs: Date.now() - t0,
+          });
+          return step;
+        }
+      : rawAnalysteExecutor;
+
     const result = await llmService.runAgentLoop(
       [{ role: 'user', content: prompt }],
       ANALYSTE_SYSTEM,
       buildAnalysteTools(),
-      buildAnalysteExecutor(ctx),
+      analysteExecutor,
       llmSettings,
       { signal, source: 'code-agent-analyste' },
     );
@@ -324,6 +341,8 @@ async function evaluateClusters(
   clusters: SemanticCluster[],
   llmSettings: LLMSettings,
   onLog?: LogEntryFn,
+  onAgentEvent?: AgentEventFn,
+  onBlackboard?: AgentBlackboardFn,
 ): Promise<ValidationIssue[]> {
   const allFiles = ctx.analysis.modules.flatMap(m => m.files);
   const allFilePaths = new Set(allFiles.map(f => f.filePath));
@@ -382,6 +401,14 @@ Output ONLY this JSON:
 }`;
 
   onLog?.('ai-eval', 'Évaluateur: validating semantic clusters...');
+  const evalStartMs = Date.now();
+  onAgentEvent?.({
+    agent: 'evaluateur',
+    toolName: '__eval_start__',
+    argsSummary: 'clusters',
+    resultSummary: 'Validation en cours...',
+    durationMs: 0,
+  });
 
   try {
     const response = await llmService.sendMessage(
@@ -406,6 +433,23 @@ Output ONLY this JSON:
     const errors = issues.filter(i => i.severity === 'error').length;
     const warnings = issues.filter(i => i.severity === 'warning').length;
     onLog?.('ai-eval', `Évaluateur clusters: ${errors} errors, ${warnings} warnings`);
+
+    onAgentEvent?.({
+      agent: 'evaluateur',
+      toolName: '__eval_result__',
+      argsSummary: `${errors} errors, ${warnings} warnings`,
+      resultSummary: issues.map(i => `[${i.severity}] ${i.message}`).join('\n'),
+      durationMs: Date.now() - evalStartMs,
+    });
+
+    onBlackboard?.({
+      clusterIssues: issues.map(i => ({
+        severity: i.severity,
+        message: i.message,
+        target: i.target,
+      })),
+    });
+
     return issues;
 
   } catch {
@@ -419,28 +463,35 @@ Output ONLY this JSON:
 
 const SYNTHESEUR_SYSTEM = `You are a senior software architect identifying RUNTIME FLOWS in a codebase.
 
-A flow = a named END-TO-END sequence spanning MULTIPLE files/modules, tracing how a user action or system event propagates through the system.
+A flow = a named sequence tracing how a user action or system event propagates at RUNTIME across multiple files.
 
-You have tools:
-- find_entry_points(): returns all codebase entry points (files with no or few incoming dependencies). START HERE.
-- get_node_relations(node_id): call/import relations for a graph node. Use to trace WHERE calls go next.
-- get_cluster_files(cluster_name): list files in a cluster. Use only to explore a specific domain once you know you need it.
-- read_file(path): actual source code (first 200 lines). Use to understand HOW a file orchestrates calls.
+TOOLS:
+- find_entry_points(): all entry point files (no or few incoming imports). Call this first.
+- read_file(path): actual source code. Use this to understand what a file DOES at runtime.
+- get_node_relations(node_id): static import edges for a file. Use to discover dependencies.
+- get_cluster_files(cluster_name): files in a semantic cluster.
 
-STRATEGY:
-1. ALWAYS start with find_entry_points() to get a global view of where flows begin
-2. For each entry point, call get_node_relations() to find what it calls/imports
-3. Follow the chain: entry → service → data layer → response. Each hop is a new step.
-4. Use read_file() on orchestrator files to confirm the sequence of calls
-5. Generate 5-15 flows, PRIORITIZING cross-file end-to-end flows over single-file internal flows
+APPROACH — think like an architect reading the code:
+1. Call find_entry_points() to see where execution begins.
+2. Call read_file() on each entry point to understand RUNTIME behavior:
+   - What does it do when it runs? (start a server, initialize a UI, register routes...)
+   - Does it make HTTP calls? (fetch, axios, XMLHttpRequest → traces to a server endpoint)
+   - Does it call imported modules? (traces through import chain)
+3. Follow the RUNTIME chain of control — not just static imports. A browser file that calls fetch('/api/foo') is connected to the server file that handles GET /api/foo, even without an import edge.
+4. Generate 3-8 flows covering distinct user journeys or system events.
 
-CRITICAL FLOW RULES:
-- A good flow spans AT LEAST 2 different files. Single-file flows are only acceptable for isolated utilities.
-- Steps must follow ACTUAL import/call edges (from get_node_relations), not assumed dependencies
-- Each step = a different file doing something meaningful in the flow
-- Sequence diagrams: use descriptive participant aliases (NOT node IDs), rich arrows, alt/loop blocks
+WHAT MAKES A GOOD FLOW:
+- Spans multiple files across meaningful boundaries (client→server, handler→service→database)
+- Reflects what actually happens at runtime, not just what's imported
+- Has a clear trigger (user action, HTTP request, system event) and outcome
+- Steps say WHAT each file does in this specific flow
 
-When ready, output ONLY this JSON:
+RULES:
+- Use exact nodeIds from the FILE LIST in the user message.
+- Sequence diagrams: descriptive participant aliases (not nodeIds), include return arrows.
+- For HTTP boundaries: use "->>" with label "HTTP GET /route" or similar.
+
+Output ONLY this JSON (no other text):
 {
   "flows": [
     {
@@ -448,7 +499,7 @@ When ready, output ONLY this JSON:
       "description": "What happens end-to-end (1-2 sentences)",
       "scopeNodeId": "rootNodeId OR a D1 module nodeId",
       "steps": [
-        { "nodeId": "file-nodeId", "label": "What this file does in this flow", "order": 0 }
+        { "nodeId": "exact-nodeId-from-FILE-LIST", "label": "What this file does in this flow", "order": 0 }
       ],
       "sequenceDiagram": "sequenceDiagram\\n  participant A as Name\\n  A->>B: action\\n  B-->>A: response"
     }
@@ -610,14 +661,42 @@ async function runSyntheseurAgent(
   onLog?: LogEntryFn,
   signal?: AbortSignal,
   previousIssues?: ValidationIssue[],
+  onAgentEvent?: AgentEventFn,
 ): Promise<Record<string, GraphFlow> | null> {
-  const clusterList = ctx.semanticClusters?.map(c =>
-    `  "${c.name}" (${c.files.length} files) — ${c.description}`
-  ).join('\n') || '(no clusters)';
+  // Build a graph summary: files with cluster labels + all depends_on edges
+  const d2Nodes = Object.values(graph.nodes).filter(n => n.depth === 2);
+  const d2ById = new Map(d2Nodes.map(n => [n.id, n]));
+  const fileToClusterName = new Map<string, string>();
+  for (const cluster of (ctx.semanticClusters ?? [])) {
+    for (const fp of cluster.files) fileToClusterName.set(fp, cluster.name);
+  }
 
-  let prompt = `Generate runtime flows for this codebase.\n\nSEMANTIC CLUSTERS:\n${clusterList}\n\n`;
-  prompt += `GRAPH: ${Object.keys(graph.nodes).length} nodes, rootNodeId="${graph.rootNodeId}"\n\n`;
-  prompt += 'Explore entry points via get_cluster_files, trace call chains via get_node_relations, then output flows JSON.';
+  const fileLines = d2Nodes.map(n => {
+    const cluster = n.sourceRef ? (fileToClusterName.get(n.sourceRef.filePath) ?? '?') : '?';
+    return `  ${n.id}  ${n.sourceRef?.filePath ?? n.name}  [${cluster}]`;
+  }).join('\n');
+
+  const edgeLines = Object.values(graph.relations)
+    .filter(r => r.type === 'depends_on')
+    .map(r => {
+      const src = d2ById.get(r.sourceId);
+      const tgt = d2ById.get(r.targetId);
+      if (!src || !tgt) return null;
+      return `  ${src.sourceRef?.filePath ?? src.id}  →  ${tgt.sourceRef?.filePath ?? tgt.id}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  const clusterSummary = (ctx.semanticClusters ?? []).map(c =>
+    `  "${c.name}": ${c.files.join(', ')}`
+  ).join('\n');
+
+  let prompt = `Generate runtime flows for this codebase.\n\n`;
+  prompt += `FILES (nodeId  path  [cluster]):\n${fileLines || '(none)'}\n\n`;
+  prompt += `DEPENDENCY EDGES (A → B means A imports B):\n${edgeLines || '(none)'}\n\n`;
+  prompt += `SEMANTIC CLUSTERS:\n${clusterSummary || '(none)'}\n\n`;
+  prompt += `rootNodeId="${graph.rootNodeId}"\n\n`;
+  prompt += 'Use find_entry_points() to confirm entry points, read_file() to understand orchestration logic, then output the flows JSON.';
 
   if (previousIssues && previousIssues.length > 0) {
     const errorText = previousIssues
@@ -630,11 +709,27 @@ async function runSyntheseurAgent(
   onLog?.('ai-synth', 'Synthétiseur: tracing runtime flows...');
 
   try {
+    const rawSyntheseurExecutor = buildSyntheseurExecutor(ctx, graph);
+    const syntheseurExecutor = onAgentEvent
+      ? async (name: string, args: Record<string, unknown>) => {
+          const t0 = Date.now();
+          const step = await rawSyntheseurExecutor(name, args);
+          onAgentEvent({
+            agent: 'syntheseur',
+            toolName: name,
+            argsSummary: (args.path as string) || (args.query as string) || Object.values(args).join(', ') || '',
+            resultSummary: step.result.slice(0, 300),
+            durationMs: Date.now() - t0,
+          });
+          return step;
+        }
+      : rawSyntheseurExecutor;
+
     const result = await llmService.runAgentLoop(
       [{ role: 'user', content: prompt }],
       SYNTHESEUR_SYSTEM,
       buildSyntheseurTools(),
-      buildSyntheseurExecutor(ctx, graph),
+      syntheseurExecutor,
       llmSettings,
       { signal, source: 'code-agent-syntheseur' },
     );
@@ -749,67 +844,122 @@ function validateAndBuildFlows(raw: unknown, graph: CodeGraph): Record<string, G
 
 // ── Évaluateur — Phase 2: flow validation ────────────────────────────────────
 
+const EVALUATEUR_FLOW_SYSTEM = `You are an adversarial code reviewer verifying that runtime flows accurately represent the source code.
+
+You have one tool: read_file(path) — read source code to verify claims.
+
+PROCESS:
+1. Read the entry point file (step 0) of each flow.
+2. Verify: does the code actually connect to the next step at runtime?
+   - Static import → look for require() / import statements
+   - HTTP call → look for fetch(), axios, XMLHttpRequest, http.request()
+   - Event → look for emit(), addEventListener(), on()
+3. Read subsequent files as needed to verify the chain.
+4. Be STRICT — if a connection is not verifiable in the code, flag it as an error.
+5. Be ACCURATE — if you read the code and the connection IS there, do NOT flag it.
+
+Flag as ERROR:
+- A claimed connection (import, HTTP call, event) that does not exist in the source
+- A step whose label is completely wrong about what the file does
+- A file included in a flow that plays no role whatsoever
+
+Flag as WARNING:
+- A step label that is vague or partially inaccurate
+- A flow that skips important intermediate files
+
+Do NOT flag:
+- HTTP calls between client and server (verify with read_file that fetch/axios/routes exist)
+- Fan-out from a common parent (A imports B, A imports C, A imports D — all valid)
+- Transitive import chains (A imports B imports C)
+
+Output ONLY this JSON after your investigation:
+{
+  "issues": [
+    {
+      "type": "invalid_flow_step" | "trivial_flow" | "hallucinated_relation",
+      "severity": "warning" | "error",
+      "message": "specific description referencing what you found in the code",
+      "target": "flow name"
+    }
+  ]
+}`;
+
+function buildEvaluateurFlowExecutor(ctx: GraphBuildContext) {
+  return async (name: string, args: Record<string, unknown>): Promise<AgentToolStep> => {
+    if (name === 'read_file') {
+      const filePath = String(args.path ?? '');
+      const content = await readFileCached(ctx, filePath, 200);
+      return { toolName: name, args, result: content, label: `read_file(${filePath})` };
+    }
+    return { toolName: name, args, result: '(unknown tool)', label: name };
+  };
+}
+
 async function evaluateFlows(
   ctx: GraphBuildContext,
   graph: CodeGraph,
   flows: Record<string, GraphFlow>,
   llmSettings: LLMSettings,
   onLog?: LogEntryFn,
+  onAgentEvent?: AgentEventFn,
+  onBlackboard?: AgentBlackboardFn,
 ): Promise<ValidationIssue[]> {
-  // Find files/nodes not covered by any flow step
-  const coveredNodeIds = new Set(Object.values(flows).flatMap(f => f.steps.map(s => s.nodeId)));
-  const allD2Ids = Object.values(graph.nodes).filter(n => n.depth === 2).map(n => n.id);
-  const uncoveredRate = (allD2Ids.length - coveredNodeIds.size) / Math.max(allD2Ids.length, 1);
-
   const flowSummary = Object.values(flows).map(f => ({
     name: f.name,
     description: f.description,
-    stepCount: f.steps.length,
-    stepFiles: f.steps.map(s => graph.nodes[s.nodeId]?.sourceRef?.filePath || s.nodeId),
+    steps: f.steps.map(s => ({
+      file: graph.nodes[s.nodeId]?.sourceRef?.filePath ?? s.nodeId,
+      label: s.label,
+    })),
   }));
 
-  // Sample AST relations to check if flow steps actually have connections
-  const astRelSample = [...ctx.astImportPairs].slice(0, 50).join('\n');
+  const prompt = `Verify these runtime flows against the actual source code. Use read_file() to check each connection before judging.
 
-  const prompt = `You are an adversarial flow reviewer. Find flows that misrepresent actual runtime behavior.
-
-FLOWS (${Object.keys(flows).length} total):
+FLOWS TO VERIFY:
 ${JSON.stringify(flowSummary, null, 2)}
 
-UNCOVERED FILE RATE: ${(uncoveredRate * 100).toFixed(1)}%
+For each flow, read the source files of the steps and verify the claimed connections exist in the code.`;
 
-ACTUAL IMPORT PAIRS (AST ground truth — sample):
-${astRelSample}
+  onLog?.('ai-eval', 'Évaluateur: validating flows against source code...');
+  const evalFlowStartMs = Date.now();
 
-REVIEW:
-1. Flag flows where consecutive steps have NO import/call relationship in the AST
-2. Flag trivial flows (< 3 meaningful steps, or just listing unrelated files)
-3. Flag flows with duplicate or redundant coverage
-4. Do NOT flag flows that skip intermediate files (abstraction is OK)
+  const rawExecutor = await buildEvaluateurFlowExecutor(ctx);
+  const executor = onAgentEvent
+    ? async (name: string, args: Record<string, unknown>) => {
+        const t0 = Date.now();
+        const step = await rawExecutor(name, args);
+        onAgentEvent({
+          agent: 'evaluateur',
+          toolName: name,
+          argsSummary: String(args.path ?? args.file ?? ''),
+          resultSummary: step.result.slice(0, 300),
+          durationMs: Date.now() - t0,
+        });
+        return step;
+      }
+    : rawExecutor;
 
-Output ONLY this JSON:
-{
-  "issues": [
-    {
-      "type": "invalid_flow_step" | "trivial_flow" | "hallucinated_relation",
-      "severity": "warning" | "error",
-      "message": "specific description",
-      "target": "flow name"
-    }
-  ]
-}`;
-
-  onLog?.('ai-eval', 'Évaluateur: validating flows against AST...');
+  const evalTools: AgentToolDefinition[] = [{
+    name: 'read_file',
+    description: 'Read source code of a file to verify a flow step connection',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'File path relative to project root' } },
+      required: ['path'],
+    },
+  }];
 
   try {
-    const response = await llmService.sendMessage(
+    const result = await llmService.runAgentLoop(
       [{ role: 'user', content: prompt }],
-      'You are an adversarial flow reviewer. Be rigorous and specific.',
+      EVALUATEUR_FLOW_SYSTEM,
+      evalTools,
+      executor,
       llmSettings,
       { source: 'code-agent-evaluateur' },
     );
 
-    const parsed = JSON.parse(extractJSON(response.content));
+    const parsed = JSON.parse(extractJSON(result.content));
     if (!Array.isArray(parsed.issues)) return [];
 
     const issues: ValidationIssue[] = (parsed.issues as unknown[])
@@ -823,7 +973,24 @@ Output ONLY this JSON:
 
     const errors = issues.filter(i => i.severity === 'error').length;
     const warnings = issues.filter(i => i.severity === 'warning').length;
-    onLog?.('ai-eval', `Évaluateur flows: ${errors} errors, ${warnings} warnings`);
+    onLog?.('ai-eval', `Évaluateur flows: ${errors} errors, ${warnings} warnings (${result.toolSteps.length} files read)`);
+
+    onAgentEvent?.({
+      agent: 'evaluateur',
+      toolName: '__eval_result__',
+      argsSummary: `${errors} errors, ${warnings} warnings`,
+      resultSummary: issues.length === 0 ? '✓ All flows verified' : issues.map(i => `[${i.severity}] ${i.message}`).join('\n'),
+      durationMs: Date.now() - evalFlowStartMs,
+    });
+
+    onBlackboard?.({
+      flowIssues: issues.map(i => ({
+        severity: i.severity,
+        message: i.message,
+        target: i.target,
+      })),
+    });
+
     return issues;
 
   } catch {
@@ -846,6 +1013,8 @@ export async function orchestrateCodebaseAnalysis(
   onProgress?: (step: string, current: number, total: number) => void,
   onLog?: LogEntryFn,
   signal?: AbortSignal,
+  onAgentEvent?: AgentEventFn,
+  onBlackboard?: AgentBlackboardFn,
 ): Promise<{ analysis: CodebaseAnalysis; clusters: SemanticCluster[] }> {
   const ctx = buildContext(analysis, provider);
 
@@ -854,24 +1023,26 @@ export async function orchestrateCodebaseAnalysis(
 
   // Round 1
   onProgress?.('Semantic clustering', 1, 3);
-  clusters = await runAnalysteAgent(ctx, llmSettings, onLog, signal);
+  clusters = await runAnalysteAgent(ctx, llmSettings, onLog, signal, undefined, onAgentEvent);
 
   if (clusters && clusters.length > 0) {
     ctx.semanticClusters = clusters;
+    onBlackboard?.({ clusters: clusters.map(c => ({ name: c.name, fileCount: c.files.length, files: c.files })) });
 
     // Évaluateur validation
     onProgress?.('Validating clusters', 2, 3);
-    issues = await evaluateClusters(ctx, clusters, llmSettings, onLog);
+    issues = await evaluateClusters(ctx, clusters, llmSettings, onLog, onAgentEvent, onBlackboard);
 
     // Round 2 if too many errors
     const errorCount = issues.filter(i => i.severity === 'error').length;
     if (errorCount >= 3) {
       onLog?.('ai-cluster', `Analyste round 2 (${errorCount} errors to fix)...`);
       onProgress?.('Re-clustering (round 2)', 3, 3);
-      const round2 = await runAnalysteAgent(ctx, llmSettings, onLog, signal, issues);
+      const round2 = await runAnalysteAgent(ctx, llmSettings, onLog, signal, issues, onAgentEvent);
       if (round2 && round2.length > 0) {
         clusters = round2;
         ctx.semanticClusters = clusters;
+        onBlackboard?.({ clusters: clusters.map(c => ({ name: c.name, fileCount: c.files.length, files: c.files })) });
       }
     }
   }
@@ -886,17 +1057,68 @@ export async function orchestrateCodebaseAnalysis(
 
   // Convert clusters to CodebaseAnalysis modules
   const fileByPath = ctx.fileByPath;
+
+  // Build file→cluster map for cross-cluster dependency resolution
+  const fileToCluster = new Map<string, string>();
+  for (const cluster of clusters) {
+    for (const fp of cluster.files) fileToCluster.set(fp, cluster.name);
+  }
+  const allFilePaths = Array.from(fileByPath.keys());
+
+  /** Resolve a relative/alias import source to a known file path. */
+  function resolveImport(source: string, fromFile: string): string | null {
+    if (!source.startsWith('.') && !source.startsWith('@/')) return null;
+    let base: string;
+    if (source.startsWith('@/')) {
+      base = source.slice(2);
+    } else {
+      const dir = fromFile.substring(0, fromFile.lastIndexOf('/'));
+      const parts = source.split('/');
+      let cur = dir;
+      for (const p of parts) {
+        if (p === '.') continue;
+        else if (p === '..') { const i = cur.lastIndexOf('/'); cur = i >= 0 ? cur.substring(0, i) : ''; }
+        else { cur = cur ? `${cur}/${p}` : p; }
+      }
+      base = cur;
+    }
+    const exts = ['.ts', '.tsx', '.js', '.jsx', '.py', ''];
+    const idxs = ['/index.ts', '/index.tsx', '/index.js', '/index.jsx'];
+    for (const ext of exts) {
+      const candidate = base + ext;
+      if (allFilePaths.includes(candidate)) return candidate;
+    }
+    for (const idx of idxs) {
+      const candidate = base + idx;
+      if (allFilePaths.includes(candidate)) return candidate;
+    }
+    return null;
+  }
+
   const modules: CodebaseModule[] = clusters.map(cluster => {
     const files = cluster.files
       .map(fp => fileByPath.get(fp))
       .filter((f): f is AnalyzedFile => f !== undefined);
+
+    // Compute inter-cluster dependencies from file imports
+    const depSet = new Set<string>();
+    for (const file of files) {
+      for (const imp of file.imports) {
+        if (imp.isExternal) continue;
+        const resolved = resolveImport(imp.source, file.filePath);
+        if (resolved) {
+          const targetCluster = fileToCluster.get(resolved);
+          if (targetCluster && targetCluster !== cluster.name) depSet.add(targetCluster);
+        }
+      }
+    }
 
     return {
       name: cluster.name,
       description: cluster.description,
       path: cluster.name,
       files,
-      dependencies: [],
+      dependencies: Array.from(depSet),
     };
   });
 
@@ -921,6 +1143,8 @@ export async function orchestrateFlowGeneration(
   onProgress?: (step: string, current: number, total: number) => void,
   onLog?: LogEntryFn,
   signal?: AbortSignal,
+  onAgentEvent?: AgentEventFn,
+  onBlackboard?: AgentBlackboardFn,
 ): Promise<Record<string, GraphFlow>> {
   // Rebuild a lightweight context for the Synthétiseur
   const ctx: GraphBuildContext = {
@@ -946,21 +1170,24 @@ export async function orchestrateFlowGeneration(
 
   // Round 1
   onProgress?.('Generating flows', 1, 3);
-  flows = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal);
+  flows = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, undefined, onAgentEvent);
 
   if (flows && Object.keys(flows).length > 0) {
+    onBlackboard?.({ flows: Object.values(flows).map(f => ({ name: f.name, stepCount: f.steps.length })) });
+
     // Évaluateur validation
     onProgress?.('Validating flows', 2, 3);
-    issues = await evaluateFlows(ctx, graph, flows, llmSettings, onLog);
+    issues = await evaluateFlows(ctx, graph, flows, llmSettings, onLog, onAgentEvent, onBlackboard);
 
-    // Round 2 if too many errors
+    // Round 2 if any connectivity errors
     const errorCount = issues.filter(i => i.severity === 'error').length;
-    if (errorCount >= 3) {
+    if (errorCount >= 1) {
       onLog?.('ai-synth', `Synthétiseur round 2 (${errorCount} errors to fix)...`);
       onProgress?.('Re-generating flows (round 2)', 3, 3);
-      const round2 = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, issues);
+      const round2 = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, issues, onAgentEvent);
       if (round2 && Object.keys(round2).length > 0) {
         flows = round2;
+        onBlackboard?.({ flows: Object.values(flows).map(f => ({ name: f.name, stepCount: f.steps.length })) });
       }
     }
   }

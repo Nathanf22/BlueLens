@@ -35,7 +35,9 @@ import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
 import { useSyncHandlers } from './hooks/useSyncHandlers';
 import { useProgressLog } from './hooks/useProgressLog';
 import { useToast } from './hooks/useToast';
+import { useAgentMission } from './hooks/useAgentMission';
 import { ToastContainer } from './components/ToastContainer';
+import { AgentMissionPanel } from './components/AgentMissionPanel';
 import { codeGraphStorageService } from './services/codeGraphStorageService';
 import {
   buildExportPlan,
@@ -184,6 +186,9 @@ export default function App() {
 
   // --- Progress Log ---
   const progressLog = useProgressLog();
+
+  // --- Agent Mission Control ---
+  const agentMission = useAgentMission();
 
   // --- CodeGraph ---
   const codeGraph = useCodeGraph(activeWorkspaceId);
@@ -634,6 +639,7 @@ export default function App() {
     graphCreationCancelledRef.current = false;
     setIsCreatingGraph(true);
     progressLog.startLog();
+    agentMission.start();
     try {
       let result: CodeGraph | null;
       if (repo?.githubOwner) {
@@ -645,9 +651,11 @@ export default function App() {
           llmSettings,
           progressLog.addEntry,
           (resolvedBranch) => handleUpdateGithubBranch(repoId, resolvedBranch),
+          agentMission.addEvent,
+          agentMission.updateBlackboard,
         );
       } else {
-        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha);
+        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha, agentMission.addEvent, agentMission.updateBlackboard);
       }
       if (result) triggerFlowExport(result);
       else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
@@ -664,9 +672,10 @@ export default function App() {
       return null;
     } finally {
       progressLog.endLog();
+      agentMission.stop();
       setIsCreatingGraph(false);
     }
-  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
+  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, agentMission.start, agentMission.stop, agentMission.addEvent, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
@@ -1073,7 +1082,8 @@ export default function App() {
             hasConfiguredAI={hasConfiguredProvider}
             onLoadDemoGraph={() => {
               progressLog.startLog();
-              codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
+              agentMission.start();
+              codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry, agentMission.addEvent, agentMission.updateBlackboard)
                 .then(graph => { if (graph) triggerFlowExport(graph); })
                 .catch((err: any) => {
                   if (err instanceof LLMRateLimitError) {
@@ -1083,7 +1093,7 @@ export default function App() {
                     setIsAISettingsOpen(true);
                   }
                 })
-                .finally(() => progressLog.endLog());
+                .finally(() => { progressLog.endLog(); agentMission.stop(); });
             }}
             isDemoLoading={codeGraph.isDemoLoading}
             demoError={codeGraph.demoError}
@@ -1294,6 +1304,17 @@ export default function App() {
         onClose={() => setIsTokenDashboardOpen(false)}
         records={tokenRecords}
         onClear={clearUsage}
+      />
+
+      {/* Agent Mission Control — fixed panel at bottom during CodeGraph generation */}
+      <AgentMissionPanel
+        events={agentMission.events}
+        isOpen={agentMission.isOpen}
+        activeAgents={agentMission.activeAgents}
+        progressEntries={progressLog.entries}
+        blackboard={agentMission.blackboard}
+        onClose={() => agentMission.setIsOpen(false)}
+        onDownload={agentMission.downloadLog}
       />
 
 
