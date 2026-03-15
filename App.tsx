@@ -691,8 +691,14 @@ export default function App() {
 
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
+      agentMission.start();
       try {
-        const updated = await codeGraph.regenerateFlows(llmSettings, options);
+        const updated = await codeGraph.regenerateFlows(
+          llmSettings,
+          options,
+          agentMission.addEvent,
+          agentMission.updateBlackboard,
+        );
         // Use the returned graph directly — codeGraph.activeGraph is a stale closure here
         if (updated) triggerFlowExport(updated, options?.scopeNodeId);
       } catch (err: any) {
@@ -704,9 +710,11 @@ export default function App() {
         } else {
           showToast(`Flow generation failed: ${err?.message ?? 'Unknown error'}`, 'error');
         }
+      } finally {
+        agentMission.stop();
       }
     },
-    [codeGraph.regenerateFlows, llmSettings, triggerFlowExport, showToast, setIsAISettingsOpen]
+    [codeGraph.regenerateFlows, llmSettings, triggerFlowExport, showToast, setIsAISettingsOpen, agentMission]
   );
 
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {

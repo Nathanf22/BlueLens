@@ -490,6 +490,7 @@ RULES:
 - Use exact nodeIds from the FILE LIST in the user message.
 - Sequence diagrams: descriptive participant aliases (not nodeIds), include return arrows.
 - For HTTP boundaries: use "->>" with label "HTTP GET /route" or similar.
+- scopeNodeId MUST be either "rootNodeId" (for cross-cluster end-to-end flows) or the nodeId of a D1 PACKAGE node. NEVER use a D2 file nodeId as scopeNodeId — file-level flows don't exist at this stage. All flows generated here are either cross-system (rootNodeId) or within one domain cluster (D1 package nodeId).
 
 Output ONLY this JSON (no other text):
 {
@@ -497,7 +498,7 @@ Output ONLY this JSON (no other text):
     {
       "name": "Human-readable flow name",
       "description": "What happens end-to-end (1-2 sentences)",
-      "scopeNodeId": "rootNodeId OR a D1 module nodeId",
+      "scopeNodeId": "rootNodeId  ← use this for flows spanning multiple clusters; OR the D1 package nodeId for flows within one cluster",
       "steps": [
         { "nodeId": "exact-nodeId-from-FILE-LIST", "label": "What this file does in this flow", "order": 0 }
       ],
@@ -796,8 +797,13 @@ function validateAndBuildFlows(raw: unknown, graph: CodeGraph): Record<string, G
     if (typeof name !== 'string' || !name) continue;
     if (!Array.isArray(steps) || steps.length < 2) continue;
 
-    // Resolve scope — default to root if unresolvable
+    // Resolve scope — only root (D0) or package (D1) are valid scopes for agent-generated flows.
+    // D2/D3 file-level scopes are rejected and fall back to root (end-to-end).
     let resolvedScope = typeof scopeNodeId === 'string' ? resolveId(scopeNodeId) : null;
+    if (resolvedScope) {
+      const scopeNode = graph.nodes[resolvedScope];
+      if (scopeNode && scopeNode.depth > 1) resolvedScope = null; // reject D2+
+    }
     if (!resolvedScope) resolvedScope = graph.rootNodeId;
 
     // Validate steps

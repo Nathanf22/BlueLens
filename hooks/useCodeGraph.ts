@@ -477,21 +477,61 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
   const regenerateFlows = useCallback(async (
     llmSettings?: LLMSettings,
     options?: FlowGenerationOptions,
+    onAgentEvent?: AgentEventFn,
+    onBlackboard?: AgentBlackboardFn,
   ): Promise<CodeGraph | undefined> => {
     if (!activeGraph) return undefined;
 
     setIsGeneratingFlows(true);
     setActiveFlowId(null);
     try {
-      const flowResult = await generateFlows(
-        activeGraph,
-        llmSettings,
-        (step, current, total) => setGraphCreationProgress({ step, current, total }),
-        options,
-      );
+      // Derive SemanticClusters from D1 (package) nodes in the graph
+      const clusters: SemanticCluster[] = Object.values(activeGraph.nodes)
+        .filter(n => n.kind === 'package')
+        .map(pkgNode => ({
+          name: pkgNode.name,
+          description: pkgNode.description ?? pkgNode.name,
+          files: pkgNode.children
+            .map(childId => activeGraph.nodes[childId])
+            .filter((n): n is import('../types').GraphNode => n?.kind === 'module' && !!n.sourceRef?.filePath)
+            .map(n => n.sourceRef!.filePath),
+        }))
+        .filter(c => c.files.length > 0);
+
+      // Get filesystem provider if available
+      let provider: import('../services/LocalFileSystemProvider').LocalFileSystemProvider | undefined;
+      if (activeGraph.repoId) {
+        const handle = fileSystemService.getHandle(activeGraph.repoId);
+        if (handle) provider = new LocalFileSystemProvider(handle);
+      }
+
+      // Use agentic pipeline if we have clusters + LLM settings; fall back to legacy
+      let newFlows: Record<string, import('../types').GraphFlow>;
+      if (clusters.length > 0 && llmSettings) {
+        requireLLMKey(llmSettings);
+        newFlows = await orchestrateFlowGeneration(
+          activeGraph,
+          clusters,
+          provider,
+          llmSettings,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          undefined,
+          undefined,
+          onAgentEvent,
+          onBlackboard,
+        );
+      } else {
+        const flowResult = await generateFlows(
+          activeGraph,
+          llmSettings,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          options,
+        );
+        newFlows = flowResult.flows;
+      }
 
       // If generation returned nothing, preserve existing flows
-      if (Object.keys(flowResult.flows).length === 0) {
+      if (Object.keys(newFlows).length === 0) {
         console.warn('[CodeGraph] Flow generation returned 0 flows, keeping existing');
         return undefined;
       }
@@ -500,7 +540,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
       if (options?.customPrompt) {
         // Custom prompt: merge new flows into existing (additive)
-        mergedFlows = { ...activeGraph.flows, ...flowResult.flows };
+        mergedFlows = { ...activeGraph.flows, ...newFlows };
       } else if (options?.scopeNodeId) {
         // Scoped regenerate: replace flows at this scope, keep other scopes
         const scopeId = options.scopeNodeId;
@@ -510,10 +550,10 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
             kept[id] = flow;
           }
         }
-        mergedFlows = { ...kept, ...flowResult.flows };
+        mergedFlows = { ...kept, ...newFlows };
       } else {
         // Full regenerate: replace all
-        mergedFlows = flowResult.flows;
+        mergedFlows = newFlows;
       }
 
       const updated: CodeGraph = {
