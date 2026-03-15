@@ -312,7 +312,6 @@ export function findAffectedDiagrams(
   const linked = diagrams.filter(d => d.sourceGraphId === graphId);
   if (linked.length === 0) return [];
 
-  // Collect all changed node IDs and their ancestor chains
   const changedNodes = [
     ...diff.addedNodes,
     ...diff.removedNodes,
@@ -323,11 +322,43 @@ export function findAffectedDiagrams(
   const scopeDistances = new Map<string, number>();
 
   for (const changed of changedNodes) {
+    // 1. Hierarchical ancestor chain (original)
     const ancestors = getAncestorChain(graph, changed.id);
     ancestors.forEach((ancestorId, distance) => {
       const prev = scopeDistances.get(ancestorId) ?? Infinity;
       if (distance < prev) scopeDistances.set(ancestorId, distance);
     });
+
+    // 2. Cross-tree propagation via structural relations (calls, depends_on, etc.)
+    const relatedNodeIds = Object.values(graph.relations)
+      .filter(r => r.type !== 'contains' && (r.sourceId === changed.id || r.targetId === changed.id))
+      .map(r => r.sourceId === changed.id ? r.targetId : r.sourceId);
+    for (const relatedId of relatedNodeIds) {
+      const relatedAncestors = getAncestorChain(graph, relatedId);
+      relatedAncestors.forEach((ancestorId, distance) => {
+        const prev = scopeDistances.get(ancestorId) ?? Infinity;
+        // +1 penalty: cross-tree is slightly less direct than same-tree
+        if (distance + 1 < prev) scopeDistances.set(ancestorId, distance + 1);
+      });
+    }
+
+    // 3. Domain projection propagation — all nodes sharing a domain
+    const changedNode = graph.nodes[changed.id];
+    if (changedNode?.domainProjections?.length && graph.domainNodes) {
+      for (const domainId of changedNode.domainProjections) {
+        const domainNode = graph.domainNodes[domainId];
+        if (!domainNode) continue;
+        for (const projection of domainNode.projections) {
+          if (projection.graphNodeId === changed.id) continue;
+          const domainRelatedAncestors = getAncestorChain(graph, projection.graphNodeId);
+          domainRelatedAncestors.forEach((ancestorId, distance) => {
+            const prev = scopeDistances.get(ancestorId) ?? Infinity;
+            // +2 penalty: domain co-membership is the weakest signal
+            if (distance + 2 < prev) scopeDistances.set(ancestorId, distance + 2);
+          });
+        }
+      }
+    }
   }
 
   // Root scope (null/undefined sourceScopeNodeId) = always the furthest ancestor

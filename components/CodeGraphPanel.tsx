@@ -153,14 +153,23 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
   const nodeCount = Object.keys(graph.nodes).length;
   const relationCount = Object.keys(graph.relations).length;
 
-  // Compute relation stats for selected node
+  // Compute full relations for selected node
   const selectedNodeRelations = useMemo(() => {
     if (!selectedNode) return null;
-    const rels = Object.values(graph.relations);
-    const outgoing = rels.filter(r => r.sourceId === selectedNode.id && r.type !== 'contains');
-    const incoming = rels.filter(r => r.targetId === selectedNode.id && r.type !== 'contains');
-    return { outgoing: outgoing.length, incoming: incoming.length };
-  }, [graph.relations, selectedNode]);
+    const rels = Object.values(graph.relations).filter(r => r.type !== 'contains');
+    const outgoing = rels
+      .filter(r => r.sourceId === selectedNode.id)
+      .map(r => ({ type: r.type, label: r.label, node: graph.nodes[r.targetId] }))
+      .filter(r => r.node);
+    const incoming = rels
+      .filter(r => r.targetId === selectedNode.id)
+      .map(r => ({ type: r.type, label: r.label, node: graph.nodes[r.sourceId] }))
+      .filter(r => r.node);
+    const domains = (selectedNode.domainProjections || [])
+      .map(id => graph.domainNodes?.[id])
+      .filter(Boolean);
+    return { outgoing, incoming, domains };
+  }, [graph.relations, graph.nodes, graph.domainNodes, selectedNode]);
 
   const syncEntry = selectedNode ? graph.syncLock[selectedNode.id] : null;
   const isDomainLens = activeLens?.type === 'domain';
@@ -501,12 +510,38 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
                 </div>
               )}
 
-              {selectedNodeRelations && (
-                <div className="flex justify-between">
+              {selectedNodeRelations && selectedNodeRelations.domains.length > 0 && (
+                <div>
+                  <span className="text-gray-500">Domains</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {selectedNodeRelations.domains.map((d: any) => (
+                      <span key={d.id} className="px-1.5 py-0.5 bg-brand-900/40 text-brand-300 rounded text-[10px]" title={d.description}>
+                        {d.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedNodeRelations && (selectedNodeRelations.outgoing.length > 0 || selectedNodeRelations.incoming.length > 0) && (
+                <div>
                   <span className="text-gray-500">Relations</span>
-                  <span className="text-gray-300">
-                    {selectedNodeRelations.outgoing} out, {selectedNodeRelations.incoming} in
-                  </span>
+                  <div className="mt-1 space-y-0.5 max-h-28 overflow-y-auto">
+                    {selectedNodeRelations.outgoing.map((r: any, i: number) => (
+                      <div key={`out-${i}`} className="flex items-center gap-1 text-[10px]">
+                        <span className="text-brand-400 shrink-0">→</span>
+                        <span className="text-gray-500 shrink-0">{r.type}</span>
+                        <span className="text-gray-300 truncate" title={r.node.name}>{r.node.name}</span>
+                      </div>
+                    ))}
+                    {selectedNodeRelations.incoming.map((r: any, i: number) => (
+                      <div key={`in-${i}`} className="flex items-center gap-1 text-[10px]">
+                        <span className="text-gray-500 shrink-0">←</span>
+                        <span className="text-gray-500 shrink-0">{r.type}</span>
+                        <span className="text-gray-300 truncate" title={r.node.name}>{r.node.name}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

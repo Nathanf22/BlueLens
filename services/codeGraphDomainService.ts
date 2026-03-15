@@ -118,6 +118,7 @@ export async function analyzeDomain(
 ): Promise<{
   domainNodes: Record<string, DomainNode>;
   domainRelations: Record<string, DomainRelation>;
+  updatedNodes: Record<string, GraphNode>;
 }> {
   const prompt = buildGraphPrompt(graph);
 
@@ -175,7 +176,21 @@ export async function analyzeDomain(
     };
   }
 
-  return { domainNodes, domainRelations };
+  // Back-populate GraphNode.domainProjections so the link is bidirectional
+  const updatedNodes: Record<string, GraphNode> = { ...graph.nodes };
+  for (const domainNode of Object.values(domainNodes)) {
+    for (const projection of domainNode.projections) {
+      const gn = updatedNodes[projection.graphNodeId];
+      if (gn && !gn.domainProjections.includes(domainNode.id)) {
+        updatedNodes[projection.graphNodeId] = {
+          ...gn,
+          domainProjections: [...gn.domainProjections, domainNode.id],
+        };
+      }
+    }
+  }
+
+  return { domainNodes, domainRelations, updatedNodes };
 }
 
 export const codeGraphDomainService = {

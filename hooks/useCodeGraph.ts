@@ -574,12 +574,13 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
     setIsAnalyzingDomain(true);
     try {
-      const { domainNodes, domainRelations } = await codeGraphDomainService.analyzeDomain(
+      const { domainNodes, domainRelations, updatedNodes } = await codeGraphDomainService.analyzeDomain(
         activeGraph,
         llmSettings
       );
       const updated: CodeGraph = {
         ...activeGraph,
+        nodes: updatedNodes,
         domainNodes,
         domainRelations,
         updatedAt: Date.now(),
