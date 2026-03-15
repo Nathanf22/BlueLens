@@ -11,9 +11,10 @@ import { codeGraphSyncService } from '../services/codeGraphSyncService';
 import { codebaseAnalyzerService } from '../services/codebaseAnalyzerService';
 import { codeToGraphParserService } from '../services/codeToGraphParserService';
 import { codeGraphDomainService } from '../services/codeGraphDomainService';
-import { analyzeCodebaseWithAI, type LogEntryFn } from '../services/codeGraphAgentService';
+import { type LogEntryFn } from '../services/codeGraphAgentService';
 import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGrouper';
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
+import { orchestrateCodebaseAnalysis, orchestrateFlowGeneration } from '../services/codeGraphOrchestrator';
 import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
 import { fileSystemService } from '../services/fileSystemService';
 import { LocalFileSystemProvider } from '../services/LocalFileSystemProvider';
@@ -132,20 +133,24 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       let analysis = await codebaseAnalyzerService.analyzeCodebase(provider);
       onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
-      // AI-powered grouping (required); throws LLMConfigError if no key configured
+      // Agentic clustering (required); throws LLMConfigError if no key configured
       requireLLMKey(llmSettings);
-      onLogEntry?.('info', 'Starting AI analysis pipeline');
+      onLogEntry?.('info', 'Starting agentic analysis pipeline');
+      let clusters: import('../services/codeGraphOrchestrator').SemanticCluster[] = [];
       try {
-        analysis = await analyzeCodebaseWithAI(
+        const orchestrated = await orchestrateCodebaseAnalysis(
           analysis,
+          provider,
           llmSettings!,
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
         );
+        analysis = orchestrated.analysis;
+        clusters = orchestrated.clusters;
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;
-        onLogEntry?.('info', `AI analysis failed (${err.message}), using heuristic grouping`);
+        onLogEntry?.('info', `Agentic analysis failed (${err.message}), using heuristic grouping`);
         analysis = groupByFunctionalHeuristics(analysis);
       }
 
@@ -164,24 +169,24 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         onLogEntry,
       );
 
-      // Generate flows (AI only — skips if no LLM configured)
+      // Agentic flow generation (code-aware, non-fatal)
       setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
       setIsGeneratingFlows(true);
       try {
-        const flowResult = await generateFlows(
+        const flows = await orchestrateFlowGeneration(
           graph,
-          llmSettings,
+          clusters,
+          provider,
+          llmSettings!,
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
-          undefined,
           onLogEntry,
           signal,
         );
-        if (Object.keys(flowResult.flows).length > 0) {
-          graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+        if (Object.keys(flows).length > 0) {
+          graph = { ...graph, flows, updatedAt: Date.now() };
         }
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;
-        // Non-fatal: graph works without flows
         console.warn('[CodeGraph] Flow generation failed');
         onLogEntry?.('flow', 'Flow generation failed (non-fatal)');
       } finally {
@@ -239,20 +244,24 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       );
       onLogEntry?.('scan', `Scan complete: ${analysis.totalFiles} files, ${analysis.totalSymbols} symbols`);
 
-      // AI-powered grouping (required); throws LLMConfigError if no key configured
+      // Agentic clustering (GitHub: no provider, read_file degrades gracefully)
       requireLLMKey(llmSettings);
-      onLogEntry?.('info', 'Starting AI analysis pipeline');
+      onLogEntry?.('info', 'Starting agentic analysis pipeline');
+      let clusters: import('../services/codeGraphOrchestrator').SemanticCluster[] = [];
       try {
-        analysis = await analyzeCodebaseWithAI(
+        const orchestrated = await orchestrateCodebaseAnalysis(
           analysis,
+          undefined, // no local provider for GitHub repos
           llmSettings!,
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
         );
+        analysis = orchestrated.analysis;
+        clusters = orchestrated.clusters;
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;
-        onLogEntry?.('info', `AI analysis failed (${err.message}), using heuristic grouping`);
+        onLogEntry?.('info', `Agentic analysis failed (${err.message}), using heuristic grouping`);
         analysis = groupByFunctionalHeuristics(analysis);
       }
 
@@ -271,16 +280,17 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
       setIsGeneratingFlows(true);
       try {
-        const flowResult = await generateFlows(
+        const flows = await orchestrateFlowGeneration(
           graph,
-          llmSettings,
+          clusters,
+          undefined, // no local provider for GitHub repos
+          llmSettings!,
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
-          undefined,
           onLogEntry,
           signal,
         );
-        if (Object.keys(flowResult.flows).length > 0) {
-          graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+        if (Object.keys(flows).length > 0) {
+          graph = { ...graph, flows, updatedAt: Date.now() };
         }
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;
@@ -344,24 +354,28 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         onLogEntry,
       );
 
-      // Step 2: AI grouping (required); throws LLMConfigError if no key configured
+      // Step 2: Agentic clustering (demo: no local provider)
       requireLLMKey(llmSettings);
-      onLogEntry?.('info', 'Starting AI analysis pipeline');
+      onLogEntry?.('info', 'Starting agentic analysis pipeline');
+      let demoClusters: import('../services/codeGraphOrchestrator').SemanticCluster[] = [];
       try {
-        analysis = await analyzeCodebaseWithAI(
+        const orchestrated = await orchestrateCodebaseAnalysis(
           analysis,
+          undefined,
           llmSettings!,
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
         );
+        analysis = orchestrated.analysis;
+        demoClusters = orchestrated.clusters;
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;
-        onLogEntry?.('info', `AI analysis failed (${err.message}), using heuristic grouping`);
+        onLogEntry?.('info', `Agentic analysis failed (${err.message}), using heuristic grouping`);
         analysis = groupByFunctionalHeuristics(analysis);
       }
 
-      // Step 3: parse to graph — same as createGraph (no handle = no contentHash, fine for demo)
+      // Step 3: parse to graph
       setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
       let graph = await codeToGraphParserService.parseCodebaseToGraph(
         analysis,
@@ -374,20 +388,21 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         onLogEntry,
       );
 
-      // Step 4: generate flows — same as createGraph (AI only, skips if no LLM)
+      // Step 4: agentic flow generation
       setGraphCreationProgress({ step: 'Generating flows', current: 0, total: 1 });
       setIsGeneratingFlows(true);
       try {
-        const flowResult = await generateFlows(
+        const flows = await orchestrateFlowGeneration(
           graph,
-          llmSettings,
-          (step, current, total) => setGraphCreationProgress({ step, current, total }),
+          demoClusters,
           undefined,
+          llmSettings!,
+          (step, current, total) => setGraphCreationProgress({ step, current, total }),
           onLogEntry,
           signal,
         );
-        if (Object.keys(flowResult.flows).length > 0) {
-          graph = { ...graph, flows: flowResult.flows, updatedAt: Date.now() };
+        if (Object.keys(flows).length > 0) {
+          graph = { ...graph, flows, updatedAt: Date.now() };
         }
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;

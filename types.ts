@@ -350,7 +350,8 @@ export interface GitCommit {
 
 export type ProgressLogCategory =
   | 'scan' | 'ai-analyze' | 'ai-architect' | 'parse'
-  | 'resolve' | 'hierarchy' | 'flow' | 'info';
+  | 'resolve' | 'hierarchy' | 'flow' | 'info'
+  | 'ai-cluster' | 'ai-synth' | 'ai-eval';
 
 export interface ProgressLogEntry {
   id: string;
