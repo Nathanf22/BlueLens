@@ -486,10 +486,13 @@ function buildSyntheseurTools(): AgentToolDefinition[] {
 }
 
 function buildSyntheseurExecutor(ctx: GraphBuildContext, graph: CodeGraph) {
-  // Build filePath → nodeId lookup
+  // Build filePath → nodeId lookup — D2 (file) nodes only.
+  // D3 (symbol) nodes share the same sourceRef.filePath as their D2 parent,
+  // so iterating all nodes would overwrite D2 entries with D3 IDs, causing
+  // flow step validation to fail (allValidIds only contains D1/D2).
   const filePathToNodeId = new Map<string, string>();
   for (const node of Object.values(graph.nodes)) {
-    if (node.sourceRef) filePathToNodeId.set(node.sourceRef.filePath, node.id);
+    if (node.sourceRef && node.depth === 2) filePathToNodeId.set(node.sourceRef.filePath, node.id);
   }
 
   return async (name: string, args: Record<string, unknown>): Promise<AgentToolStep> => {

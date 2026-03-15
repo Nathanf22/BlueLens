@@ -227,6 +227,9 @@ export async function parseCodebaseToGraph(
   onLogEntry?.('resolve', `Resolving dependencies (${totalFiles} files)`);
   const allFilePaths = Array.from(fileIdMap.keys());
   let importCounter = 0;
+  let dependsOnCount = 0;
+  let skippedExternal = 0;
+  let unresolved = 0;
   for (const mod of analysis.modules) {
     for (const file of mod.files) {
       importCounter++;
@@ -235,19 +238,21 @@ export async function parseCodebaseToGraph(
       if (!fileNodeId) continue;
 
       for (const imp of file.imports) {
-        if (imp.isExternal && !imp.source.startsWith('@/')) continue;
+        if (imp.isExternal && !imp.source.startsWith('@/')) { skippedExternal++; continue; }
 
         const resolved = resolveImportToFile(imp.source, file.filePath, allFilePaths);
-        if (!resolved) continue;
+        if (!resolved) { unresolved++; continue; }
 
         const targetNodeId = fileIdMap.get(resolved);
         if (targetNodeId && targetNodeId !== fileNodeId) {
           const depResult = codeGraphModelService.addRelation(graph, fileNodeId, targetNodeId, 'depends_on', imp.name);
           graph = depResult.graph;
+          dependsOnCount++;
         }
       }
     }
   }
+  onLogEntry?.('resolve', `Dependencies: ${dependsOnCount} edges created, ${skippedExternal} external skipped, ${unresolved} unresolved`);
 
   // Relations from class hierarchy
   if (handle) {
