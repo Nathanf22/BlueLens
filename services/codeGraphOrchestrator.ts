@@ -902,11 +902,18 @@ Output ONLY this JSON after your investigation:
   ]
 }`;
 
+const ALREADY_READ = '(already provided above)';
+
 function buildEvaluateurFlowExecutor(ctx: GraphBuildContext) {
+  const readOnce = new Set<string>();
   return async (name: string, args: Record<string, unknown>): Promise<AgentToolStep> => {
     if (name === 'read_file') {
       const filePath = String(args.path ?? '');
+      if (readOnce.has(filePath)) {
+        return { toolName: name, args, result: ALREADY_READ, label: `read_file(${filePath}) [dup]` };
+      }
       const content = await readFileCached(ctx, filePath, 200);
+      readOnce.add(filePath);
       return { toolName: name, args, result: content, label: `read_file(${filePath})` };
     }
     return { toolName: name, args, result: '(unknown tool)', label: name };
@@ -941,18 +948,20 @@ For each flow, read the source files of the steps and verify the claimed connect
   onLog?.('ai-eval', 'Évaluateur: validating flows against source code...');
   const evalFlowStartMs = Date.now();
 
-  const rawExecutor = await buildEvaluateurFlowExecutor(ctx);
+  const rawExecutor = buildEvaluateurFlowExecutor(ctx);
   const executor = onAgentEvent
     ? async (name: string, args: Record<string, unknown>) => {
         const t0 = Date.now();
         const step = await rawExecutor(name, args);
-        onAgentEvent({
-          agent: 'evaluateur',
-          toolName: name,
-          argsSummary: String(args.path ?? args.file ?? ''),
-          resultSummary: step.result.slice(0, 300),
-          durationMs: Date.now() - t0,
-        });
+        if (step.result !== ALREADY_READ) {
+          onAgentEvent({
+            agent: 'evaluateur',
+            toolName: name,
+            argsSummary: String(args.path ?? args.file ?? ''),
+            resultSummary: step.result.slice(0, 300),
+            durationMs: Date.now() - t0,
+          });
+        }
         return step;
       }
     : rawExecutor;
@@ -1439,18 +1448,20 @@ Steps:
   onLog?.('ai-eval', 'Évaluateur: validating architecture diagrams...');
   const evalStartMs = Date.now();
 
-  const rawExecutor = await buildEvaluateurFlowExecutor(ctx);
+  const rawExecutor = buildEvaluateurFlowExecutor(ctx);
   const executor = onAgentEvent
     ? async (name: string, args: Record<string, unknown>) => {
         const t0 = Date.now();
         const step = await rawExecutor(name, args);
-        onAgentEvent({
-          agent: 'evaluateur',
-          toolName: name,
-          argsSummary: String(args.path ?? ''),
-          resultSummary: step.result.slice(0, 300),
-          durationMs: Date.now() - t0,
-        });
+        if (step.result !== ALREADY_READ) {
+          onAgentEvent({
+            agent: 'evaluateur',
+            toolName: name,
+            argsSummary: String(args.path ?? ''),
+            resultSummary: step.result.slice(0, 300),
+            durationMs: Date.now() - t0,
+          });
+        }
         return step;
       }
     : rawExecutor;
