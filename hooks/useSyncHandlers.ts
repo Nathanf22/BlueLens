@@ -67,7 +67,7 @@ export const useSyncHandlers = () => {
     updateGraph: (g: CodeGraph) => void,
     updateDiagram: (id: string, code: string) => void,
     regenerateFlows?: (g: CodeGraph) => Promise<CodeGraph | undefined>,
-  ): Promise<{ linkedDiagrams: number; proposalsGenerated: number; proposalsApplied: number }> => {
+  ): Promise<{ linkedDiagrams: number; proposalsGenerated: number; proposalsApplied: number; flowsGraph?: CodeGraph }> => {
     if (!handle) return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0 };
     setIsSyncingGraph(true);
     try {
@@ -80,9 +80,10 @@ export const useSyncHandlers = () => {
       // Regenerate flows if there were structural changes and a generator is provided
       const hasDiff = diff.addedNodes.length > 0 || diff.removedNodes.length > 0 || diff.modifiedNodes.length > 0;
       let finalGraph = updatedGraph;
+      let flowsGraph: CodeGraph | undefined;
       if (hasDiff && regenerateFlows) {
         const withFlows = await regenerateFlows(updatedGraph).catch(() => null);
-        if (withFlows) finalGraph = withFlows;
+        if (withFlows) { finalGraph = withFlows; flowsGraph = withFlows; }
       }
 
       updateGraph(finalGraph);
@@ -93,7 +94,7 @@ export const useSyncHandlers = () => {
       const linkedDiagrams = diagrams.filter(d => d.sourceGraphId === graph.id).length;
 
       if (proposal.diagramDiffs.length === 0) {
-        return { linkedDiagrams, proposalsGenerated: 0, proposalsApplied: 0 };
+        return { linkedDiagrams, proposalsGenerated: 0, proposalsApplied: 0, flowsGraph };
       }
 
       let proposalsApplied = 0;
@@ -121,7 +122,7 @@ export const useSyncHandlers = () => {
         setPendingProposals(prev => [...prev, proposal]);
       }
 
-      return { linkedDiagrams, proposalsGenerated: proposal.diagramDiffs.length - proposalsApplied, proposalsApplied };
+      return { linkedDiagrams, proposalsGenerated: proposal.diagramDiffs.length - proposalsApplied, proposalsApplied, flowsGraph };
     } catch (err) {
       console.error('[useSyncHandlers] handleIncrementalSync error:', err);
       return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0 };

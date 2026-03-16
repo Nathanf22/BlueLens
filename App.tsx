@@ -796,16 +796,19 @@ export default function App() {
         ));
       },
       (g) => codeGraph.regenerateFlows(llmSettings, undefined, agentMission.addEvent, agentMission.updateBlackboard, g),
-    ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied }) => {
-      if (linkedDiagrams === 0) {
+    ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied, flowsGraph }) => {
+      // If flows were regenerated, export them to diagrams (opens diff panel in manual mode)
+      if (flowsGraph) triggerFlowExport(flowsGraph);
+
+      if (linkedDiagrams === 0 && !flowsGraph) {
         showToast('No diagrams linked to this code graph — link diagrams via the sidebar first.', 'warning');
-      } else if (proposalsGenerated === 0 && proposalsApplied === 0) {
+      } else if (proposalsGenerated === 0 && proposalsApplied === 0 && !flowsGraph) {
         showToast(`${linkedDiagrams} linked diagram${linkedDiagrams > 1 ? 's' : ''} checked — no updates needed.`, 'info');
       } else {
         const parts: string[] = [];
         if (proposalsApplied > 0) parts.push(`${proposalsApplied} updated automatically`);
         if (proposalsGenerated > 0) parts.push(`${proposalsGenerated} pending review — click the button in the top bar`);
-        showToast(parts.join(' · '), proposalsGenerated > 0 ? 'success' : 'info');
+        if (parts.length > 0) showToast(parts.join(' · '), proposalsGenerated > 0 ? 'success' : 'info');
       }
     }).finally(() => agentMission.stop());
   }, [codeGraph.activeGraph, codeGraph.updateGraph, codeGraph.regenerateFlows, diagrams, handleIncrementalSync, llmSettings, setDiagrams, agentMission]);
