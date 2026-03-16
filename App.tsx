@@ -696,7 +696,7 @@ export default function App() {
     try {
       result = await orchestrateArchitectureGeneration(
         graph, clusters, provider, llmSettings,
-        undefined, undefined, agentMission.addEvent, agentMission.updateBlackboard,
+        undefined, undefined, agentMission.addEvent, agentMission.updateBlackboard, agentMission.notifyToolStart,
       );
     } catch {
       return;
@@ -795,9 +795,10 @@ export default function App() {
           (resolvedBranch) => handleUpdateGithubBranch(repoId, resolvedBranch),
           agentMission.addEvent,
           agentMission.updateBlackboard,
+          agentMission.notifyToolStart,
         );
       } else {
-        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha, agentMission.addEvent, agentMission.updateBlackboard);
+        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha, agentMission.addEvent, agentMission.updateBlackboard, agentMission.notifyToolStart);
       }
       if (result) {
         triggerFlowExport(result);
@@ -845,6 +846,8 @@ export default function App() {
           options,
           isAgenticRun ? agentMission.addEvent : undefined,
           isAgenticRun ? agentMission.updateBlackboard : undefined,
+          undefined,
+          isAgenticRun ? agentMission.notifyToolStart : undefined,
         );
         // Use the returned graph directly — codeGraph.activeGraph is a stale closure here
         if (updated) triggerFlowExport(updated, options?.scopeNodeId);
@@ -941,7 +944,7 @@ export default function App() {
           d.id === id ? { ...d, code, lastModified: Date.now() } : d
         ));
       },
-      (g) => codeGraph.regenerateFlows(llmSettings, undefined, agentMission.addEvent, agentMission.updateBlackboard, g),
+      (g) => codeGraph.regenerateFlows(llmSettings, undefined, agentMission.addEvent, agentMission.updateBlackboard, g, agentMission.notifyToolStart),
     ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied, flowsGraph }) => {
       // Create diagrams for newly generated flows (not covered by incremental diff panel)
       if (flowsGraph) createNewFlowDiagrams(flowsGraph);
@@ -1245,7 +1248,7 @@ export default function App() {
             onLoadDemoGraph={() => {
               progressLog.startLog();
               agentMission.start();
-              codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry, agentMission.addEvent, agentMission.updateBlackboard)
+              codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry, agentMission.addEvent, agentMission.updateBlackboard, agentMission.notifyToolStart)
                 .then(async graph => { if (graph) { triggerFlowExport(graph); await triggerArchitectureGeneration(graph); } })
                 .catch((err: any) => {
                   if (err instanceof LLMRateLimitError) {
@@ -1473,6 +1476,7 @@ export default function App() {
         events={agentMission.events}
         isOpen={agentMission.isOpen}
         activeAgents={agentMission.activeAgents}
+        pendingTools={agentMission.pendingTools}
         progressEntries={progressLog.entries}
         blackboard={agentMission.blackboard}
         onClose={() => agentMission.setIsOpen(false)}

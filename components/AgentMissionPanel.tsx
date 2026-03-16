@@ -7,6 +7,7 @@ interface Props {
   events: AgentToolEvent[];
   isOpen: boolean;
   activeAgents: Set<AgentId>;
+  pendingTools: Partial<Record<AgentId, { toolName: string; argsSummary: string }>>;
   progressEntries: ProgressLogEntry[];
   blackboard: AgentBlackboard;
   onClose: () => void;
@@ -119,6 +120,7 @@ function AgentTerminal({
   bgHover,
   events,
   isActive,
+  pendingTool,
   onInfoClick,
 }: {
   agentId: AgentId;
@@ -130,6 +132,7 @@ function AgentTerminal({
   bgHover: string;
   events: AgentToolEvent[];
   isActive: boolean;
+  pendingTool?: { toolName: string; argsSummary: string };
   onInfoClick: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -217,10 +220,22 @@ function AgentTerminal({
             );
           })
         )}
-        {isActive && (
-          <div className="flex items-center gap-1 text-gray-600 agent-line">
+        {pendingTool ? (
+          <div className={`flex items-start gap-1.5 agent-line rounded px-1.5 py-1 mt-0.5`} style={{ background: `rgba(${glowColor}, 0.07)` }}>
+            <Loader2 className={`w-2.5 h-2.5 mt-0.5 shrink-0 animate-spin`} style={{ color: `rgb(${glowColor})` }} />
+            <div className="min-w-0">
+              <span className="text-white font-semibold">{pendingTool.toolName}</span>
+              {pendingTool.argsSummary && (
+                <span className="text-gray-400 ml-1 truncate">{formatArgs(pendingTool.argsSummary)}</span>
+              )}
+              {(() => { const d = describeToolCall(pendingTool.toolName, pendingTool.argsSummary); return d ? <div className={`text-[10px] mt-0.5`} style={{ color: `rgb(${glowColor})` }}>{d}</div> : null; })()}
+            </div>
+            <span className="ml-auto text-[10px] shrink-0" style={{ color: `rgb(${glowColor})` }}>running…</span>
+          </div>
+        ) : isActive && (
+          <div className="flex items-center gap-1 text-gray-600">
             <span className="text-green-400">$</span>
-            <span className="animate-pulse">▋</span>
+            <span className="text-gray-500">thinking…</span>
           </div>
         )}
       </div>
@@ -311,7 +326,7 @@ const PANEL_STYLES = `
   }
 `;
 
-export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntries, blackboard, onClose, onDownload }: Props) {
+export function AgentMissionPanel({ events, isOpen, activeAgents, pendingTools, progressEntries, blackboard, onClose, onDownload }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_HEIGHT);
@@ -434,6 +449,7 @@ export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntrie
                     bgHover={ag.bgHover}
                     events={events.filter(e => e.agent === ag.id)}
                     isActive={activeAgents.has(ag.id)}
+                    pendingTool={pendingTools[ag.id]}
                     onInfoClick={() => setSelectedAgent(prev => prev === ag.id ? null : ag.id)}
                   />
                 ))}
