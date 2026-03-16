@@ -84,6 +84,7 @@ interface WorkspaceViewProps {
   // CodeGraph flow generation
   codeGraphIsGeneratingFlows?: boolean;
   onCodeGraphRegenerateFlows?: (options?: { scopeNodeId?: string; customPrompt?: string }) => void;
+  onCodeGraphGenerateArchitecture?: () => void;
   // CodeGraph re-parse
   codeGraphIsReparsing?: boolean;
   onCodeGraphReparse?: () => void;
@@ -177,6 +178,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onCodeGraphOpenFlowInEditor,
   codeGraphIsGeneratingFlows = false,
   onCodeGraphRegenerateFlows,
+  onCodeGraphGenerateArchitecture,
   codeGraphIsReparsing = false,
   onCodeGraphReparse,
   codeGraphSyncStatus,
@@ -261,6 +263,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onDeselectFlow={onCodeGraphDeselectFlow || (() => {})}
                 isGeneratingFlows={codeGraphIsGeneratingFlows}
                 onRegenerateFlows={onCodeGraphRegenerateFlows}
+                onGenerateArchitecture={onCodeGraphGenerateArchitecture}
                 isReparsing={codeGraphIsReparsing}
                 onReparseGraph={onCodeGraphReparse}
                 syncStatus={codeGraphSyncStatus}

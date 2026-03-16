@@ -44,6 +44,7 @@ import {
   detectExistingExport,
   materializePlan,
 } from './services/codeGraphExportService';
+import { generateAllArchitectureDiagrams } from './services/codeGraphArchitectureService';
 import { FlowExportModal } from './components/FlowExportModal';
 import { TokenDashboardModal } from './components/TokenDashboardModal';
 import { SyncDiffModal } from './components/SyncDiffModal';
@@ -668,6 +669,65 @@ export default function App() {
     console.log(`[Sync] Created ${newDiagrams.length} new flow diagram(s):`, newDiagrams.map(d => d.name));
   }, [diagrams, folders, setDiagrams, setFolders]);
 
+  /** Generate and insert architecture diagrams (overview + one per D1 module).
+   *  Replaces existing architecture diagrams for this graph if they exist. */
+  const handleGenerateArchitecture = useCallback((graph: CodeGraph) => {
+    const { overview, services } = generateAllArchitectureDiagrams(graph);
+    if (!overview.code && services.length === 0) {
+      showToast('No architecture data found in this graph.', 'warning');
+      return;
+    }
+
+    const generateId = () => Math.random().toString(36).substr(2, 9);
+    const folderName = `Architecture: ${graph.name}`;
+
+    // Remove previous architecture diagrams + folder for this graph
+    const existingFolder = folders.find(
+      f => f.name === folderName && f.workspaceId === graph.workspaceId && f.parentId === null
+    );
+    if (existingFolder) {
+      const oldSubIds = new Set(folders.filter(f => f.parentId === existingFolder.id).map(f => f.id));
+      const oldDiagramIds = new Set(diagrams.filter(d => d.folderId === existingFolder.id || oldSubIds.has(d.folderId ?? '')).map(d => d.id));
+      setFolders(prev => prev.filter(f => f.id !== existingFolder.id && !oldSubIds.has(f.id)));
+      setDiagrams(prev => prev.filter(d => !oldDiagramIds.has(d.id)));
+    }
+
+    const newFolders: import('./types').Folder[] = [];
+    const newDiagrams: import('./types').Diagram[] = [];
+
+    const parentId = generateId();
+    newFolders.push({ id: parentId, name: folderName, parentId: null, workspaceId: graph.workspaceId });
+
+    // Overview diagram directly in the parent folder
+    if (overview.code) {
+      newDiagrams.push({
+        id: generateId(), name: overview.name, description: 'Auto-generated architecture overview',
+        code: overview.code, comments: [], lastModified: Date.now(),
+        workspaceId: graph.workspaceId, nodeLinks: [], sourceGraphId: graph.id,
+        folderId: parentId,
+      });
+    }
+
+    // One sub-folder "Services" with one diagram per D1 module
+    if (services.length > 0) {
+      const servicesFolderId = generateId();
+      newFolders.push({ id: servicesFolderId, name: 'Services', parentId, workspaceId: graph.workspaceId });
+      for (const svc of services) {
+        newDiagrams.push({
+          id: generateId(), name: svc.name,
+          description: `Auto-generated architecture diagram for the ${svc.name} module`,
+          code: svc.code, comments: [], lastModified: Date.now(),
+          workspaceId: graph.workspaceId, nodeLinks: [], sourceGraphId: graph.id,
+          folderId: servicesFolderId,
+        });
+      }
+    }
+
+    setFolders(prev => [...prev, ...newFolders]);
+    setDiagrams(prev => [...prev, ...newDiagrams]);
+    showToast(`Architecture generated: 1 overview + ${services.length} service diagram${services.length !== 1 ? 's' : ''}.`, 'success');
+  }, [diagrams, folders, setDiagrams, setFolders, showToast]);
+
   /** Trigger export after graph creation/regeneration.
    *  scopeFilter: if set, only ask/update for flows at that scope level. */
   const triggerFlowExport = useCallback((graph: CodeGraph, scopeFilter?: string) => {
@@ -684,7 +744,9 @@ export default function App() {
     if (existingFolder && scopedExisting.length > 0) {
       setPendingFlowExport({ graph });
     } else {
-      doExportFlows(graph, 'new', scopeFilter);
+      // If parent folder exists but no diagrams at this scope yet, append into it ('overwrite'
+      // reuses the existing parent folder without deleting anything at other scopes).
+      doExportFlows(graph, existingFolder ? 'overwrite' : 'new', scopeFilter);
     }
   }, [folders, diagrams, doExportFlows]);
 
@@ -1259,6 +1321,7 @@ export default function App() {
           onCodeGraphOpenFlowInEditor={handleOpenFlowInEditor}
           codeGraphIsGeneratingFlows={codeGraph.isGeneratingFlows}
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
+          onCodeGraphGenerateArchitecture={codeGraph.activeGraph ? () => handleGenerateArchitecture(codeGraph.activeGraph!) : undefined}
           codeGraphIsReparsing={isCreatingGraph}
           onCodeGraphReparse={handleReparseGraph}
           codeGraphSyncStatus={graphSyncStatuses[codeGraph.activeGraph?.id ?? ''] ?? 'unknown'}

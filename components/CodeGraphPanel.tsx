@@ -50,6 +50,8 @@ interface CodeGraphPanelProps {
   // Flow generation
   isGeneratingFlows?: boolean;
   onRegenerateFlows?: (options?: { scopeNodeId?: string; customPrompt?: string }) => void;
+  // Architecture generation
+  onGenerateArchitecture?: () => void;
   // Re-parse
   isReparsing?: boolean;
   onReparseGraph?: () => void;
@@ -125,6 +127,7 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
   onDeselectFlow,
   isGeneratingFlows = false,
   onRegenerateFlows,
+  onGenerateArchitecture,
   isReparsing = false,
   onReparseGraph,
   syncStatus,
@@ -303,6 +306,17 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
           >
             <Brain className={`w-3.5 h-3.5 ${isAnalyzingDomain ? 'animate-pulse' : ''}`} />
             <span>{isAnalyzingDomain ? 'Analyzing…' : 'Analyze'}</span>
+          </button>
+        )}
+
+        {onGenerateArchitecture && (
+          <button
+            onClick={onGenerateArchitecture}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-dark-700 text-gray-400 hover:text-violet-400 transition-colors"
+            title="Generate architecture diagrams (overview + one per module)"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Architecture</span>
           </button>
         )}
 
