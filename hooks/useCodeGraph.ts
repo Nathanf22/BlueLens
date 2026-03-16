@@ -511,6 +511,15 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       const scopeNode = options?.scopeNodeId ? activeGraph.nodes[options.scopeNodeId] : null;
       const isScopeD2Plus = scopeNode !== null && scopeNode !== undefined && scopeNode.depth > 1;
 
+      // If scope is a D1 node, find its matching cluster so the Synthétiseur can focus on it
+      const scopeCluster = (scopeNode?.depth === 1)
+        ? clusters.find(c => c.name === scopeNode.name) ?? clusters.find(c =>
+            c.files.some(f => scopeNode.children.some(childId =>
+              activeGraph.nodes[childId]?.sourceRef?.filePath === f
+            ))
+          )
+        : undefined;
+
       // Use agentic pipeline if we have clusters + LLM settings + not a deep-scope request
       let newFlows: Record<string, import('../types').GraphFlow>;
       if (clusters.length > 0 && llmSettings && !isScopeD2Plus) {
@@ -525,6 +534,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           undefined,
           onAgentEvent,
           onBlackboard,
+          scopeCluster && scopeNode ? { nodeId: scopeNode.id, name: scopeCluster.name, files: scopeCluster.files } : undefined,
         );
       } else {
         const flowResult = await generateFlows(

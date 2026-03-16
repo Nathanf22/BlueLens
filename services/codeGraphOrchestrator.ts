@@ -663,6 +663,7 @@ async function runSyntheseurAgent(
   signal?: AbortSignal,
   previousIssues?: ValidationIssue[],
   onAgentEvent?: AgentEventFn,
+  scopeCluster?: { nodeId: string; name: string; files: string[] },
 ): Promise<Record<string, GraphFlow> | null> {
   // Build a graph summary: files with cluster labels + all depends_on edges
   const d2Nodes = Object.values(graph.nodes).filter(n => n.depth === 2);
@@ -692,11 +693,19 @@ async function runSyntheseurAgent(
     `  "${c.name}": ${c.files.join(', ')}`
   ).join('\n');
 
-  let prompt = `Generate runtime flows for this codebase.\n\n`;
+  let prompt = scopeCluster
+    ? `Generate runtime flows FOCUSED ON the "${scopeCluster.name}" domain cluster.\n\n`
+    : `Generate runtime flows for this codebase.\n\n`;
   prompt += `FILES (nodeId  path  [cluster]):\n${fileLines || '(none)'}\n\n`;
   prompt += `DEPENDENCY EDGES (A → B means A imports B):\n${edgeLines || '(none)'}\n\n`;
   prompt += `SEMANTIC CLUSTERS:\n${clusterSummary || '(none)'}\n\n`;
   prompt += `rootNodeId="${graph.rootNodeId}"\n\n`;
+  if (scopeCluster) {
+    prompt += `FOCUS: Generate 2-5 flows specifically about the "${scopeCluster.name}" domain.\n`;
+    prompt += `- Flows should involve at least one of these files: ${scopeCluster.files.join(', ')}\n`;
+    prompt += `- Flows may cross into other clusters (that's fine — show how this domain interacts with the rest)\n`;
+    prompt += `- Set scopeNodeId="${scopeCluster.nodeId}" on ALL generated flows\n\n`;
+  }
   prompt += 'Use find_entry_points() to confirm entry points, read_file() to understand orchestration logic, then output the flows JSON.';
 
   if (previousIssues && previousIssues.length > 0) {
@@ -1152,6 +1161,7 @@ export async function orchestrateFlowGeneration(
   signal?: AbortSignal,
   onAgentEvent?: AgentEventFn,
   onBlackboard?: AgentBlackboardFn,
+  scopeCluster?: { nodeId: string; name: string; files: string[] },
 ): Promise<Record<string, GraphFlow>> {
   // Rebuild a lightweight context for the Synthétiseur
   const ctx: GraphBuildContext = {
@@ -1177,7 +1187,7 @@ export async function orchestrateFlowGeneration(
 
   // Round 1
   onProgress?.('Generating flows', 1, 3);
-  flows = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, undefined, onAgentEvent);
+  flows = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, undefined, onAgentEvent, scopeCluster);
 
   if (flows && Object.keys(flows).length > 0) {
     onBlackboard?.({ flows: Object.values(flows).map(f => ({ name: f.name, stepCount: f.steps.length })) });
@@ -1191,12 +1201,21 @@ export async function orchestrateFlowGeneration(
     if (errorCount >= 1) {
       onLog?.('ai-synth', `Synthétiseur round 2 (${errorCount} errors to fix)...`);
       onProgress?.('Re-generating flows (round 2)', 3, 3);
-      const round2 = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, issues, onAgentEvent);
+      const round2 = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, issues, onAgentEvent, scopeCluster);
       if (round2 && Object.keys(round2).length > 0) {
         flows = round2;
         onBlackboard?.({ flows: Object.values(flows).map(f => ({ name: f.name, stepCount: f.steps.length })) });
       }
     }
+  }
+
+  // If a D1 scope was requested, force all flows to that scopeNodeId so they appear at the right level
+  if (scopeCluster && flows) {
+    const rescoped: Record<string, GraphFlow> = {};
+    for (const [id, flow] of Object.entries(flows)) {
+      rescoped[id] = { ...flow, scopeNodeId: scopeCluster.nodeId };
+    }
+    flows = rescoped;
   }
 
   if (!flows || Object.keys(flows).length === 0) {
