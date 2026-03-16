@@ -182,6 +182,7 @@ export interface AgentToolEvent {
 }
 
 export type AgentEventFn = (event: Omit<AgentToolEvent, 'id' | 'elapsedMs'>) => void;
+export type AgentPendingFn = (agent: AgentId, toolName: string, argsSummary: string) => void;
 
 export interface AgentBlackboardCluster {
   name: string;

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { AgentToolEvent, AgentEventFn, AgentId, ProgressLogEntry, AgentBlackboard, AgentBlackboardFn } from '../types';
+import { AgentToolEvent, AgentEventFn, AgentPendingFn, AgentId, ProgressLogEntry, AgentBlackboard, AgentBlackboardFn } from '../types';
 
 const genId = () => Math.random().toString(36).slice(2, 9);
 
@@ -16,12 +16,14 @@ export function useAgentMission() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeAgents, setActiveAgents] = useState<Set<AgentId>>(new Set());
   const [blackboard, setBlackboard] = useState<AgentBlackboard>(EMPTY_BLACKBOARD);
+  const [pendingTools, setPendingTools] = useState<Partial<Record<AgentId, { toolName: string; argsSummary: string }>>>({});
   const startTimeRef = useRef<number>(0);
 
   const start = useCallback(() => {
     setEvents([]);
     setActiveAgents(new Set());
     setBlackboard(EMPTY_BLACKBOARD);
+    setPendingTools({});
     setIsOpen(true);
     startTimeRef.current = Date.now();
   }, []);
@@ -42,12 +44,17 @@ export function useAgentMission() {
     });
   }, []);
 
+  const notifyToolStart: AgentPendingFn = useCallback((agent, toolName, argsSummary) => {
+    setPendingTools(prev => ({ ...prev, [agent]: { toolName, argsSummary } }));
+  }, []);
+
   const addEvent: AgentEventFn = useCallback((event) => {
     const entry: AgentToolEvent = {
       ...event,
       id: genId(),
       elapsedMs: Date.now() - startTimeRef.current,
     };
+    setPendingTools(prev => ({ ...prev, [event.agent]: undefined }));
     setEvents(prev => [...prev, entry]);
   }, []);
 
@@ -68,5 +75,5 @@ export function useAgentMission() {
     URL.revokeObjectURL(url);
   }, [events, blackboard]);
 
-  return { events, isOpen, activeAgents, blackboard, start, stop, setIsOpen, setAgentActive, addEvent, updateBlackboard, downloadLog };
+  return { events, isOpen, activeAgents, blackboard, pendingTools, start, stop, setIsOpen, setAgentActive, addEvent, notifyToolStart, updateBlackboard, downloadLog };
 }

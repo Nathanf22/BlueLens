@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { CodeGraph, GraphDepth, ViewLens, CodeGraphAnomaly, LLMSettings, GraphFlow, AgentEventFn, AgentBlackboardFn } from '../types';
+import { CodeGraph, GraphDepth, ViewLens, CodeGraphAnomaly, LLMSettings, GraphFlow, AgentEventFn, AgentPendingFn, AgentBlackboardFn } from '../types';
 import { codeGraphStorageService } from '../services/codeGraphStorageService';
 import { codeGraphModelService } from '../services/codeGraphModelService';
 import { codeGraphSyncService } from '../services/codeGraphSyncService';
@@ -116,6 +116,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     commitSha?: string,
     onAgentEvent?: AgentEventFn,
     onBlackboard?: AgentBlackboardFn,
+    onToolStart?: AgentPendingFn,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -149,6 +150,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           signal,
           onAgentEvent,
           onBlackboard,
+          onToolStart,
         );
         analysis = orchestrated.analysis;
         clusters = orchestrated.clusters;
@@ -187,6 +189,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           signal,
           onAgentEvent,
           onBlackboard,
+          undefined,
+          onToolStart,
         );
         if (Object.keys(flows).length > 0) {
           graph = { ...graph, flows, updatedAt: Date.now() };
@@ -232,6 +236,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     onBranchResolved?: (resolvedBranch: string) => void,
     onAgentEvent?: AgentEventFn,
     onBlackboard?: AgentBlackboardFn,
+    onToolStart?: AgentPendingFn,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -266,6 +271,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           signal,
           onAgentEvent,
           onBlackboard,
+          onToolStart,
         );
         analysis = orchestrated.analysis;
         clusters = orchestrated.clusters;
@@ -300,6 +306,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           signal,
           onAgentEvent,
           onBlackboard,
+          undefined,
+          onToolStart,
         );
         if (Object.keys(flows).length > 0) {
           graph = { ...graph, flows, updatedAt: Date.now() };
@@ -349,6 +357,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     onLogEntry?: LogEntryFn,
     onAgentEvent?: AgentEventFn,
     onBlackboard?: AgentBlackboardFn,
+    onToolStart?: AgentPendingFn,
   ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -382,6 +391,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           signal,
           onAgentEvent,
           onBlackboard,
+          onToolStart,
         );
         analysis = orchestrated.analysis;
         demoClusters = orchestrated.clusters;
@@ -418,6 +428,8 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           signal,
           onAgentEvent,
           onBlackboard,
+          undefined,
+          onToolStart,
         );
         if (Object.keys(flows).length > 0) {
           graph = { ...graph, flows, updatedAt: Date.now() };
@@ -480,6 +492,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     onAgentEvent?: AgentEventFn,
     onBlackboard?: AgentBlackboardFn,
     graphOverride?: CodeGraph,  // used by sync to pass the freshly-synced graph
+    onToolStart?: AgentPendingFn,
   ): Promise<CodeGraph | undefined> => {
     const graph = graphOverride ?? activeGraph;
     if (!graph) return undefined;
@@ -537,6 +550,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
           onAgentEvent,
           onBlackboard,
           scopeCluster && scopeNode ? { nodeId: scopeNode.id, name: scopeCluster.name, files: scopeCluster.files } : undefined,
+          onToolStart,
         );
       } else {
         const flowResult = await generateFlows(

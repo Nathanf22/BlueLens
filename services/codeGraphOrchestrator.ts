@@ -18,7 +18,7 @@
 
 import {
   CodebaseAnalysis, CodebaseModule, AnalyzedFile,
-  LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep, AgentEventFn, AgentBlackboardFn, AgentId,
+  LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep, AgentEventFn, AgentPendingFn, AgentBlackboardFn, AgentId,
 } from '../types';
 import { llmService, LLMConfigError, LLMRateLimitError } from './llmService';
 import { groupByFunctionalHeuristics } from './codeGraphHeuristicGrouper';
@@ -245,6 +245,7 @@ async function runAnalysteAgent(
   signal?: AbortSignal,
   previousIssues?: ValidationIssue[],
   onAgentEvent?: AgentEventFn,
+  onToolStart?: AgentPendingFn,
 ): Promise<SemanticCluster[] | null> {
   const allFiles = ctx.analysis.modules.flatMap(m => m.files);
   const allFilePaths = new Set(allFiles.map(f => f.filePath));
@@ -265,14 +266,16 @@ async function runAnalysteAgent(
 
   try {
     const rawAnalysteExecutor = buildAnalysteExecutor(ctx);
-    const analysteExecutor = onAgentEvent
+    const analysteExecutor = (onAgentEvent || onToolStart)
       ? async (name: string, args: Record<string, unknown>) => {
+          const argsSummary = (args.path as string) || (args.query as string) || Object.values(args).join(', ') || '';
+          onToolStart?.('analyste', name, argsSummary);
           const t0 = Date.now();
           const step = await rawAnalysteExecutor(name, args);
-          onAgentEvent({
+          onAgentEvent?.({
             agent: 'analyste',
             toolName: name,
-            argsSummary: (args.path as string) || (args.query as string) || Object.values(args).join(', ') || '',
+            argsSummary,
             resultSummary: step.result.slice(0, 300),
             durationMs: Date.now() - t0,
           });
@@ -674,6 +677,7 @@ async function runSyntheseurAgent(
   scopeCluster?: { nodeId: string; name: string; files: string[] },
   frozenFlowNames?: string[],
   missingFlows?: string[],
+  onToolStart?: AgentPendingFn,
 ): Promise<Record<string, GraphFlow> | null> {
   // Build a graph summary: files with cluster labels + all depends_on edges
   const d2Nodes = Object.values(graph.nodes).filter(n => n.depth === 2);
@@ -760,14 +764,16 @@ async function runSyntheseurAgent(
 
   try {
     const rawSyntheseurExecutor = buildSyntheseurExecutor(ctx, graph);
-    const syntheseurExecutor = onAgentEvent
+    const syntheseurExecutor = (onAgentEvent || onToolStart)
       ? async (name: string, args: Record<string, unknown>) => {
+          const argsSummary = (args.path as string) || (args.query as string) || Object.values(args).join(', ') || '';
+          onToolStart?.('syntheseur', name, argsSummary);
           const t0 = Date.now();
           const step = await rawSyntheseurExecutor(name, args);
-          onAgentEvent({
+          onAgentEvent?.({
             agent: 'syntheseur',
             toolName: name,
-            argsSummary: (args.path as string) || (args.query as string) || Object.values(args).join(', ') || '',
+            argsSummary,
             resultSummary: step.result.slice(0, 300),
             durationMs: Date.now() - t0,
           });
@@ -971,6 +977,7 @@ async function evaluateFlows(
   onLog?: LogEntryFn,
   onAgentEvent?: AgentEventFn,
   onBlackboard?: AgentBlackboardFn,
+  onToolStart?: AgentPendingFn,
 ): Promise<{ issues: ValidationIssue[]; missing: string[] }> {
   const flowSummary = Object.values(flows).map(f => ({
     name: f.name,
@@ -992,15 +999,17 @@ For each flow, read the source files of the steps and verify the claimed connect
   const evalFlowStartMs = Date.now();
 
   const rawExecutor = buildEvaluateurFlowExecutor(ctx);
-  const executor = onAgentEvent
+  const executor = (onAgentEvent || onToolStart)
     ? async (name: string, args: Record<string, unknown>) => {
+        const argsSummary = String(args.path ?? args.file ?? '');
+        onToolStart?.('evaluateur', name, argsSummary);
         const t0 = Date.now();
         const step = await rawExecutor(name, args);
         if (step.result !== ALREADY_READ) {
-          onAgentEvent({
+          onAgentEvent?.({
             agent: 'evaluateur',
             toolName: name,
-            argsSummary: String(args.path ?? args.file ?? ''),
+            argsSummary,
             resultSummary: step.result.slice(0, 300),
             durationMs: Date.now() - t0,
           });
@@ -1094,6 +1103,7 @@ export async function orchestrateCodebaseAnalysis(
   signal?: AbortSignal,
   onAgentEvent?: AgentEventFn,
   onBlackboard?: AgentBlackboardFn,
+  onToolStart?: AgentPendingFn,
 ): Promise<{ analysis: CodebaseAnalysis; clusters: SemanticCluster[] }> {
   const ctx = buildContext(analysis, provider);
 
@@ -1102,7 +1112,7 @@ export async function orchestrateCodebaseAnalysis(
 
   // Round 1
   onProgress?.('Semantic clustering', 1, 3);
-  clusters = await runAnalysteAgent(ctx, llmSettings, onLog, signal, undefined, onAgentEvent);
+  clusters = await runAnalysteAgent(ctx, llmSettings, onLog, signal, undefined, onAgentEvent, onToolStart);
 
   if (clusters && clusters.length > 0) {
     ctx.semanticClusters = clusters;
@@ -1117,7 +1127,7 @@ export async function orchestrateCodebaseAnalysis(
     if (errorCount >= 1) {
       onLog?.('ai-cluster', `Analyste round 2 (${errorCount} errors to fix)...`);
       onProgress?.('Re-clustering (round 2)', 3, 3);
-      const round2 = await runAnalysteAgent(ctx, llmSettings, onLog, signal, issues, onAgentEvent);
+      const round2 = await runAnalysteAgent(ctx, llmSettings, onLog, signal, issues, onAgentEvent, onToolStart);
       if (round2 && round2.length > 0) {
         clusters = round2;
         ctx.semanticClusters = clusters;
@@ -1228,6 +1238,7 @@ export async function orchestrateFlowGeneration(
   onAgentEvent?: AgentEventFn,
   onBlackboard?: AgentBlackboardFn,
   scopeCluster?: { nodeId: string; name: string; files: string[] },
+  onToolStart?: AgentPendingFn,
 ): Promise<Record<string, GraphFlow>> {
   // Rebuild a lightweight context for the Synthétiseur
   const ctx: GraphBuildContext = {
@@ -1253,14 +1264,14 @@ export async function orchestrateFlowGeneration(
 
   // Round 1
   onProgress?.('Generating flows', 1, 3);
-  flows = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, undefined, onAgentEvent, scopeCluster);
+  flows = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, undefined, onAgentEvent, scopeCluster, undefined, undefined, onToolStart);
 
   if (flows && Object.keys(flows).length > 0) {
     onBlackboard?.({ flows: Object.values(flows).map(f => ({ name: f.name, stepCount: f.steps.length })) });
 
     // Évaluateur validation
     onProgress?.('Validating flows', 2, 3);
-    const { issues: evalIssues, missing } = await evaluateFlows(ctx, graph, flows, llmSettings, onLog, onAgentEvent, onBlackboard);
+    const { issues: evalIssues, missing } = await evaluateFlows(ctx, graph, flows, llmSettings, onLog, onAgentEvent, onBlackboard, onToolStart);
     issues = evalIssues;
 
     // Round 2: surgical — only fix broken flows + add missing
@@ -1283,6 +1294,7 @@ export async function orchestrateFlowGeneration(
         ctx, graph, llmSettings, onLog, signal, issues, onAgentEvent, scopeCluster,
         frozenFlowNames.length > 0 ? frozenFlowNames : undefined,
         missing.length > 0 ? missing : undefined,
+        onToolStart,
       );
       if (round2 && Object.keys(round2).length > 0) {
         if (frozenFlowNames.length > 0) {
@@ -1385,6 +1397,7 @@ async function runArchitectAgent(
   onLog?: LogEntryFn,
   signal?: AbortSignal,
   onAgentEvent?: AgentEventFn,
+  onToolStart?: AgentPendingFn,
 ): Promise<ArchitectureDiagramSet | null> {
   // Build context: D1 nodes with their D2 children
   const d1Nodes = Object.values(graph.nodes).filter(n => n.depth === 1).sort((a, b) => a.name.localeCompare(b.name));
@@ -1421,14 +1434,16 @@ Steps:
 
   try {
     const rawExecutor = buildSyntheseurExecutor(ctx, graph);
-    const executor = onAgentEvent
+    const executor = (onAgentEvent || onToolStart)
       ? async (name: string, args: Record<string, unknown>) => {
+          const argsSummary = (args.path as string) || (args.cluster_name as string) || Object.values(args).join(', ') || '';
+          onToolStart?.('architecte', name, argsSummary);
           const t0 = Date.now();
           const step = await rawExecutor(name, args);
-          onAgentEvent({
+          onAgentEvent?.({
             agent: 'architecte' as AgentId,
             toolName: name,
-            argsSummary: (args.path as string) || (args.cluster_name as string) || Object.values(args).join(', ') || '',
+            argsSummary,
             resultSummary: step.result.slice(0, 300),
             durationMs: Date.now() - t0,
           });
@@ -1514,6 +1529,7 @@ async function evaluateArchitecture(
   onLog?: LogEntryFn,
   onAgentEvent?: AgentEventFn,
   onBlackboard?: AgentBlackboardFn,
+  onToolStart?: AgentPendingFn,
 ): Promise<void> {
   const clusterSummary = clusters.map(c => ({
     name: c.name,
@@ -1542,15 +1558,17 @@ Steps:
   const evalStartMs = Date.now();
 
   const rawExecutor = buildEvaluateurFlowExecutor(ctx);
-  const executor = onAgentEvent
+  const executor = (onAgentEvent || onToolStart)
     ? async (name: string, args: Record<string, unknown>) => {
+        const argsSummary = String(args.path ?? '');
+        onToolStart?.('evaluateur', name, argsSummary);
         const t0 = Date.now();
         const step = await rawExecutor(name, args);
         if (step.result !== ALREADY_READ) {
-          onAgentEvent({
+          onAgentEvent?.({
             agent: 'evaluateur',
             toolName: name,
-            argsSummary: String(args.path ?? ''),
+            argsSummary,
             resultSummary: step.result.slice(0, 300),
             durationMs: Date.now() - t0,
           });
@@ -1628,6 +1646,7 @@ export async function orchestrateArchitectureGeneration(
   signal?: AbortSignal,
   onAgentEvent?: AgentEventFn,
   onBlackboard?: AgentBlackboardFn,
+  onToolStart?: AgentPendingFn,
 ): Promise<ArchitectureDiagramSet> {
   const ctx: GraphBuildContext = {
     analysis: { modules: [], externalDeps: [], entryPoints: [], totalFiles: 0, totalSymbols: 0 },
@@ -1647,12 +1666,12 @@ export async function orchestrateArchitectureGeneration(
     semanticClusters: clusters,
   };
 
-  const result = await runArchitectAgent(ctx, graph, clusters, llmSettings, onLog, signal, onAgentEvent);
+  const result = await runArchitectAgent(ctx, graph, clusters, llmSettings, onLog, signal, onAgentEvent, onToolStart);
   if (!result) {
     return { overview: { name: `${graph.name} — Overview`, code: '' }, services: [] };
   }
 
-  await evaluateArchitecture(ctx, result, clusters, llmSettings, onLog, onAgentEvent, onBlackboard);
+  await evaluateArchitecture(ctx, result, clusters, llmSettings, onLog, onAgentEvent, onBlackboard, onToolStart);
 
   return result;
 }
