@@ -220,25 +220,36 @@ function AgentTerminal({
             );
           })
         )}
-        {pendingTool ? (
-          <div className={`flex items-start gap-1.5 agent-line rounded px-1.5 py-1 mt-0.5`} style={{ background: `rgba(${glowColor}, 0.07)` }}>
-            <Loader2 className={`w-2.5 h-2.5 mt-0.5 shrink-0 mc-spin`} style={{ color: `rgb(${glowColor})` }} />
-            <div className="min-w-0">
+      </div>
+
+      {/* Status bar — always visible at bottom when active */}
+      {isActive && (
+        <div
+          className="shrink-0 flex items-center gap-1.5 px-2 py-1 font-mono text-[10px] border-t"
+          style={{
+            borderColor: `rgba(${glowColor}, 0.3)`,
+            background: `rgba(${glowColor}, 0.06)`,
+          }}
+        >
+          <Loader2
+            className="w-3 h-3 shrink-0 mc-spin"
+            style={{ color: `rgb(${glowColor})` }}
+          />
+          {pendingTool ? (
+            <>
               <span className="text-white font-semibold">{pendingTool.toolName}</span>
               {pendingTool.argsSummary && (
-                <span className="text-gray-400 ml-1 truncate">{formatArgs(pendingTool.argsSummary)}</span>
+                <span className="text-gray-400 truncate">{formatArgs(pendingTool.argsSummary)}</span>
               )}
-              {(() => { const d = describeToolCall(pendingTool.toolName, pendingTool.argsSummary); return d ? <div className={`text-[10px] mt-0.5`} style={{ color: `rgb(${glowColor})` }}>{d}</div> : null; })()}
-            </div>
-            <span className="ml-auto text-[10px] shrink-0" style={{ color: `rgb(${glowColor})` }}>running…</span>
-          </div>
-        ) : isActive && (
-          <div className="flex items-center gap-1 text-gray-600">
-            <span className="text-green-400">$</span>
+              <span className="ml-auto shrink-0 text-gray-500">
+                {describeToolCall(pendingTool.toolName, pendingTool.argsSummary) || 'running…'}
+              </span>
+            </>
+          ) : (
             <span className="text-gray-500">thinking…</span>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
