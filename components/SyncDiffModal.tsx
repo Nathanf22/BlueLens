@@ -23,11 +23,14 @@ interface DiffHighlights {
   mode: 'added' | 'removed';
 }
 
-function applySequenceHighlights(svgStr: string, highlights: DiffHighlights): string {
-  if (!highlights.actors.size && !highlights.edgeLabels.size) return svgStr;
+function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string {
+  console.log('[BlueLens diff] applyDiffHighlights called, mode:', highlights.mode,
+    'actors:', [...highlights.actors], 'edgeLabels:', [...highlights.edgeLabels]);
+  if (!highlights.actors.size && !highlights.edgeLabels.size) {
+    console.log('[BlueLens diff] nothing to highlight, returning as-is');
+    return svgStr;
+  }
   try {
-    // Use innerHTML (HTML parser) — more robust than DOMParser('image/svg+xml')
-    // which fails on Mermaid's not-quite-valid XML output.
     const container = document.createElement('div');
     container.innerHTML = svgStr;
     const svg = container.querySelector('svg');
@@ -38,9 +41,8 @@ function applySequenceHighlights(svgStr: string, highlights: DiffHighlights): st
     const stroke  = isAdded ? '#22c55e'               : '#ef4444';
     const textCol = isAdded ? '#4ade80'               : '#f87171';
 
-    // --- Actors ---
+    // --- Sequence: actors ---
     for (const group of svg.querySelectorAll('g.actor, g[class~="actor"]')) {
-      // The display label is in the deepest text-like node
       const textEl = group.querySelector('text') ?? group.querySelector('span');
       const name = textEl?.textContent?.trim() ?? '';
       if (!highlights.actors.has(name)) continue;
@@ -53,30 +55,44 @@ function applySequenceHighlights(svgStr: string, highlights: DiffHighlights): st
       if (textEl) textEl.setAttribute('fill', textCol);
     }
 
-    // --- Messages ---
-    // Collect all messageLine elements and messageText elements in DOM order.
-    // In Mermaid sequence SVGs they appear as flat siblings: line then text, interleaved.
+    // --- Flowchart: nodes (g.node) — match by label text content ---
+    if (highlights.actors.size > 0) {
+      for (const group of svg.querySelectorAll('g.node')) {
+        // Label is in a <span> inside foreignObject, or a <text> element
+        const labelEl = group.querySelector('span.nodeLabel, span, text');
+        const name = labelEl?.textContent?.trim() ?? '';
+        if (!highlights.actors.has(name)) continue;
+        const rect = group.querySelector('rect, polygon, circle, ellipse');
+        if (rect) {
+          rect.setAttribute('fill', fillBg);
+          rect.setAttribute('stroke', stroke);
+          rect.setAttribute('stroke-width', '2.5');
+        }
+        if (labelEl) (labelEl as HTMLElement).style.color = textCol;
+      }
+    }
+
+    // --- Sequence: messages ---
     const allLines = Array.from(svg.querySelectorAll('line[class*="messageLine"], path[class*="messageLine"]'));
     const allMsgTextEls = Array.from(svg.querySelectorAll('text[class*="messageText"]'));
 
-    console.debug('[BlueLens diff] highlight labels:', [...highlights.edgeLabels]);
-    console.debug('[BlueLens diff] messageLine count:', allLines.length, '| messageText count:', allMsgTextEls.length);
-    console.debug('[BlueLens diff] messageText contents:', allMsgTextEls.map(el => JSON.stringify(el.textContent?.trim())));
+    console.log('[BlueLens diff] messageLine count:', allLines.length, '| messageText count:', allMsgTextEls.length);
+    console.log('[BlueLens diff] messageText contents:', allMsgTextEls.map(el => JSON.stringify(el.textContent?.trim())));
 
     allMsgTextEls.forEach((msgEl, idx) => {
       const label = msgEl.textContent?.trim() ?? '';
       if (!highlights.edgeLabels.has(label)) return;
+      console.log('[BlueLens diff] MATCH found:', label);
       msgEl.setAttribute('fill', textCol);
-      // Associated line: same index, or scan backwards through siblings
       const line = allLines[idx];
       if (line) {
         line.setAttribute('stroke', stroke);
         line.setAttribute('stroke-width', '3');
       }
-      // Fallback: scan backward siblings for any line/path
-      const parent = msgEl.parentElement;
-      if (parent && !line) {
-        const children = Array.from(parent.children);
+      // Fallback: scan backward siblings
+      if (!line) {
+        const parent = msgEl.parentElement;
+        const children = parent ? Array.from(parent.children) : [];
         const i = children.indexOf(msgEl);
         for (let k = i - 1; k >= 0; k--) {
           const el = children[k];
@@ -88,6 +104,22 @@ function applySequenceHighlights(svgStr: string, highlights: DiffHighlights): st
         }
       }
     });
+
+    // --- Flowchart: edges — match edge labels ---
+    if (highlights.edgeLabels.size > 0) {
+      for (const labelEl of svg.querySelectorAll('.edgeLabel span, .edgeLabel text')) {
+        const label = labelEl.textContent?.trim() ?? '';
+        if (!highlights.edgeLabels.has(label)) continue;
+        console.log('[BlueLens diff] flowchart edge MATCH:', label);
+        (labelEl as HTMLElement).style.color = textCol;
+        // Try to find the associated path
+        const edgeGroup = labelEl.closest('.edgePath, g');
+        edgeGroup?.querySelectorAll('path').forEach(p => {
+          p.setAttribute('stroke', stroke);
+          p.setAttribute('stroke-width', '3');
+        });
+      }
+    }
 
     return container.innerHTML;
   } catch (e) {
@@ -119,7 +151,7 @@ const PanZoomDiagram: React.FC<{ code: string; label: string; highlights?: DiffH
     (async () => {
       try {
         const { svg: rendered } = await mermaid.render(renderId.current, code);
-        if (!cancelled) setSvg(highlights ? applySequenceHighlights(rendered, highlights) : rendered);
+        if (!cancelled) setSvg(highlights ? applyDiffHighlights(rendered, highlights) : rendered);
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Render error');
       }
@@ -364,8 +396,8 @@ const DiagramDiffRow: React.FC<{
     edgeLabels: new Set(diff.addedEdges.map(e => e.label).filter((l): l is string => !!l)),
     mode: 'added',
   };
-  const beforePostProcess = useCallback((svg: string) => applySequenceHighlights(svg, beforeHighlights), [diff.removedNodes, diff.removedEdges]); // eslint-disable-line
-  const afterPostProcess = useCallback((svg: string) => applySequenceHighlights(svg, afterHighlights), [diff.addedNodes, diff.addedEdges]); // eslint-disable-line
+  const beforePostProcess = useCallback((svg: string) => applyDiffHighlights(svg, beforeHighlights), [diff.removedNodes, diff.removedEdges]); // eslint-disable-line
+  const afterPostProcess = useCallback((svg: string) => applyDiffHighlights(svg, afterHighlights), [diff.addedNodes, diff.addedEdges]); // eslint-disable-line
 
   return (
     <div className="border border-gray-700 rounded-lg overflow-hidden">

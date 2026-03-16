@@ -521,14 +521,15 @@ export function renderDiffAnnotated(
   // classDef / ::: annotations only work for flowchart/graph diagrams
   if (!supportsClassDef(proposedCode)) return proposedCode;
 
+  // "After" diagram: only highlight added nodes in green.
+  // Removed nodes are NOT added back as ghost nodes — they're already shown
+  // in red in the "Before" diagram via SVG post-processing.
   const lines: string[] = [];
   const addedClassDef = 'classDef added fill:#16a34a,color:#fff,stroke:#15803d';
-  const removedClassDef = 'classDef removed fill:#dc2626,color:#fff,stroke:#b91c1c';
 
   const proposedLines = proposedCode.split('\n');
   lines.push(proposedLines[0]);
   lines.push(`  ${addedClassDef}`);
-  lines.push(`  ${removedClassDef}`);
 
   const parsedNodes = parseMermaidNodes(proposedCode);
 
@@ -544,11 +545,6 @@ export function renderDiffAnnotated(
       }
     }
     if (!annotated) lines.push(line);
-  }
-
-  for (const label of removedLabels) {
-    const safeId = sanitizeMermaidId(label);
-    lines.push(`  ${safeId}["${escapeLabel(label)}"]:::removed`);
   }
 
   return lines.join('\n');
