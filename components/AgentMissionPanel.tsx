@@ -165,7 +165,7 @@ function AgentTerminal({
         <span className={`text-xs font-mono font-semibold ${color}`}>{label}</span>
         <Info className="w-2.5 h-2.5 text-gray-700 group-hover:text-gray-400 transition-colors ml-0.5" />
         {isActive ? (
-          <Loader2 className="w-2.5 h-2.5 text-gray-400 animate-spin ml-auto" />
+          <Loader2 className="w-2.5 h-2.5 text-gray-400 mc-spin ml-auto" />
         ) : events.length > 0 ? (
           <span className="ml-auto text-[10px] text-gray-500">{events.length} calls</span>
         ) : (
@@ -222,7 +222,7 @@ function AgentTerminal({
         )}
         {pendingTool ? (
           <div className={`flex items-start gap-1.5 agent-line rounded px-1.5 py-1 mt-0.5`} style={{ background: `rgba(${glowColor}, 0.07)` }}>
-            <Loader2 className={`w-2.5 h-2.5 mt-0.5 shrink-0 animate-spin`} style={{ color: `rgb(${glowColor})` }} />
+            <Loader2 className={`w-2.5 h-2.5 mt-0.5 shrink-0 mc-spin`} style={{ color: `rgb(${glowColor})` }} />
             <div className="min-w-0">
               <span className="text-white font-semibold">{pendingTool.toolName}</span>
               {pendingTool.argsSummary && (
@@ -318,11 +318,25 @@ const PANEL_STYLES = `
     0%, 100% { box-shadow: 0 0 0 1px rgba(var(--glow), 0.4), 0 0 10px rgba(var(--glow), 0.1); }
     50%       { box-shadow: 0 0 0 1px rgba(var(--glow), 0.8), 0 0 22px rgba(var(--glow), 0.35); }
   }
+  @keyframes mc-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes mc-blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
   .agent-line {
     animation: agentLineFadeIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   .terminal-active {
     animation: terminalGlow 1.8s ease-in-out infinite;
+  }
+  .mc-spin {
+    animation: mc-spin 0.8s linear infinite;
+  }
+  .mc-blink {
+    animation: mc-blink 1s step-start infinite;
   }
 `;
 
@@ -400,7 +414,7 @@ export function AgentMissionPanel({ events, isOpen, activeAgents, pendingTools, 
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700/50">
             <Terminal className="w-3.5 h-3.5 text-gray-400" />
             <span className="text-xs font-semibold text-gray-300">Mission Control</span>
-            {anyActive && <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />}
+            {anyActive && <Loader2 className="w-3 h-3 text-blue-400 mc-spin" />}
             <span className="text-[10px] text-gray-600 font-mono">{totalCalls} tool calls</span>
 
             <div className="ml-auto flex items-center gap-1">
