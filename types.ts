@@ -205,6 +205,7 @@ export interface AgentBlackboard {
   flows: AgentBlackboardFlow[];
   clusterIssues: AgentBlackboardIssue[];
   flowIssues: AgentBlackboardIssue[];
+  archIssues: AgentBlackboardIssue[];
 }
 
 export type AgentBlackboardFn = (update: Partial<AgentBlackboard>) => void;

@@ -228,20 +228,27 @@ export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntrie
                   </span>
                 )}
                 {/* Issues */}
-                {(blackboard.clusterIssues.length + blackboard.flowIssues.length) > 0 && (
+                {(blackboard.clusterIssues.length + blackboard.flowIssues.length + blackboard.archIssues.length) > 0 && (
                   <span className="text-amber-400 ml-auto shrink-0">
-                    ⚠ {blackboard.clusterIssues.filter(i => i.severity === 'error').length + blackboard.flowIssues.filter(i => i.severity === 'error').length} errors
+                    ⚠ {blackboard.clusterIssues.filter(i => i.severity === 'error').length + blackboard.flowIssues.filter(i => i.severity === 'error').length + blackboard.archIssues.filter(i => i.severity === 'error').length} errors
                   </span>
                 )}
                 <span className="text-gray-700 shrink-0 ml-auto">
                   A:{analysteCount} S:{synthCount} E:{evalCount}
                 </span>
               </div>
-              {/* Flow issues list if any */}
-              {blackboard.flowIssues.length > 0 && (
+              {/* Flow + arch issues list if any */}
+              {(blackboard.flowIssues.length > 0 || blackboard.archIssues.length > 0) && (
                 <div className="px-3 pb-1.5 space-y-0.5 max-h-20 overflow-y-auto">
                   {blackboard.flowIssues.map((issue, i) => (
-                    <div key={i} className={`text-[10px] font-mono flex gap-1 ${issue.severity === 'error' ? 'text-red-400' : 'text-amber-400'}`}>
+                    <div key={`f${i}`} className={`text-[10px] font-mono flex gap-1 ${issue.severity === 'error' ? 'text-red-400' : 'text-amber-400'}`}>
+                      <span>{issue.severity === 'error' ? '✗' : '⚠'}</span>
+                      <span className="text-gray-400">{issue.message}</span>
+                    </div>
+                  ))}
+                  {blackboard.archIssues.map((issue, i) => (
+                    <div key={`a${i}`} className={`text-[10px] font-mono flex gap-1 ${issue.severity === 'error' ? 'text-red-400' : 'text-amber-400'}`}>
+                      <span className="text-sky-500">[arch]</span>
                       <span>{issue.severity === 'error' ? '✗' : '⚠'}</span>
                       <span className="text-gray-400">{issue.message}</span>
                     </div>

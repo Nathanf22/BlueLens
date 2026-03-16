@@ -696,7 +696,7 @@ export default function App() {
     try {
       result = await orchestrateArchitectureGeneration(
         graph, clusters, provider, llmSettings,
-        undefined, undefined, agentMission.addEvent,
+        undefined, undefined, agentMission.addEvent, agentMission.updateBlackboard,
       );
     } catch {
       return;
@@ -743,7 +743,7 @@ export default function App() {
     setFolders(prev => [...prev, ...newFolders]);
     setDiagrams(prev => [...prev, ...newDiagrams]);
     showToast(`Architecture: 1 overview + ${services.length} service diagram${services.length !== 1 ? 's' : ''} generated.`, 'success');
-  }, [diagrams, folders, llmSettings, agentMission.addEvent, setDiagrams, setFolders, showToast]);
+  }, [diagrams, folders, llmSettings, agentMission.addEvent, agentMission.updateBlackboard, setDiagrams, setFolders, showToast]);
 
   /** Trigger export after graph creation/regeneration.
    *  scopeFilter: if set, only ask/update for flows at that scope level. */

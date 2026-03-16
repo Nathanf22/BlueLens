@@ -9,7 +9,7 @@ export interface AgentMissionState {
   activeAgents: Set<AgentId>;
 }
 
-const EMPTY_BLACKBOARD: AgentBlackboard = { clusters: [], flows: [], clusterIssues: [], flowIssues: [] };
+const EMPTY_BLACKBOARD: AgentBlackboard = { clusters: [], flows: [], clusterIssues: [], flowIssues: [], archIssues: [] };
 
 export function useAgentMission() {
   const [events, setEvents] = useState<AgentToolEvent[]>([]);
