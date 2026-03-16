@@ -716,20 +716,42 @@ async function runSyntheseurAgent(
   }
   prompt += 'Use find_entry_points() to confirm entry points, read_file() to understand orchestration logic, then output the flows JSON.';
 
-  if (previousIssues && previousIssues.length > 0) {
-    const errorText = previousIssues
-      .filter(i => i.severity === 'error')
-      .map(i => `- ${i.message}${i.target ? ` [${i.target}]` : ''}`)
-      .join('\n');
-    if (errorText) prompt += `\n\nISSUES FROM PREVIOUS ATTEMPT (fix these):\n${errorText}`;
-  }
+  if (previousIssues || frozenFlowNames || missingFlows) {
+    // Group flow-specific errors by target flow name
+    const flowErrors = new Map<string, string[]>();
+    const untargetedErrors: string[] = [];
+    for (const issue of (previousIssues ?? []).filter(i => i.severity === 'error')) {
+      if (issue.target) {
+        if (!flowErrors.has(issue.target)) flowErrors.set(issue.target, []);
+        flowErrors.get(issue.target)!.push(issue.message);
+      } else {
+        untargetedErrors.push(issue.message);
+      }
+    }
 
-  if (frozenFlowNames && frozenFlowNames.length > 0) {
-    prompt += `\n\nSURGICAL CORRECTION MODE — do NOT regenerate these verified flows (they are correct):\n${frozenFlowNames.map(n => `  ✓ "${n}"`).join('\n')}`;
-    prompt += `\nGenerate ONLY flows that are listed in ISSUES or MISSING below.`;
-  }
-  if (missingFlows && missingFlows.length > 0) {
-    prompt += `\n\nMISSING FLOWS TO ADD (important flows not in the previous generation):\n${missingFlows.map(n => `  + "${n}"`).join('\n')}`;
+    if (frozenFlowNames && frozenFlowNames.length > 0) {
+      prompt += `\n\nFROZEN FLOWS (already verified correct — do NOT regenerate, do not include in output):\n${frozenFlowNames.map(n => `  ✓ "${n}"`).join('\n')}`;
+    }
+
+    const toFix = [...flowErrors.keys()];
+    const toAdd = missingFlows ?? [];
+    const totalExpected = toFix.length + toAdd.length;
+
+    if (toFix.length > 0) {
+      prompt += `\n\nFLOWS TO REGENERATE WITH FIXES (include ALL of these in your output):`;
+      for (const [name, errs] of flowErrors) {
+        prompt += `\n  - "${name}"\n    Fix: ${errs.join('; ')}`;
+      }
+    }
+    if (toAdd.length > 0) {
+      prompt += `\n\nNEW FLOWS TO ADD (include ALL of these in your output):\n${toAdd.map(n => `  + "${n}"`).join('\n')}`;
+    }
+    if (untargetedErrors.length > 0) {
+      prompt += `\n\nGENERAL ISSUES TO AVOID:\n${untargetedErrors.map(e => `- ${e}`).join('\n')}`;
+    }
+    if (totalExpected > 0) {
+      prompt += `\n\nOUTPUT REQUIREMENT: your JSON must contain exactly ${totalExpected} flow(s) — one for each item listed above (flows to fix + new flows). Do not add or drop any.`;
+    }
   }
 
   onLog?.('ai-synth', 'Synthétiseur: tracing runtime flows...');
