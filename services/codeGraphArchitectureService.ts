@@ -1,154 +1,228 @@
 /**
- * Deterministic architecture diagram generation from a CodeGraph.
+ * Architecture diagram generation from a CodeGraph.
  *
- * Produces two kinds of Mermaid diagrams:
- *   - Overview: all D1 modules as nodes + D1→D1 depends_on edges
- *   - Service:  D2 files within a D1 module + D2→D2 deps inside the module
+ * LLM-powered: produces comprehensible Mermaid diagrams with meaningful
+ * descriptions and labeled edges.
+ *   - Overview: all D1 modules + cross-module dependencies
+ *   - Service:  D2 files within a D1 module + intra-module deps
  */
 
-import { CodeGraph, GraphNode } from '../types';
+import { CodeGraph, GraphNode, LLMSettings } from '../types';
+import { llmService } from './llmService';
 
-// Sanitize a string for use as a Mermaid node ID
-function mermaidId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_]/g, '_');
+// ── Context builders ─────────────────────────────────────────────────────────
+
+function getD1Nodes(graph: CodeGraph): GraphNode[] {
+  return Object.values(graph.nodes)
+    .filter(n => n.depth === 1)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Sanitize a label (escape quotes)
-function mermaidLabel(s: string): string {
-  return s.replace(/"/g, "'");
-}
-
-/**
- * Generate a high-level architecture overview diagram (all D1 modules + dependencies).
- */
-export function generateOverviewDiagram(graph: CodeGraph): string {
-  const d1Nodes = Object.values(graph.nodes).filter(n => n.depth === 1);
-  if (d1Nodes.length === 0) return '';
-
-  const lines: string[] = ['graph LR'];
-
-  // Classdefs
-  lines.push('  classDef module fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0,rx:4');
-  lines.push('  classDef external fill:#2d1f3d,stroke:#7c3aed,color:#e2e8f0,rx:4,stroke-dasharray:4');
-
-  // Node declarations
-  for (const node of d1Nodes) {
-    const fileCount = node.children.length;
-    const mid = mermaidId(node.id);
-    const label = mermaidLabel(node.name);
-    const subtitle = fileCount > 0 ? `\\n${fileCount} file${fileCount > 1 ? 's' : ''}` : '';
-    lines.push(`  ${mid}["${label}${subtitle}"]:::module`);
-  }
-
-  // D1→D1 depends_on edges
-  const d1Ids = new Set(d1Nodes.map(n => n.id));
-  const seen = new Set<string>();
-
-  for (const rel of Object.values(graph.relations)) {
-    if (rel.type !== 'depends_on') continue;
-    const src = graph.nodes[rel.sourceId];
-    const tgt = graph.nodes[rel.targetId];
-    if (!src || !tgt) continue;
-    if (!d1Ids.has(src.id) || !d1Ids.has(tgt.id)) continue;
-    const key = `${src.id}→${tgt.id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    lines.push(`  ${mermaidId(src.id)} --> ${mermaidId(tgt.id)}`);
-  }
-
-  // If no D1→D1 edges exist, derive them from D2→D2 (cross-module)
-  if (seen.size === 0) {
-    const d2ToD1 = new Map<string, string>();
-    for (const node of d1Nodes) {
-      for (const childId of node.children) {
-        d2ToD1.set(childId, node.id);
-      }
-    }
-    for (const rel of Object.values(graph.relations)) {
-      if (rel.type !== 'depends_on') continue;
-      const srcD1 = d2ToD1.get(rel.sourceId);
-      const tgtD1 = d2ToD1.get(rel.targetId);
-      if (!srcD1 || !tgtD1 || srcD1 === tgtD1) continue;
-      const key = `${srcD1}→${tgtD1}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      lines.push(`  ${mermaidId(srcD1)} --> ${mermaidId(tgtD1)}`);
-    }
-  }
-
-  return lines.join('\n');
-}
-
-/**
- * Generate a per-service diagram showing D2 files and their intra-module dependencies.
- */
-export function generateServiceDiagram(graph: CodeGraph, d1NodeId: string): string {
-  const d1Node = graph.nodes[d1NodeId];
-  if (!d1Node || d1Node.depth !== 1) return '';
-
-  const d2Nodes: GraphNode[] = d1Node.children
+function getD2Children(graph: CodeGraph, d1Node: GraphNode): GraphNode[] {
+  return d1Node.children
     .map(id => graph.nodes[id])
     .filter((n): n is GraphNode => !!n && n.depth === 2);
+}
 
-  if (d2Nodes.length === 0) return '';
+function getD3Symbols(graph: CodeGraph, d2Node: GraphNode): string[] {
+  return d2Node.children
+    .map(id => graph.nodes[id])
+    .filter((n): n is GraphNode => !!n && n.depth === 3)
+    .map(n => n.name)
+    .slice(0, 8); // cap to keep context small
+}
 
-  const lines: string[] = ['graph TD'];
-  lines.push('  classDef file fill:#1a2744,stroke:#6366f1,color:#e2e8f0');
-  lines.push('  classDef entrypoint fill:#1a3a2a,stroke:#22c55e,color:#e2e8f0');
+/** Build the cross-module dependency map: D1 name → D1 names it depends on */
+function buildD1Deps(graph: CodeGraph, d1Nodes: GraphNode[]): Map<string, string[]> {
+  const d1Ids = new Set(d1Nodes.map(n => n.id));
+  const d2ToD1 = new Map<string, string>();
+  for (const d1 of d1Nodes) {
+    for (const childId of d1.children) d2ToD1.set(childId, d1.id);
+  }
 
-  const d2Ids = new Set(d2Nodes.map(n => n.id));
+  const deps = new Map<string, Set<string>>();
+  for (const d1 of d1Nodes) deps.set(d1.id, new Set());
 
-  // Find entry points (not imported by any other file in the module)
-  const importedByInModule = new Set<string>();
   for (const rel of Object.values(graph.relations)) {
     if (rel.type !== 'depends_on') continue;
-    if (d2Ids.has(rel.sourceId) && d2Ids.has(rel.targetId)) {
-      importedByInModule.add(rel.targetId);
+    // Direct D1→D1
+    if (d1Ids.has(rel.sourceId) && d1Ids.has(rel.targetId) && rel.sourceId !== rel.targetId) {
+      deps.get(rel.sourceId)?.add(rel.targetId);
+    }
+    // Derived from D2→D2 across modules
+    const srcD1 = d2ToD1.get(rel.sourceId);
+    const tgtD1 = d2ToD1.get(rel.targetId);
+    if (srcD1 && tgtD1 && srcD1 !== tgtD1) {
+      deps.get(srcD1)?.add(tgtD1);
     }
   }
 
-  for (const node of d2Nodes) {
-    const nid = mermaidId(node.id);
-    const label = mermaidLabel(node.name);
-    const symbolCount = node.children.length;
-    const subtitle = symbolCount > 0 ? `\\n${symbolCount} symbol${symbolCount > 1 ? 's' : ''}` : '';
-    const cls = importedByInModule.has(node.id) ? 'file' : 'entrypoint';
-    lines.push(`  ${nid}["${label}${subtitle}"]:::${cls}`);
+  const byName = new Map<string, string[]>();
+  for (const d1 of d1Nodes) {
+    const depNames = [...(deps.get(d1.id) ?? [])]
+      .map(id => graph.nodes[id]?.name)
+      .filter((n): n is string => !!n);
+    byName.set(d1.name, depNames);
   }
+  return byName;
+}
 
-  // Intra-module D2→D2 edges
+/** Build intra-module D2→D2 dep map: file name → file names it imports */
+function buildD2IntraDeps(graph: CodeGraph, d2Nodes: GraphNode[]): Map<string, string[]> {
+  const d2Ids = new Set(d2Nodes.map(n => n.id));
+  const idToName = new Map(d2Nodes.map(n => [n.id, n.name]));
+  const deps = new Map<string, string[]>();
+  for (const d2 of d2Nodes) deps.set(d2.name, []);
+
   for (const rel of Object.values(graph.relations)) {
     if (rel.type !== 'depends_on') continue;
     if (!d2Ids.has(rel.sourceId) || !d2Ids.has(rel.targetId)) continue;
-    lines.push(`  ${mermaidId(rel.sourceId)} --> ${mermaidId(rel.targetId)}`);
+    const srcName = idToName.get(rel.sourceId)!;
+    const tgtName = idToName.get(rel.targetId)!;
+    deps.get(srcName)?.push(tgtName);
   }
-
-  return lines.join('\n');
+  return deps;
 }
 
-/**
- * Generate all architecture diagrams for a graph:
- *   - one overview + one per D1 module that has files.
- */
+// ── Prompts ──────────────────────────────────────────────────────────────────
+
+const OVERVIEW_SYSTEM = `You are an expert software architect. Generate a clear, comprehensible Mermaid architecture diagram.
+
+Rules:
+- Use "graph LR" layout
+- Each D1 module becomes ONE node: ModuleName["ModuleName\\nBrief role description"]
+- Add a classDef line: classDef mod fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0
+- Apply :::mod to every node
+- Each dependency arrow MUST have a short label: ModA -->|"what it uses"| ModB
+- Use plain English, not file/function names in labels
+- Max 1-2 sentence equivalent for node descriptions (keep short, use \\n for line break)
+- Return ONLY valid Mermaid code. No markdown fences, no explanation.`;
+
+function buildOverviewPrompt(graph: CodeGraph): string {
+  const d1Nodes = getD1Nodes(graph);
+  const deps = buildD1Deps(graph, d1Nodes);
+
+  const moduleLines = d1Nodes.map(d1 => {
+    const files = getD2Children(graph, d1).map(d2 => {
+      const symbols = getD3Symbols(graph, d2);
+      return `    - ${d2.name}${symbols.length ? ` (${symbols.join(', ')})` : ''}`;
+    }).join('\n');
+    return `Module: ${d1.name}\n${files}`;
+  }).join('\n\n');
+
+  const depLines = d1Nodes.map(d1 => {
+    const d = deps.get(d1.name) ?? [];
+    if (d.length === 0) return null;
+    return `${d1.name} → ${d.join(', ')}`;
+  }).filter(Boolean).join('\n');
+
+  return `Project: ${graph.name}
+
+Modules and their files/symbols:
+${moduleLines}
+
+Cross-module dependencies:
+${depLines || '(none detected)'}
+
+Generate the Mermaid overview architecture diagram.`;
+}
+
+const SERVICE_SYSTEM = `You are an expert software architect. Generate a clear Mermaid diagram for a single module.
+
+Rules:
+- Use "graph TD" layout
+- Each file becomes ONE node: FileName["FileName\\nBrief role"]
+- Entry-point files (not imported by peers): classDef entry fill:#1a3a2a,stroke:#22c55e,color:#e2e8f0
+- Other files: classDef dep fill:#1a2744,stroke:#6366f1,color:#e2e8f0
+- Apply :::entry or :::dep to every node
+- Dependency arrows: FileA -->|"what it provides"| FileB
+- Return ONLY valid Mermaid code. No markdown fences, no explanation.`;
+
+function buildServicePrompt(graph: CodeGraph, d1Node: GraphNode): string {
+  const d2Nodes = getD2Children(graph, d1Node);
+  const intraDeps = buildD2IntraDeps(graph, d2Nodes);
+  const importedByPeers = new Set(Object.values(intraDeps).flat());
+
+  const fileLines = d2Nodes.map(d2 => {
+    const symbols = getD3Symbols(graph, d2);
+    const isEntry = !importedByPeers.has(d2.name) ? ' [entry point]' : '';
+    return `- ${d2.name}${isEntry}${symbols.length ? `: ${symbols.join(', ')}` : ''}`;
+  }).join('\n');
+
+  const depLines = [...intraDeps.entries()]
+    .filter(([, tgts]) => tgts.length > 0)
+    .map(([src, tgts]) => `${src} → ${tgts.join(', ')}`)
+    .join('\n');
+
+  return `Module: ${d1Node.name} (part of ${graph.name})
+
+Files:
+${fileLines}
+
+Internal dependencies:
+${depLines || '(no internal dependencies)'}
+
+Generate the Mermaid service diagram for this module.`;
+}
+
+// ── LLM calls ────────────────────────────────────────────────────────────────
+
+async function callLLM(system: string, prompt: string, llmSettings: LLMSettings, signal?: AbortSignal): Promise<string> {
+  const response = await llmService.sendMessage(
+    [{ role: 'user', content: prompt }],
+    system,
+    llmSettings,
+    signal,
+  );
+  // Strip markdown fences if LLM wraps the output
+  return response.content
+    .replace(/^```(?:mermaid)?\n?/m, '')
+    .replace(/\n?```$/m, '')
+    .trim();
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
 export interface ArchitectureDiagramSet {
   overview: { name: string; code: string };
   services: { name: string; nodeId: string; code: string }[];
 }
 
-export function generateAllArchitectureDiagrams(graph: CodeGraph): ArchitectureDiagramSet {
-  const overviewCode = generateOverviewDiagram(graph);
+export interface ArchitectureProgressCallback {
+  (message: string): void;
+}
 
+export async function generateAllArchitectureDiagrams(
+  graph: CodeGraph,
+  llmSettings: LLMSettings,
+  onProgress?: ArchitectureProgressCallback,
+  signal?: AbortSignal,
+): Promise<ArchitectureDiagramSet> {
+  const d1Nodes = getD1Nodes(graph);
+
+  // Overview
+  onProgress?.('Generating overview diagram…');
+  const overviewCode = await callLLM(
+    OVERVIEW_SYSTEM,
+    buildOverviewPrompt(graph),
+    llmSettings,
+    signal,
+  );
+
+  // Per-service (only D1 nodes that have files)
   const services: ArchitectureDiagramSet['services'] = [];
-  const d1Nodes = Object.values(graph.nodes)
-    .filter(n => n.depth === 1)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const d1WithFiles = d1Nodes.filter(n => n.children.length > 0);
 
-  for (const node of d1Nodes) {
-    if (node.children.length === 0) continue;
-    const code = generateServiceDiagram(graph, node.id);
-    if (code) {
-      services.push({ name: node.name, nodeId: node.id, code });
-    }
+  for (const d1 of d1WithFiles) {
+    if (signal?.aborted) break;
+    onProgress?.(`Generating diagram for ${d1.name}…`);
+    const code = await callLLM(
+      SERVICE_SYSTEM,
+      buildServicePrompt(graph, d1),
+      llmSettings,
+      signal,
+    );
+    if (code) services.push({ name: d1.name, nodeId: d1.id, code });
   }
 
   return {

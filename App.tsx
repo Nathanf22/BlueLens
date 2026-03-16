@@ -669,17 +669,38 @@ export default function App() {
     console.log(`[Sync] Created ${newDiagrams.length} new flow diagram(s):`, newDiagrams.map(d => d.name));
   }, [diagrams, folders, setDiagrams, setFolders]);
 
-  /** Generate and insert architecture diagrams (overview + one per D1 module).
+  /** Generate and insert LLM-powered architecture diagrams (overview + one per D1 module).
    *  Replaces existing architecture diagrams for this graph if they exist. */
-  const handleGenerateArchitecture = useCallback((graph: CodeGraph) => {
-    const { overview, services } = generateAllArchitectureDiagrams(graph);
-    if (!overview.code && services.length === 0) {
-      showToast('No architecture data found in this graph.', 'warning');
+  const handleGenerateArchitecture = useCallback(async (graph: CodeGraph) => {
+    if (!llmSettings) {
+      showToast('An AI API key is required to generate architecture diagrams. Configure one in AI Settings.', 'error');
       return;
     }
 
     const generateId = () => Math.random().toString(36).substr(2, 9);
     const folderName = `Architecture: ${graph.name}`;
+
+    showToast('Generating architecture diagrams…', 'info');
+
+    let result: import('./services/codeGraphArchitectureService').ArchitectureDiagramSet;
+    try {
+      result = await generateAllArchitectureDiagrams(
+        graph,
+        llmSettings,
+        (msg) => console.log('[Architecture]', msg),
+      );
+    } catch (err: any) {
+      if (err instanceof LLMRateLimitError) { showToast(err.message, 'error'); return; }
+      if (err instanceof LLMConfigError) { showToast('AI API key required. Configure one in AI Settings.', 'error'); return; }
+      showToast('Architecture generation failed.', 'error');
+      return;
+    }
+
+    const { overview, services } = result;
+    if (!overview.code && services.length === 0) {
+      showToast('No architecture data found in this graph.', 'warning');
+      return;
+    }
 
     // Remove previous architecture diagrams + folder for this graph
     const existingFolder = folders.find(
@@ -698,7 +719,6 @@ export default function App() {
     const parentId = generateId();
     newFolders.push({ id: parentId, name: folderName, parentId: null, workspaceId: graph.workspaceId });
 
-    // Overview diagram directly in the parent folder
     if (overview.code) {
       newDiagrams.push({
         id: generateId(), name: overview.name, description: 'Auto-generated architecture overview',
@@ -708,7 +728,6 @@ export default function App() {
       });
     }
 
-    // One sub-folder "Services" with one diagram per D1 module
     if (services.length > 0) {
       const servicesFolderId = generateId();
       newFolders.push({ id: servicesFolderId, name: 'Services', parentId, workspaceId: graph.workspaceId });
@@ -726,7 +745,7 @@ export default function App() {
     setFolders(prev => [...prev, ...newFolders]);
     setDiagrams(prev => [...prev, ...newDiagrams]);
     showToast(`Architecture generated: 1 overview + ${services.length} service diagram${services.length !== 1 ? 's' : ''}.`, 'success');
-  }, [diagrams, folders, setDiagrams, setFolders, showToast]);
+  }, [diagrams, folders, llmSettings, setDiagrams, setFolders, showToast]);
 
   /** Trigger export after graph creation/regeneration.
    *  scopeFilter: if set, only ask/update for flows at that scope level. */
