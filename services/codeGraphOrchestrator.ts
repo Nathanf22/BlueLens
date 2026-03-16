@@ -473,14 +473,18 @@ TOOLS:
 - get_node_relations(node_id): static import edges for a file. Use to discover dependencies.
 - get_cluster_files(cluster_name): files in a semantic cluster.
 
-APPROACH — think like an architect reading the code:
-1. Call find_entry_points() to see where execution begins.
-2. Call read_file() on each entry point to understand RUNTIME behavior:
-   - What does it do when it runs? (start a server, initialize a UI, register routes...)
-   - Does it make HTTP calls? (fetch, axios, XMLHttpRequest → traces to a server endpoint)
-   - Does it call imported modules? (traces through import chain)
-3. Follow the RUNTIME chain of control — not just static imports. A browser file that calls fetch('/api/foo') is connected to the server file that handles GET /api/foo, even without an import edge.
-4. Generate 3-8 flows covering distinct user journeys or system events.
+APPROACH — reason step by step BEFORE generating flows:
+STEP 1 — SURVEY: Call find_entry_points(). Call read_file() on the 2-3 most important entry points (server, app, router).
+STEP 2 — ENUMERATE (do this in your reasoning before outputting anything): Mentally list ALL distinct user-facing operations this system handles. Think:
+  - What HTTP endpoints exist? (scan server/router/handler files)
+  - What UI interactions can a user perform?
+  - What background jobs or system events exist?
+  Aim for at least 5-10 candidates before selecting.
+STEP 3 — SELECT: From your enumeration, pick 3-8 flows that are distinct, important, and span meaningful boundaries (client→server, handler→storage, etc).
+STEP 4 — TRACE: For each selected flow, call read_file() on the files it crosses to confirm the runtime chain.
+STEP 5 — OUTPUT: Generate the JSON.
+
+The enumeration in STEP 2 is the key to completeness — if you skip it, important flows will be missed.
 
 WHAT MAKES A GOOD FLOW:
 - Spans multiple files across meaningful boundaries (client→server, handler→service→database)
@@ -666,6 +670,8 @@ async function runSyntheseurAgent(
   previousIssues?: ValidationIssue[],
   onAgentEvent?: AgentEventFn,
   scopeCluster?: { nodeId: string; name: string; files: string[] },
+  frozenFlowNames?: string[],
+  missingFlows?: string[],
 ): Promise<Record<string, GraphFlow> | null> {
   // Build a graph summary: files with cluster labels + all depends_on edges
   const d2Nodes = Object.values(graph.nodes).filter(n => n.depth === 2);
@@ -716,6 +722,14 @@ async function runSyntheseurAgent(
       .map(i => `- ${i.message}${i.target ? ` [${i.target}]` : ''}`)
       .join('\n');
     if (errorText) prompt += `\n\nISSUES FROM PREVIOUS ATTEMPT (fix these):\n${errorText}`;
+  }
+
+  if (frozenFlowNames && frozenFlowNames.length > 0) {
+    prompt += `\n\nSURGICAL CORRECTION MODE — do NOT regenerate these verified flows (they are correct):\n${frozenFlowNames.map(n => `  ✓ "${n}"`).join('\n')}`;
+    prompt += `\nGenerate ONLY flows that are listed in ISSUES or MISSING below.`;
+  }
+  if (missingFlows && missingFlows.length > 0) {
+    prompt += `\n\nMISSING FLOWS TO ADD (important flows not in the previous generation):\n${missingFlows.map(n => `  + "${n}"`).join('\n')}`;
   }
 
   onLog?.('ai-synth', 'Synthétiseur: tracing runtime flows...');
@@ -890,6 +904,9 @@ Do NOT flag:
 - Fan-out from a common parent (A imports B, A imports C, A imports D — all valid)
 - Transitive import chains (A imports B imports C)
 
+COMPLETENESS CHECK:
+After verifying existing flows, ask yourself: based on the source files you read, are there important user journeys or system events that are clearly NOT represented? Be conservative — only flag things that are obviously important AND obviously absent (not minor variations, not error edge cases).
+
 Output ONLY this JSON after your investigation:
 {
   "issues": [
@@ -899,8 +916,10 @@ Output ONLY this JSON after your investigation:
       "message": "specific description referencing what you found in the code",
       "target": "flow name"
     }
-  ]
-}`;
+  ],
+  "missing": ["Suggested missing flow name 1", "Suggested missing flow name 2"]
+}
+(If nothing important is missing, output "missing": [])`;
 
 const ALREADY_READ = '(already provided above)';
 
@@ -928,7 +947,7 @@ async function evaluateFlows(
   onLog?: LogEntryFn,
   onAgentEvent?: AgentEventFn,
   onBlackboard?: AgentBlackboardFn,
-): Promise<ValidationIssue[]> {
+): Promise<{ issues: ValidationIssue[]; missing: string[] }> {
   const flowSummary = Object.values(flows).map(f => ({
     name: f.name,
     description: f.description,
@@ -987,7 +1006,7 @@ For each flow, read the source files of the steps and verify the claimed connect
     );
 
     const parsed = JSON.parse(extractJSON(result.content));
-    if (!Array.isArray(parsed.issues)) return [];
+    if (!Array.isArray(parsed.issues)) return { issues: [], missing: [] };
 
     const issues: ValidationIssue[] = (parsed.issues as unknown[])
       .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
@@ -998,15 +1017,24 @@ For each flow, read the source files of the steps and verify the claimed connect
         target: i.target ? String(i.target) : undefined,
       }));
 
+    const missing: string[] = Array.isArray(parsed.missing)
+      ? (parsed.missing as unknown[]).filter((s): s is string => typeof s === 'string')
+      : [];
+
     const errors = issues.filter(i => i.severity === 'error').length;
     const warnings = issues.filter(i => i.severity === 'warning').length;
-    onLog?.('ai-eval', `Évaluateur flows: ${errors} errors, ${warnings} warnings (${result.toolSteps.length} files read)`);
+    onLog?.('ai-eval', `Évaluateur flows: ${errors} errors, ${warnings} warnings, ${missing.length} missing (${result.toolSteps.length} files read)`);
 
     onAgentEvent?.({
       agent: 'evaluateur',
       toolName: '__eval_result__',
       argsSummary: `${errors} errors, ${warnings} warnings`,
-      resultSummary: issues.length === 0 ? '✓ All flows verified' : issues.map(i => `[${i.severity}] ${i.message}`).join('\n'),
+      resultSummary: issues.length === 0 && missing.length === 0
+        ? '✓ All flows verified'
+        : [
+            ...issues.map(i => `[${i.severity}] ${i.message}`),
+            ...missing.map(m => `[missing] ${m}`),
+          ].join('\n'),
       durationMs: Date.now() - evalFlowStartMs,
     });
 
@@ -1018,11 +1046,11 @@ For each flow, read the source files of the steps and verify the claimed connect
       })),
     });
 
-    return issues;
+    return { issues, missing };
 
   } catch {
     onLog?.('ai-eval', 'Évaluateur flow validation failed (non-fatal)');
-    return [];
+    return { issues: [], missing: [] };
   }
 }
 
@@ -1205,16 +1233,41 @@ export async function orchestrateFlowGeneration(
 
     // Évaluateur validation
     onProgress?.('Validating flows', 2, 3);
-    issues = await evaluateFlows(ctx, graph, flows, llmSettings, onLog, onAgentEvent, onBlackboard);
+    const { issues: evalIssues, missing } = await evaluateFlows(ctx, graph, flows, llmSettings, onLog, onAgentEvent, onBlackboard);
+    issues = evalIssues;
 
-    // Round 2 if any connectivity errors
+    // Round 2: surgical — only fix broken flows + add missing
     const errorCount = issues.filter(i => i.severity === 'error').length;
-    if (errorCount >= 1) {
-      onLog?.('ai-synth', `Synthétiseur round 2 (${errorCount} errors to fix)...`);
+    if (errorCount >= 1 || missing.length > 0) {
+      onLog?.('ai-synth', `Synthétiseur round 2 (${errorCount} errors to fix, ${missing.length} to add)...`);
       onProgress?.('Re-generating flows (round 2)', 3, 3);
-      const round2 = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, issues, onAgentEvent, scopeCluster);
+
+      // Identify which flows have errors (by target name)
+      const errorTargets = new Set(
+        issues.filter(i => i.severity === 'error' && i.target).map(i => i.target as string)
+      );
+      // Flows with no target error are considered verified; if there are untargeted errors fall back to full regen
+      const hasUntargetedErrors = issues.some(i => i.severity === 'error' && !i.target);
+      const frozenFlowNames = hasUntargetedErrors
+        ? []
+        : Object.values(flows).filter(f => !errorTargets.has(f.name)).map(f => f.name);
+
+      const round2 = await runSyntheseurAgent(
+        ctx, graph, llmSettings, onLog, signal, issues, onAgentEvent, scopeCluster,
+        frozenFlowNames.length > 0 ? frozenFlowNames : undefined,
+        missing.length > 0 ? missing : undefined,
+      );
       if (round2 && Object.keys(round2).length > 0) {
-        flows = round2;
+        if (frozenFlowNames.length > 0) {
+          // Surgical merge: keep verified flows, replace/add from round2
+          const frozenMap: Record<string, GraphFlow> = {};
+          for (const f of Object.values(flows)) {
+            if (frozenFlowNames.includes(f.name)) frozenMap[f.id] = f;
+          }
+          flows = { ...frozenMap, ...round2 };
+        } else {
+          flows = round2;
+        }
         onBlackboard?.({ flows: Object.values(flows).map(f => ({ name: f.name, stepCount: f.steps.length })) });
       }
     }
