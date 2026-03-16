@@ -1337,11 +1337,17 @@ TOOLS available (same as flow analysis):
 - get_node_relations(node_id): import/dependency edges for a file
 - read_file(path): actual source code (first 200 lines) — READ KEY FILES to understand real responsibilities
 
-APPROACH:
-1. Call get_cluster_files() for each cluster to understand what's in each domain
-2. Call read_file() on the key file(s) of each cluster (the one that exports the main logic)
-3. Use what you read to write meaningful node descriptions and edge labels
-4. Descriptions must reflect what the code ACTUALLY does, not just the filename
+APPROACH — reason step by step BEFORE generating any diagram:
+STEP 1 — SURVEY: Call get_cluster_files() for every cluster. Note what files each contains.
+STEP 2 — ENUMERATE (do this in your reasoning before outputting anything): For each cluster, mentally answer:
+  - What is the single core responsibility of this cluster?
+  - Which file is the main entry point / primary export?
+  - Which other clusters does it depend on, and for what purpose?
+  Also enumerate cross-cluster dependencies: for each pair (A → B), what does A use B for?
+STEP 3 — READ: Call read_file() on the primary file of each cluster to confirm your enumeration against actual code. Correct any wrong assumptions.
+STEP 4 — OUTPUT: Generate the JSON using what you actually read, not what you assumed.
+
+The enumeration in STEP 2 is the key to accurate diagrams — skipping it leads to generic labels that don't reflect the code.
 
 OUTPUT — return ONLY this JSON (no markdown, no explanation):
 {
