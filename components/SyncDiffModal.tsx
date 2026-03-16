@@ -37,9 +37,11 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
     if (!svg) return svgStr;
 
     const isAdded = highlights.mode === 'added';
-    const fillBg  = isAdded ? 'rgba(34,197,94,0.22)' : 'rgba(239,68,68,0.22)';
-    const stroke  = isAdded ? '#22c55e'               : '#ef4444';
-    const textCol = isAdded ? '#4ade80'               : '#f87171';
+    // Solid opaque fills override the node's original color entirely — no blending artifacts.
+    const fillBg  = isAdded ? '#dcfce7' : '#fee2e2';
+    const stroke  = isAdded ? '#16a34a' : '#dc2626';
+    const strokeW = '3';
+    const textCol = isAdded ? '#14532d' : '#7f1d1d';
 
     // --- Sequence: actors ---
     for (const group of svg.querySelectorAll('g.actor, g[class~="actor"]')) {
@@ -50,7 +52,7 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
       if (rect) {
         rect.setAttribute('fill', fillBg);
         rect.setAttribute('stroke', stroke);
-        rect.setAttribute('stroke-width', '2.5');
+        rect.setAttribute('stroke-width', strokeW);
       }
       if (textEl) textEl.setAttribute('fill', textCol);
     }
@@ -66,7 +68,7 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
         if (rect) {
           rect.setAttribute('fill', fillBg);
           rect.setAttribute('stroke', stroke);
-          rect.setAttribute('stroke-width', '2.5');
+          rect.setAttribute('stroke-width', strokeW);
         }
         if (labelEl) (labelEl as HTMLElement).style.color = textCol;
       }
@@ -87,7 +89,7 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
       const line = allLines[idx];
       if (line) {
         line.setAttribute('stroke', stroke);
-        line.setAttribute('stroke-width', '3');
+        line.setAttribute('stroke-width', strokeW);
       }
       // Fallback: scan backward siblings
       if (!line) {
@@ -98,7 +100,7 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
           const el = children[k];
           if (el.tagName === 'line' || el.tagName === 'path') {
             el.setAttribute('stroke', stroke);
-            el.setAttribute('stroke-width', '3');
+            el.setAttribute('stroke-width', strokeW);
             break;
           }
         }
@@ -116,7 +118,7 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
         const edgeGroup = labelEl.closest('.edgePath, g');
         edgeGroup?.querySelectorAll('path').forEach(p => {
           p.setAttribute('stroke', stroke);
-          p.setAttribute('stroke-width', '3');
+          p.setAttribute('stroke-width', strokeW);
         });
       }
     }
