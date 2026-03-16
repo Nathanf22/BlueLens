@@ -30,7 +30,7 @@ export const useAppState = () => {
   const [isScanResultsOpen, setIsScanResultsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isEditorCollapsed, setIsEditorCollapsed] = useState(false);
+  const [isEditorCollapsed, setIsEditorCollapsed] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   
   // --- State: Multi-Level Navigation ---

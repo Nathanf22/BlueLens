@@ -559,6 +559,7 @@ export default function App() {
   const [pendingFlowExport, setPendingFlowExport] = useState<{ graph: CodeGraph } | null>(null);
   const [isCreatingGraph, setIsCreatingGraph] = useState(false);
   const graphCreationCancelledRef = useRef(false);
+  const isSyncingRef = useRef(false);
 
   /** Core export logic: builds plan and inserts folders + diagrams.
    *  scopeFilter: if set, only flows with that scopeNodeId are exported/updated. */
@@ -604,6 +605,68 @@ export default function App() {
       setDiagrams(prev => [...prev, ...newDiagrams]);
     }
   }, [folders, diagrams, setFolders, setDiagrams, activeWorkspaceId]);
+
+  /** Create diagram entries for flows that don't yet have a corresponding diagram.
+   *  Used after sync-triggered flow regeneration to materialise new flows without
+   *  touching existing flow diagrams (which are handled by the incremental diff panel). */
+  const createNewFlowDiagrams = useCallback((graph: CodeGraph) => {
+    const existingNames = new Set(
+      diagrams.filter(d => d.sourceGraphId === graph.id).map(d => d.name)
+    );
+    const newFlows = Object.values(graph.flows).filter(
+      f => f.sequenceDiagram && !existingNames.has(f.name)
+    );
+    if (newFlows.length === 0) return;
+
+    const generateId = () => Math.random().toString(36).substr(2, 9);
+    const { existingFolder } = detectExistingExport(graph, folders, diagrams);
+
+    const newFolders: import('./types').Folder[] = [];
+    const newDiagrams: import('./types').Diagram[] = [];
+
+    let parentFolderId: string;
+    if (existingFolder) {
+      parentFolderId = existingFolder.id;
+    } else {
+      const pf: import('./types').Folder = { id: generateId(), name: `Flows: ${graph.name}`, parentId: null, workspaceId: graph.workspaceId };
+      newFolders.push(pf);
+      parentFolderId = pf.id;
+    }
+
+    // Map sub-folder names to IDs (existing or newly created in this batch)
+    const subFolderIds = new Map<string, string>(
+      folders.filter(f => f.parentId === parentFolderId).map(f => [f.name, f.id])
+    );
+
+    for (const flow of newFlows) {
+      const isRoot = !flow.scopeNodeId || flow.scopeNodeId === graph.rootNodeId;
+      const subName = isRoot ? 'End-to-End Flows' : (graph.nodes[flow.scopeNodeId]?.name ?? flow.scopeNodeId);
+
+      if (!subFolderIds.has(subName)) {
+        const sf: import('./types').Folder = { id: generateId(), name: subName, parentId: parentFolderId, workspaceId: graph.workspaceId };
+        newFolders.push(sf);
+        subFolderIds.set(subName, sf.id);
+      }
+
+      newDiagrams.push({
+        id: generateId(),
+        name: flow.name,
+        description: flow.description,
+        code: flow.sequenceDiagram,
+        comments: [],
+        lastModified: Date.now(),
+        workspaceId: graph.workspaceId,
+        nodeLinks: [],
+        sourceGraphId: graph.id,
+        sourceScopeNodeId: flow.scopeNodeId,
+        folderId: subFolderIds.get(subName)!,
+      });
+    }
+
+    if (newFolders.length > 0) setFolders(prev => [...prev, ...newFolders]);
+    setDiagrams(prev => [...prev, ...newDiagrams]);
+    console.log(`[Sync] Created ${newDiagrams.length} new flow diagram(s):`, newDiagrams.map(d => d.name));
+  }, [diagrams, folders, setDiagrams, setFolders]);
 
   /** Trigger export after graph creation/regeneration.
    *  scopeFilter: if set, only ask/update for flows at that scope level. */
@@ -779,8 +842,10 @@ export default function App() {
 
   const handleCodeGraphIncrementalSync = useCallback(async () => {
     if (!codeGraph.activeGraph) return;
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
     const handle = await resolveHandle(codeGraph.activeGraph.repoId);
-    if (!handle) { showToast('Cannot access files — please reopen the repository folder.', 'error'); return; }
+    if (!handle) { isSyncingRef.current = false; showToast('Cannot access files — please reopen the repository folder.', 'error'); return; }
     const repoName = codeGraph.activeGraph.name;
     agentMission.start();
     handleIncrementalSync(
@@ -796,10 +861,10 @@ export default function App() {
         ));
       },
       (g) => codeGraph.regenerateFlows(llmSettings, undefined, agentMission.addEvent, agentMission.updateBlackboard, g),
-    ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied }) => {
-      // Note: flow diagram updates go through buildSyncProposal (incremental, diff-based)
-      // which already handles diagrams with sourceGraphId set. triggerFlowExport is NOT
-      // called here — it does a full replace and would bypass the incremental diff panel.
+    ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied, flowsGraph }) => {
+      // Create diagrams for newly generated flows (not covered by incremental diff panel)
+      if (flowsGraph) createNewFlowDiagrams(flowsGraph);
+
       if (linkedDiagrams === 0) {
         showToast('No diagrams linked to this code graph — link diagrams via the sidebar first.', 'warning');
       } else if (proposalsGenerated === 0 && proposalsApplied === 0) {
@@ -810,8 +875,8 @@ export default function App() {
         if (proposalsGenerated > 0) parts.push(`${proposalsGenerated} pending review — click the button in the top bar`);
         showToast(parts.join(' · '), proposalsGenerated > 0 ? 'success' : 'info');
       }
-    }).finally(() => agentMission.stop());
-  }, [codeGraph.activeGraph, codeGraph.updateGraph, codeGraph.regenerateFlows, diagrams, handleIncrementalSync, llmSettings, setDiagrams, agentMission]);
+    }).finally(() => { agentMission.stop(); isSyncingRef.current = false; });
+  }, [codeGraph.activeGraph, codeGraph.updateGraph, codeGraph.regenerateFlows, diagrams, handleIncrementalSync, llmSettings, setDiagrams, agentMission, createNewFlowDiagrams]);
 
   const handleCodeGraphViewCode = useCallback(async (nodeId: string) => {
     if (!codeGraph.activeGraph) return;

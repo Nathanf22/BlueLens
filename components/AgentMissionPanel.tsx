@@ -13,9 +13,9 @@ interface Props {
 }
 
 const AGENTS: { id: AgentId; label: string; icon: React.ReactNode; color: string; borderColor: string }[] = [
-  { id: 'analyste',   label: 'Analyste',    icon: <Cpu className="w-3.5 h-3.5" />,         color: 'text-violet-400', borderColor: 'border-violet-500/40' },
-  { id: 'syntheseur', label: 'Synthétiseur', icon: <FlaskConical className="w-3.5 h-3.5" />, color: 'text-emerald-400', borderColor: 'border-emerald-500/40' },
-  { id: 'evaluateur', label: 'Évaluateur',   icon: <Shield className="w-3.5 h-3.5" />,       color: 'text-amber-400',   borderColor: 'border-amber-500/40' },
+  { id: 'analyste',   label: 'Analyst',     icon: <Cpu className="w-3.5 h-3.5" />,         color: 'text-violet-400', borderColor: 'border-violet-500/40' },
+  { id: 'syntheseur', label: 'Synthesizer',  icon: <FlaskConical className="w-3.5 h-3.5" />, color: 'text-emerald-400', borderColor: 'border-emerald-500/40' },
+  { id: 'evaluateur', label: 'Evaluator',    icon: <Shield className="w-3.5 h-3.5" />,       color: 'text-amber-400',   borderColor: 'border-amber-500/40' },
 ];
 
 function formatArgs(argsSummary: string): string {
