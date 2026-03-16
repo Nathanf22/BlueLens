@@ -43,18 +43,19 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
     const strokeW = '3';
     const textCol = isAdded ? '#14532d' : '#7f1d1d';
 
+    // Helper: apply inline styles (override Mermaid's embedded <style> block via CSS cascade)
+    const styleEl = (el: Element, props: Record<string, string>) => {
+      for (const [k, v] of Object.entries(props)) (el as HTMLElement).style.setProperty(k, v);
+    };
+
     // --- Sequence: actors ---
     for (const group of svg.querySelectorAll('g.actor, g[class~="actor"]')) {
       const textEl = group.querySelector('text') ?? group.querySelector('span');
       const name = textEl?.textContent?.trim() ?? '';
       if (!highlights.actors.has(name)) continue;
       const rect = group.querySelector('rect');
-      if (rect) {
-        rect.setAttribute('fill', fillBg);
-        rect.setAttribute('stroke', stroke);
-        rect.setAttribute('stroke-width', strokeW);
-      }
-      if (textEl) textEl.setAttribute('fill', textCol);
+      if (rect) styleEl(rect, { fill: fillBg, stroke, 'stroke-width': strokeW });
+      if (textEl) styleEl(textEl, { fill: textCol });
     }
 
     // --- Flowchart: nodes (g.node) — match by label text content ---
@@ -65,12 +66,8 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
         const name = labelEl?.textContent?.trim() ?? '';
         if (!highlights.actors.has(name)) continue;
         const rect = group.querySelector('rect, polygon, circle, ellipse');
-        if (rect) {
-          rect.setAttribute('fill', fillBg);
-          rect.setAttribute('stroke', stroke);
-          rect.setAttribute('stroke-width', strokeW);
-        }
-        if (labelEl) (labelEl as HTMLElement).style.color = textCol;
+        if (rect) styleEl(rect, { fill: fillBg, stroke, 'stroke-width': strokeW });
+        if (labelEl) styleEl(labelEl, { color: textCol, fill: textCol });
       }
     }
 
@@ -85,11 +82,13 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
       const label = msgEl.textContent?.trim() ?? '';
       if (!highlights.edgeLabels.has(label)) return;
       console.log('[BlueLens diff] MATCH found:', label);
-      msgEl.setAttribute('fill', textCol);
+      // Use inline style to override Mermaid's CSS class rules (e.g. .messageText { fill: black })
+      styleEl(msgEl, { fill: textCol });
+      // Also highlight tspan children which may inherit the class rule
+      msgEl.querySelectorAll('tspan').forEach(ts => styleEl(ts, { fill: textCol }));
       const line = allLines[idx];
       if (line) {
-        line.setAttribute('stroke', stroke);
-        line.setAttribute('stroke-width', strokeW);
+        styleEl(line, { stroke, 'stroke-width': strokeW });
       }
       // Fallback: scan backward siblings
       if (!line) {
@@ -99,8 +98,7 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
         for (let k = i - 1; k >= 0; k--) {
           const el = children[k];
           if (el.tagName === 'line' || el.tagName === 'path') {
-            el.setAttribute('stroke', stroke);
-            el.setAttribute('stroke-width', strokeW);
+            styleEl(el, { stroke, 'stroke-width': strokeW });
             break;
           }
         }
@@ -113,13 +111,10 @@ function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string
         const label = labelEl.textContent?.trim() ?? '';
         if (!highlights.edgeLabels.has(label)) continue;
         console.log('[BlueLens diff] flowchart edge MATCH:', label);
-        (labelEl as HTMLElement).style.color = textCol;
+        styleEl(labelEl, { color: textCol, fill: textCol });
         // Try to find the associated path
         const edgeGroup = labelEl.closest('.edgePath, g');
-        edgeGroup?.querySelectorAll('path').forEach(p => {
-          p.setAttribute('stroke', stroke);
-          p.setAttribute('stroke-width', strokeW);
-        });
+        edgeGroup?.querySelectorAll('path').forEach(p => styleEl(p, { stroke, 'stroke-width': strokeW }));
       }
     }
 
