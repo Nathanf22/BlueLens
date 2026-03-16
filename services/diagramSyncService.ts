@@ -397,6 +397,7 @@ For sequenceDiagrams, treat D3 changes with the same urgency as same-depth chang
 If you decide NO update is needed, respond with exactly: NO_CHANGE
 
 If an update IS needed, apply MINIMAL SURGICAL changes to the existing diagram:
+- CRITICAL: NEVER change the diagram type. If the original starts with "sequenceDiagram", the updated version MUST also start with "sequenceDiagram". If it starts with "flowchart", it must stay "flowchart". Changing the diagram type is STRICTLY FORBIDDEN.
 - DO NOT restructure or rewrite the diagram — start from the existing code and make targeted edits only
 - DO NOT rename existing nodes — preserve all existing node IDs and labels exactly as they are
 - DO NOT remove existing connections (edges) unless they reference a deleted entity from the diff
@@ -478,10 +479,20 @@ Decide: does this diagram need updating given the changes above? If not, respond
     }
 
     const extracted = extractMermaidBlock(content);
-    if (extracted && extracted.length > 0) return { code: extracted, explanation };
+    const candidate = extracted && extracted.length > 0 ? extracted : (
+      content.startsWith('flowchart') || content.startsWith('graph ') || content.startsWith('sequenceDiagram')
+        ? codeContent : null
+    );
 
-    if (content.startsWith('flowchart') || content.startsWith('graph ') || content.startsWith('sequenceDiagram')) {
-      return { code: codeContent, explanation };
+    if (candidate) {
+      // Guard: reject if LLM changed the diagram type
+      const originalType = diagram.code.trim().split(/\s/)[0];
+      const proposedType = candidate.trim().split(/\s/)[0];
+      if (proposedType !== originalType) {
+        console.warn(`[diagramSync] LLM changed diagram type from "${originalType}" to "${proposedType}" — rejecting`);
+        return null;
+      }
+      return { code: candidate, explanation };
     }
   } catch (err) {
     console.warn('[diagramSyncService] LLM proposeDiagramUpdate failed, falling back to deterministic:', err);
@@ -510,14 +521,15 @@ export function renderDiffAnnotated(
   // classDef / ::: annotations only work for flowchart/graph diagrams
   if (!supportsClassDef(proposedCode)) return proposedCode;
 
+  // "After" diagram: only highlight added nodes in green.
+  // Removed nodes are NOT added back as ghost nodes — they're already shown
+  // in red in the "Before" diagram via SVG post-processing.
   const lines: string[] = [];
   const addedClassDef = 'classDef added fill:#16a34a,color:#fff,stroke:#15803d';
-  const removedClassDef = 'classDef removed fill:#dc2626,color:#fff,stroke:#b91c1c';
 
   const proposedLines = proposedCode.split('\n');
   lines.push(proposedLines[0]);
   lines.push(`  ${addedClassDef}`);
-  lines.push(`  ${removedClassDef}`);
 
   const parsedNodes = parseMermaidNodes(proposedCode);
 
@@ -533,11 +545,6 @@ export function renderDiffAnnotated(
       }
     }
     if (!annotated) lines.push(line);
-  }
-
-  for (const label of removedLabels) {
-    const safeId = sanitizeMermaidId(label);
-    lines.push(`  ${safeId}["${escapeLabel(label)}"]:::removed`);
   }
 
   return lines.join('\n');

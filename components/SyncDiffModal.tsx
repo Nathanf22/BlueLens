@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { GitBranch, Plus, Minus, Check, X, ChevronDown, ChevronRight, MessageSquare } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { GitBranch, Plus, Minus, Check, X, ChevronDown, ChevronRight, MessageSquare, Maximize2, RotateCcw } from 'lucide-react';
+import mermaid from 'mermaid';
 import { SyncProposal, Diagram, DiagramDiff } from '../types';
 import { InlineDiagramPreview } from './InlineDiagramPreview';
 
@@ -10,6 +12,260 @@ interface SyncDiffModalProps {
   onDismiss: (proposalId: string) => void;
   onClose: () => void;
 }
+
+// ---------------------------------------------------------------------------
+// SVG diff highlighting for sequence diagrams
+// ---------------------------------------------------------------------------
+
+interface DiffHighlights {
+  actors: Set<string>;
+  edgeLabels: Set<string>;
+  mode: 'added' | 'removed';
+}
+
+function applyDiffHighlights(svgStr: string, highlights: DiffHighlights): string {
+  console.log('[BlueLens diff] applyDiffHighlights called, mode:', highlights.mode,
+    'actors:', [...highlights.actors], 'edgeLabels:', [...highlights.edgeLabels]);
+  if (!highlights.actors.size && !highlights.edgeLabels.size) {
+    console.log('[BlueLens diff] nothing to highlight, returning as-is');
+    return svgStr;
+  }
+  try {
+    const container = document.createElement('div');
+    container.innerHTML = svgStr;
+    const svg = container.querySelector('svg');
+    if (!svg) return svgStr;
+
+    const isAdded = highlights.mode === 'added';
+    // Solid opaque fills override the node's original color entirely — no blending artifacts.
+    const fillBg  = isAdded ? '#dcfce7' : '#fee2e2';
+    const stroke  = isAdded ? '#16a34a' : '#dc2626';
+    const strokeW = '3';
+    const textCol = isAdded ? '#14532d' : '#7f1d1d';
+
+    // Helper: apply inline styles (override Mermaid's embedded <style> block via CSS cascade)
+    const styleEl = (el: Element, props: Record<string, string>) => {
+      for (const [k, v] of Object.entries(props)) (el as HTMLElement).style.setProperty(k, v);
+    };
+
+    // --- Sequence: actors ---
+    for (const group of svg.querySelectorAll('g.actor, g[class~="actor"]')) {
+      const textEl = group.querySelector('text') ?? group.querySelector('span');
+      const name = textEl?.textContent?.trim() ?? '';
+      if (!highlights.actors.has(name)) continue;
+      const rect = group.querySelector('rect');
+      if (rect) styleEl(rect, { fill: fillBg, stroke, 'stroke-width': strokeW });
+      if (textEl) styleEl(textEl, { fill: textCol });
+    }
+
+    // --- Flowchart: nodes (g.node) — match by label text content ---
+    if (highlights.actors.size > 0) {
+      for (const group of svg.querySelectorAll('g.node')) {
+        // Label is in a <span> inside foreignObject, or a <text> element
+        const labelEl = group.querySelector('span.nodeLabel, span, text');
+        const name = labelEl?.textContent?.trim() ?? '';
+        if (!highlights.actors.has(name)) continue;
+        const rect = group.querySelector('rect, polygon, circle, ellipse');
+        if (rect) styleEl(rect, { fill: fillBg, stroke, 'stroke-width': strokeW });
+        if (labelEl) styleEl(labelEl, { color: textCol, fill: textCol });
+      }
+    }
+
+    // --- Sequence: messages ---
+    const allLines = Array.from(svg.querySelectorAll('line[class*="messageLine"], path[class*="messageLine"]'));
+    const allMsgTextEls = Array.from(svg.querySelectorAll('text[class*="messageText"]'));
+
+    console.log('[BlueLens diff] messageLine count:', allLines.length, '| messageText count:', allMsgTextEls.length);
+    console.log('[BlueLens diff] messageText contents:', allMsgTextEls.map(el => JSON.stringify(el.textContent?.trim())));
+
+    allMsgTextEls.forEach((msgEl, idx) => {
+      const label = msgEl.textContent?.trim() ?? '';
+      if (!highlights.edgeLabels.has(label)) return;
+      console.log('[BlueLens diff] MATCH found:', label);
+      // Use inline style to override Mermaid's CSS class rules (e.g. .messageText { fill: black })
+      styleEl(msgEl, { fill: textCol });
+      // Also highlight tspan children which may inherit the class rule
+      msgEl.querySelectorAll('tspan').forEach(ts => styleEl(ts, { fill: textCol }));
+      const line = allLines[idx];
+      if (line) {
+        styleEl(line, { stroke, 'stroke-width': strokeW });
+      }
+      // Fallback: scan backward siblings
+      if (!line) {
+        const parent = msgEl.parentElement;
+        const children = parent ? Array.from(parent.children) : [];
+        const i = children.indexOf(msgEl);
+        for (let k = i - 1; k >= 0; k--) {
+          const el = children[k];
+          if (el.tagName === 'line' || el.tagName === 'path') {
+            styleEl(el, { stroke, 'stroke-width': strokeW });
+            break;
+          }
+        }
+      }
+    });
+
+    // --- Flowchart: edges — match edge labels ---
+    if (highlights.edgeLabels.size > 0) {
+      for (const labelEl of svg.querySelectorAll('.edgeLabel span, .edgeLabel text')) {
+        const label = labelEl.textContent?.trim() ?? '';
+        if (!highlights.edgeLabels.has(label)) continue;
+        console.log('[BlueLens diff] flowchart edge MATCH:', label);
+        styleEl(labelEl, { color: textCol, fill: textCol });
+        // Try to find the associated path
+        const edgeGroup = labelEl.closest('.edgePath, g');
+        edgeGroup?.querySelectorAll('path').forEach(p => styleEl(p, { stroke, 'stroke-width': strokeW }));
+      }
+    }
+
+    return container.innerHTML;
+  } catch (e) {
+    console.error('[BlueLens] SVG highlight error:', e);
+    return svgStr;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PanZoomDiagram — independent pan + zoom for each side of the visual diff
+// ---------------------------------------------------------------------------
+
+let _pzCounter = 0;
+
+const PanZoomDiagram: React.FC<{ code: string; label: string; highlights?: DiffHighlights }> = ({ code, label, highlights }) => {
+  const [svg, setSvg] = useState('');
+  const [error, setError] = useState('');
+  const [t, setT] = useState({ x: 0, y: 0, scale: 1 });
+  const dragging = useRef(false);
+  const lastPos = useRef({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const renderId = useRef(`pz-${++_pzCounter}`);
+
+  useEffect(() => {
+    if (!code.trim()) return;
+    let cancelled = false;
+    setSvg('');
+    setError('');
+    (async () => {
+      try {
+        const { svg: rendered } = await mermaid.render(renderId.current, code);
+        if (!cancelled) setSvg(highlights ? applyDiffHighlights(rendered, highlights) : rendered);
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || 'Render error');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [code, highlights]);
+
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const factor = e.deltaY < 0 ? 1.12 : 0.9;
+    setT(prev => ({ ...prev, scale: Math.min(8, Math.max(0.15, prev.scale * factor)) }));
+  }, []);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    dragging.current = true;
+    lastPos.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging.current) return;
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    lastPos.current = { x: e.clientX, y: e.clientY };
+    setT(prev => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+  }, []);
+
+  const onMouseUp = useCallback(() => { dragging.current = false; }, []);
+
+  const reset = () => setT({ x: 0, y: 0, scale: 1 });
+
+  return (
+    <div className="flex flex-col flex-1 min-w-0 border border-gray-700 rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-dark-800 border-b border-gray-700 shrink-0">
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{label}</span>
+        <button onClick={reset} className="p-1 rounded text-gray-500 hover:text-gray-300 transition-colors" title="Reset view">
+          <RotateCcw className="w-3 h-3" />
+        </button>
+      </div>
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-hidden relative cursor-grab active:cursor-grabbing select-none bg-gray-950/60"
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+      >
+        {error ? (
+          <div className="absolute inset-0 flex items-center justify-center text-red-400 text-xs">{error}</div>
+        ) : svg ? (
+          <div
+            className="absolute top-0 left-0 origin-top-left p-4 [&_svg]:max-w-none"
+            style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})` }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-xs">Rendering…</div>
+        )}
+        <div className="absolute bottom-2 right-2 text-[10px] text-gray-600 select-none pointer-events-none">
+          {Math.round(t.scale * 100)}%
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// DualDiagramModal — both diagrams side-by-side with independent pan/zoom
+// ---------------------------------------------------------------------------
+
+const DualDiagramModal: React.FC<{
+  diagramName: string;
+  currentCode: string;
+  proposedCode: string;
+  addedNodes: string[];
+  removedNodes: string[];
+  addedEdges: Array<{ from: string; to: string; label?: string }>;
+  removedEdges: Array<{ from: string; to: string; label?: string }>;
+  onClose: () => void;
+}> = ({ diagramName, currentCode, proposedCode, addedNodes, removedNodes, addedEdges, removedEdges, onClose }) => {
+  const beforeHighlights: DiffHighlights = {
+    actors: new Set(removedNodes),
+    edgeLabels: new Set(removedEdges.map(e => e.label ?? `${e.from} → ${e.to}`).filter(Boolean)),
+    mode: 'removed',
+  };
+  const afterHighlights: DiffHighlights = {
+    actors: new Set(addedNodes),
+    edgeLabels: new Set(addedEdges.map(e => e.label ?? `${e.from} → ${e.to}`).filter(Boolean)),
+    mode: 'added',
+  };
+  return createPortal(
+  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={onClose} />
+    <div className="relative w-full max-w-7xl h-[88vh] flex flex-col rounded-2xl bg-dark-900 border border-gray-700 shadow-2xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700 shrink-0">
+        <span className="text-sm font-semibold text-gray-200">{diagramName} — Visual diff</span>
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span>Scroll to zoom · Drag to pan · Reset with ↺</span>
+          <button onClick={onClose} className="ml-3 p-1.5 rounded-lg hover:bg-dark-700 text-gray-500 hover:text-gray-300 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+      {/* Side-by-side pan/zoom */}
+      <div className="flex-1 flex gap-3 p-3 min-h-0">
+        <PanZoomDiagram code={currentCode} label="Before" highlights={beforeHighlights} />
+        <PanZoomDiagram code={proposedCode} label="After" highlights={afterHighlights} />
+      </div>
+    </div>
+  </div>,
+  document.body
+  );
+};
+
+// ---------------------------------------------------------------------------
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts);
@@ -121,10 +377,24 @@ const DiagramDiffRow: React.FC<{
 }> = ({ diff, isSelected, onToggle }) => {
   const [expanded, setExpanded] = useState(true);
   const [showVisual, setShowVisual] = useState(true);
+  const [dualExpanded, setDualExpanded] = useState(false);
 
   const lineDiff = computeLineDiff(diff.currentCode, diff.proposedCode);
   const { added: addedLines, removed: removedLines } = summarizeLineDiff(lineDiff);
   const hasChanges = addedLines.length > 0 || removedLines.length > 0;
+
+  const beforeHighlights: DiffHighlights = {
+    actors: new Set(diff.removedNodes),
+    edgeLabels: new Set(diff.removedEdges.map(e => e.label).filter((l): l is string => !!l)),
+    mode: 'removed',
+  };
+  const afterHighlights: DiffHighlights = {
+    actors: new Set(diff.addedNodes),
+    edgeLabels: new Set(diff.addedEdges.map(e => e.label).filter((l): l is string => !!l)),
+    mode: 'added',
+  };
+  const beforePostProcess = useCallback((svg: string) => applyDiffHighlights(svg, beforeHighlights), [diff.removedNodes, diff.removedEdges]); // eslint-disable-line
+  const afterPostProcess = useCallback((svg: string) => applyDiffHighlights(svg, afterHighlights), [diff.addedNodes, diff.addedEdges]); // eslint-disable-line
 
   return (
     <div className="border border-gray-700 rounded-lg overflow-hidden">
@@ -215,18 +485,43 @@ const DiagramDiffRow: React.FC<{
               Visual diff
             </button>
             {showVisual && (
-              <div className="grid grid-cols-2 gap-4 mt-2 min-h-[260px]">
-                <div className="flex flex-col">
-                  <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5">Before</p>
-                  <div className="flex-1"><InlineDiagramPreview code={diff.currentCode} /></div>
+              <div
+                className="relative mt-2 min-h-[260px] cursor-zoom-in group"
+                onClick={() => setDualExpanded(true)}
+              >
+                <div className="grid grid-cols-2 gap-4 pointer-events-none">
+                  <div className="flex flex-col">
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5">Before</p>
+                    <div className="flex-1"><InlineDiagramPreview code={diff.currentCode} postProcessSvg={beforePostProcess} /></div>
+                  </div>
+                  <div className="flex flex-col">
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5">After</p>
+                    <div className="flex-1"><InlineDiagramPreview code={diff.annotatedCode} postProcessSvg={afterPostProcess} /></div>
+                  </div>
                 </div>
-                <div className="flex flex-col">
-                  <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5">After</p>
-                  <div className="flex-1"><InlineDiagramPreview code={diff.annotatedCode} /></div>
+                {/* Invisible overlay — shows hint on hover */}
+                <div className="absolute inset-0 rounded-lg transition-colors duration-150 group-hover:bg-brand-500/5 flex items-center justify-center">
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dark-900/90 border border-gray-600 text-xs text-gray-300 shadow-lg pointer-events-none">
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    Expand side-by-side
+                  </div>
                 </div>
               </div>
             )}
           </div>
+
+          {dualExpanded && (
+            <DualDiagramModal
+              diagramName={diff.diagramName}
+              currentCode={diff.currentCode}
+              proposedCode={diff.annotatedCode}
+              addedNodes={diff.addedNodes}
+              removedNodes={diff.removedNodes}
+              addedEdges={diff.addedEdges}
+              removedEdges={diff.removedEdges}
+              onClose={() => setDualExpanded(false)}
+            />
+          )}
 
           <CodeDiff lines={lineDiff} />
         </div>

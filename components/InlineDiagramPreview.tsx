@@ -1,17 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import mermaid from 'mermaid';
 
 interface InlineDiagramPreviewProps {
   code: string;
+  postProcessSvg?: (svg: string) => string;
 }
 
 let _globalIdCounter = 0;
 
-export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code }) => {
+export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code, postProcessSvg }) => {
   const [view, setView] = useState<'diagram' | 'code'>('diagram');
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string>('');
   const renderId = useRef(`inline-preview-${++_globalIdCounter}`);
+  // Keep a stable ref to postProcessSvg so the effect can use the latest version
+  // without re-running the full mermaid render on every parent re-render.
+  const postProcessRef = useRef(postProcessSvg);
+  postProcessRef.current = postProcessSvg;
+
+  const applyAndSet = useCallback((rendered: string) => {
+    setSvg(postProcessRef.current ? postProcessRef.current(rendered) : rendered);
+  }, []);
 
   useEffect(() => {
     if (!code.trim()) return;
@@ -23,14 +32,14 @@ export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code
     (async () => {
       try {
         const { svg: rendered } = await mermaid.render(id, code);
-        if (!cancelled) setSvg(rendered);
+        if (!cancelled) applyAndSet(rendered);
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Render error');
       }
     })();
 
     return () => { cancelled = true; };
-  }, [code]);
+  }, [code, applyAndSet]);
 
   return (
     <div className="mt-2 rounded-lg border border-gray-800 overflow-hidden text-xs">
