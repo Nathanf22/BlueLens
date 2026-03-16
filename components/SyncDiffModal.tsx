@@ -14,12 +14,70 @@ interface SyncDiffModalProps {
 }
 
 // ---------------------------------------------------------------------------
+// SVG diff highlighting for sequence diagrams
+// ---------------------------------------------------------------------------
+
+interface DiffHighlights {
+  actors: Set<string>;
+  edgeLabels: Set<string>;
+  mode: 'added' | 'removed';
+}
+
+function applySequenceHighlights(svgStr: string, highlights: DiffHighlights): string {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+    if (doc.querySelector('parsererror')) return svgStr;
+
+    const isAdded = highlights.mode === 'added';
+    const fillBg   = isAdded ? 'rgba(34,197,94,0.18)'  : 'rgba(239,68,68,0.18)';
+    const stroke   = isAdded ? '#22c55e'                : '#ef4444';
+    const textFill = isAdded ? '#4ade80'                : '#f87171';
+
+    // --- Actors: <text class="actor"> whose text matches ---
+    for (const textEl of doc.querySelectorAll('text.actor')) {
+      const name = textEl.textContent?.trim() ?? '';
+      if (!highlights.actors.has(name)) continue;
+      const rect = textEl.parentElement?.querySelector('rect');
+      if (rect) {
+        rect.setAttribute('fill', fillBg);
+        rect.setAttribute('stroke', stroke);
+        rect.setAttribute('stroke-width', '2.5');
+      }
+      textEl.setAttribute('fill', textFill);
+    }
+
+    // --- Messages: <text class="messageText"> whose text matches ---
+    for (const textEl of doc.querySelectorAll('text.messageText')) {
+      const label = textEl.textContent?.trim() ?? '';
+      if (!highlights.edgeLabels.has(label)) continue;
+      textEl.setAttribute('fill', textFill);
+      // Scan siblings (backward) for the associated line/path
+      const siblings = textEl.parentElement ? Array.from(textEl.parentElement.children) : [];
+      const idx = siblings.indexOf(textEl as Element);
+      for (let i = idx - 1; i >= 0; i--) {
+        const el = siblings[i] as Element;
+        if (el.tagName === 'line' || el.tagName === 'path') {
+          el.setAttribute('stroke', stroke);
+          el.setAttribute('stroke-width', '2.5');
+          break;
+        }
+      }
+    }
+
+    return new XMLSerializer().serializeToString(doc.documentElement);
+  } catch {
+    return svgStr;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // PanZoomDiagram — independent pan + zoom for each side of the visual diff
 // ---------------------------------------------------------------------------
 
 let _pzCounter = 0;
 
-const PanZoomDiagram: React.FC<{ code: string; label: string }> = ({ code, label }) => {
+const PanZoomDiagram: React.FC<{ code: string; label: string; highlights?: DiffHighlights }> = ({ code, label, highlights }) => {
   const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
   const [t, setT] = useState({ x: 0, y: 0, scale: 1 });
@@ -36,13 +94,13 @@ const PanZoomDiagram: React.FC<{ code: string; label: string }> = ({ code, label
     (async () => {
       try {
         const { svg: rendered } = await mermaid.render(renderId.current, code);
-        if (!cancelled) setSvg(rendered);
+        if (!cancelled) setSvg(highlights ? applySequenceHighlights(rendered, highlights) : rendered);
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Render error');
       }
     })();
     return () => { cancelled = true; };
-  }, [code]);
+  }, [code, highlights]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -112,8 +170,23 @@ const DualDiagramModal: React.FC<{
   diagramName: string;
   currentCode: string;
   proposedCode: string;
+  addedNodes: string[];
+  removedNodes: string[];
+  addedEdges: Array<{ from: string; to: string; label?: string }>;
+  removedEdges: Array<{ from: string; to: string; label?: string }>;
   onClose: () => void;
-}> = ({ diagramName, currentCode, proposedCode, onClose }) => createPortal(
+}> = ({ diagramName, currentCode, proposedCode, addedNodes, removedNodes, addedEdges, removedEdges, onClose }) => {
+  const beforeHighlights: DiffHighlights = {
+    actors: new Set(removedNodes),
+    edgeLabels: new Set(removedEdges.map(e => e.label ?? `${e.from} → ${e.to}`).filter(Boolean)),
+    mode: 'removed',
+  };
+  const afterHighlights: DiffHighlights = {
+    actors: new Set(addedNodes),
+    edgeLabels: new Set(addedEdges.map(e => e.label ?? `${e.from} → ${e.to}`).filter(Boolean)),
+    mode: 'added',
+  };
+  return createPortal(
   <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
     <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={onClose} />
     <div className="relative w-full max-w-7xl h-[88vh] flex flex-col rounded-2xl bg-dark-900 border border-gray-700 shadow-2xl overflow-hidden">
@@ -129,13 +202,14 @@ const DualDiagramModal: React.FC<{
       </div>
       {/* Side-by-side pan/zoom */}
       <div className="flex-1 flex gap-3 p-3 min-h-0">
-        <PanZoomDiagram code={currentCode} label="Before" />
-        <PanZoomDiagram code={proposedCode} label="After" />
+        <PanZoomDiagram code={currentCode} label="Before" highlights={beforeHighlights} />
+        <PanZoomDiagram code={proposedCode} label="After" highlights={afterHighlights} />
       </div>
     </div>
   </div>,
   document.body
-) as React.ReactElement;
+  );
+};
 
 // ---------------------------------------------------------------------------
 
@@ -255,6 +329,19 @@ const DiagramDiffRow: React.FC<{
   const { added: addedLines, removed: removedLines } = summarizeLineDiff(lineDiff);
   const hasChanges = addedLines.length > 0 || removedLines.length > 0;
 
+  const beforeHighlights: DiffHighlights = {
+    actors: new Set(diff.removedNodes),
+    edgeLabels: new Set(diff.removedEdges.map(e => e.label).filter((l): l is string => !!l)),
+    mode: 'removed',
+  };
+  const afterHighlights: DiffHighlights = {
+    actors: new Set(diff.addedNodes),
+    edgeLabels: new Set(diff.addedEdges.map(e => e.label).filter((l): l is string => !!l)),
+    mode: 'added',
+  };
+  const beforePostProcess = useCallback((svg: string) => applySequenceHighlights(svg, beforeHighlights), [diff.removedNodes, diff.removedEdges]); // eslint-disable-line
+  const afterPostProcess = useCallback((svg: string) => applySequenceHighlights(svg, afterHighlights), [diff.addedNodes, diff.addedEdges]); // eslint-disable-line
+
   return (
     <div className="border border-gray-700 rounded-lg overflow-hidden">
       {/* Header row */}
@@ -351,11 +438,11 @@ const DiagramDiffRow: React.FC<{
                 <div className="grid grid-cols-2 gap-4 pointer-events-none">
                   <div className="flex flex-col">
                     <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5">Before</p>
-                    <div className="flex-1"><InlineDiagramPreview code={diff.currentCode} /></div>
+                    <div className="flex-1"><InlineDiagramPreview code={diff.currentCode} postProcessSvg={beforePostProcess} /></div>
                   </div>
                   <div className="flex flex-col">
                     <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5">After</p>
-                    <div className="flex-1"><InlineDiagramPreview code={diff.annotatedCode} /></div>
+                    <div className="flex-1"><InlineDiagramPreview code={diff.annotatedCode} postProcessSvg={afterPostProcess} /></div>
                   </div>
                 </div>
                 {/* Invisible overlay — shows hint on hover */}
@@ -374,6 +461,10 @@ const DiagramDiffRow: React.FC<{
               diagramName={diff.diagramName}
               currentCode={diff.currentCode}
               proposedCode={diff.annotatedCode}
+              addedNodes={diff.addedNodes}
+              removedNodes={diff.removedNodes}
+              addedEdges={diff.addedEdges}
+              removedEdges={diff.removedEdges}
               onClose={() => setDualExpanded(false)}
             />
           )}

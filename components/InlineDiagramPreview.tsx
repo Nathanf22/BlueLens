@@ -3,11 +3,12 @@ import mermaid from 'mermaid';
 
 interface InlineDiagramPreviewProps {
   code: string;
+  postProcessSvg?: (svg: string) => string;
 }
 
 let _globalIdCounter = 0;
 
-export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code }) => {
+export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code, postProcessSvg }) => {
   const [view, setView] = useState<'diagram' | 'code'>('diagram');
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -23,7 +24,7 @@ export const InlineDiagramPreview: React.FC<InlineDiagramPreviewProps> = ({ code
     (async () => {
       try {
         const { svg: rendered } = await mermaid.render(id, code);
-        if (!cancelled) setSvg(rendered);
+        if (!cancelled) setSvg(postProcessSvg ? postProcessSvg(rendered) : rendered);
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Render error');
       }
