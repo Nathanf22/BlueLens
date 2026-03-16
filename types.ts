@@ -169,7 +169,7 @@ export interface AgentToolStep {
   label: string; // human-readable summary, e.g. 'get_diagram("Auth Service")'
 }
 
-export type AgentId = 'analyste' | 'syntheseur' | 'evaluateur';
+export type AgentId = 'analyste' | 'syntheseur' | 'evaluateur' | 'architecte';
 
 export interface AgentToolEvent {
   id: string;
@@ -205,6 +205,7 @@ export interface AgentBlackboard {
   flows: AgentBlackboardFlow[];
   clusterIssues: AgentBlackboardIssue[];
   flowIssues: AgentBlackboardIssue[];
+  archIssues: AgentBlackboardIssue[];
 }
 
 export type AgentBlackboardFn = (update: Partial<AgentBlackboard>) => void;

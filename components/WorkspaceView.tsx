@@ -261,6 +261,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onDeselectFlow={onCodeGraphDeselectFlow || (() => {})}
                 isGeneratingFlows={codeGraphIsGeneratingFlows}
                 onRegenerateFlows={onCodeGraphRegenerateFlows}
+
                 isReparsing={codeGraphIsReparsing}
                 onReparseGraph={onCodeGraphReparse}
                 syncStatus={codeGraphSyncStatus}

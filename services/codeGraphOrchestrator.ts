@@ -2,9 +2,10 @@
  * Agentic pipeline for CodeGraph generation.
  *
  * Three specialized agents coordinated by a deterministic orchestrator:
- *   - Analyste:     code-aware semantic clustering (replaces Agent 1 + Agent 2)
- *   - Synthétiseur: code-aware flow generation     (replaces codeGraphFlowService one-shot)
- *   - Évaluateur:   AST-ground-truth validation    (new — bounded correction rounds)
+ *   - Analyst:      code-aware semantic clustering (replaces Agent 1 + Agent 2)
+ *   - Synthesizer:  code-aware flow generation     (replaces codeGraphFlowService one-shot)
+ *   - Evaluator:    AST-ground-truth validation    (new — bounded correction rounds)
+ *   - Architect:    code-aware architecture diagram generation
  *
  * Communication: blackboard pattern via GraphBuildContext.
  * Organization:  sequential pipeline, max 2 rounds per agent before fallback.
@@ -12,11 +13,12 @@
  * Public API:
  *   orchestrateCodebaseAnalysis(analysis, provider, llmSettings, ...) → CodebaseAnalysis
  *   orchestrateFlowGeneration(graph, clusters, provider, llmSettings, ...) → Record<string, GraphFlow>
+ *   orchestrateArchitectureGeneration(graph, clusters, provider, llmSettings, ...) → ArchitectureDiagramSet
  */
 
 import {
   CodebaseAnalysis, CodebaseModule, AnalyzedFile,
-  LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep, AgentEventFn, AgentBlackboardFn,
+  LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep, AgentEventFn, AgentBlackboardFn, AgentId,
 } from '../types';
 import { llmService, LLMConfigError, LLMRateLimitError } from './llmService';
 import { groupByFunctionalHeuristics } from './codeGraphHeuristicGrouper';
@@ -131,6 +133,8 @@ DOMAIN RULES:
 - A hook + its service + its component → same domain if they serve the same feature
 - Cross-directory grouping is expected
 - Every file must appear in exactly one cluster
+- Infrastructure/utility files (db adapters, config, shared in-memory stores) used by many domains → merge into the domain that uses them most. Do NOT isolate them as standalone clusters unless there are 3+ cohesive infrastructure files that belong together.
+- Client-side entry points (app.js, index.html, main.ts) that orchestrate many features → group by their primary responsibility, or create a "Client Application" cluster if they span multiple domains.
 
 When ready, output ONLY this JSON (no other text):
 {
@@ -471,14 +475,18 @@ TOOLS:
 - get_node_relations(node_id): static import edges for a file. Use to discover dependencies.
 - get_cluster_files(cluster_name): files in a semantic cluster.
 
-APPROACH — think like an architect reading the code:
-1. Call find_entry_points() to see where execution begins.
-2. Call read_file() on each entry point to understand RUNTIME behavior:
-   - What does it do when it runs? (start a server, initialize a UI, register routes...)
-   - Does it make HTTP calls? (fetch, axios, XMLHttpRequest → traces to a server endpoint)
-   - Does it call imported modules? (traces through import chain)
-3. Follow the RUNTIME chain of control — not just static imports. A browser file that calls fetch('/api/foo') is connected to the server file that handles GET /api/foo, even without an import edge.
-4. Generate 3-8 flows covering distinct user journeys or system events.
+APPROACH — reason step by step BEFORE generating flows:
+STEP 1 — SURVEY: Call find_entry_points(). Call read_file() on the 2-3 most important entry points (server, app, router).
+STEP 2 — ENUMERATE (do this in your reasoning before outputting anything): Mentally list ALL distinct user-facing operations this system handles. Think:
+  - What HTTP endpoints exist? (scan server/router/handler files)
+  - What UI interactions can a user perform?
+  - What background jobs or system events exist?
+  Aim for at least 5-10 candidates before selecting.
+STEP 3 — SELECT: From your enumeration, pick 3-8 flows that are distinct, important, and span meaningful boundaries (client→server, handler→storage, etc).
+STEP 4 — TRACE: For each selected flow, call read_file() on the files it crosses to confirm the runtime chain.
+STEP 5 — OUTPUT: Generate the JSON.
+
+The enumeration in STEP 2 is the key to completeness — if you skip it, important flows will be missed.
 
 WHAT MAKES A GOOD FLOW:
 - Spans multiple files across meaningful boundaries (client→server, handler→service→database)
@@ -664,6 +672,8 @@ async function runSyntheseurAgent(
   previousIssues?: ValidationIssue[],
   onAgentEvent?: AgentEventFn,
   scopeCluster?: { nodeId: string; name: string; files: string[] },
+  frozenFlowNames?: string[],
+  missingFlows?: string[],
 ): Promise<Record<string, GraphFlow> | null> {
   // Build a graph summary: files with cluster labels + all depends_on edges
   const d2Nodes = Object.values(graph.nodes).filter(n => n.depth === 2);
@@ -708,12 +718,42 @@ async function runSyntheseurAgent(
   }
   prompt += 'Use find_entry_points() to confirm entry points, read_file() to understand orchestration logic, then output the flows JSON.';
 
-  if (previousIssues && previousIssues.length > 0) {
-    const errorText = previousIssues
-      .filter(i => i.severity === 'error')
-      .map(i => `- ${i.message}${i.target ? ` [${i.target}]` : ''}`)
-      .join('\n');
-    if (errorText) prompt += `\n\nISSUES FROM PREVIOUS ATTEMPT (fix these):\n${errorText}`;
+  if (previousIssues || frozenFlowNames || missingFlows) {
+    // Group flow-specific errors by target flow name
+    const flowErrors = new Map<string, string[]>();
+    const untargetedErrors: string[] = [];
+    for (const issue of (previousIssues ?? []).filter(i => i.severity === 'error')) {
+      if (issue.target) {
+        if (!flowErrors.has(issue.target)) flowErrors.set(issue.target, []);
+        flowErrors.get(issue.target)!.push(issue.message);
+      } else {
+        untargetedErrors.push(issue.message);
+      }
+    }
+
+    if (frozenFlowNames && frozenFlowNames.length > 0) {
+      prompt += `\n\nFROZEN FLOWS (already verified correct — do NOT regenerate, do not include in output):\n${frozenFlowNames.map(n => `  ✓ "${n}"`).join('\n')}`;
+    }
+
+    const toFix = [...flowErrors.keys()];
+    const toAdd = missingFlows ?? [];
+    const totalExpected = toFix.length + toAdd.length;
+
+    if (toFix.length > 0) {
+      prompt += `\n\nFLOWS TO REGENERATE WITH FIXES (include ALL of these in your output):`;
+      for (const [name, errs] of flowErrors) {
+        prompt += `\n  - "${name}"\n    Fix: ${errs.join('; ')}`;
+      }
+    }
+    if (toAdd.length > 0) {
+      prompt += `\n\nNEW FLOWS TO ADD (include ALL of these in your output):\n${toAdd.map(n => `  + "${n}"`).join('\n')}`;
+    }
+    if (untargetedErrors.length > 0) {
+      prompt += `\n\nGENERAL ISSUES TO AVOID:\n${untargetedErrors.map(e => `- ${e}`).join('\n')}`;
+    }
+    if (totalExpected > 0) {
+      prompt += `\n\nOUTPUT REQUIREMENT: your JSON must contain exactly ${totalExpected} flow(s) — one for each item listed above (flows to fix + new flows). Do not add or drop any.`;
+    }
   }
 
   onLog?.('ai-synth', 'Synthétiseur: tracing runtime flows...');
@@ -888,6 +928,9 @@ Do NOT flag:
 - Fan-out from a common parent (A imports B, A imports C, A imports D — all valid)
 - Transitive import chains (A imports B imports C)
 
+COMPLETENESS CHECK:
+After verifying existing flows, ask yourself: based on the source files you read, are there important user journeys or system events that are clearly NOT represented? Be conservative — only flag things that are obviously important AND obviously absent (not minor variations, not error edge cases).
+
 Output ONLY this JSON after your investigation:
 {
   "issues": [
@@ -897,14 +940,23 @@ Output ONLY this JSON after your investigation:
       "message": "specific description referencing what you found in the code",
       "target": "flow name"
     }
-  ]
-}`;
+  ],
+  "missing": ["Suggested missing flow name 1", "Suggested missing flow name 2"]
+}
+(If nothing important is missing, output "missing": [])`;
+
+const ALREADY_READ = '(already provided above)';
 
 function buildEvaluateurFlowExecutor(ctx: GraphBuildContext) {
+  const readOnce = new Set<string>();
   return async (name: string, args: Record<string, unknown>): Promise<AgentToolStep> => {
     if (name === 'read_file') {
       const filePath = String(args.path ?? '');
+      if (readOnce.has(filePath)) {
+        return { toolName: name, args, result: ALREADY_READ, label: `read_file(${filePath}) [dup]` };
+      }
       const content = await readFileCached(ctx, filePath, 200);
+      readOnce.add(filePath);
       return { toolName: name, args, result: content, label: `read_file(${filePath})` };
     }
     return { toolName: name, args, result: '(unknown tool)', label: name };
@@ -919,7 +971,7 @@ async function evaluateFlows(
   onLog?: LogEntryFn,
   onAgentEvent?: AgentEventFn,
   onBlackboard?: AgentBlackboardFn,
-): Promise<ValidationIssue[]> {
+): Promise<{ issues: ValidationIssue[]; missing: string[] }> {
   const flowSummary = Object.values(flows).map(f => ({
     name: f.name,
     description: f.description,
@@ -939,18 +991,20 @@ For each flow, read the source files of the steps and verify the claimed connect
   onLog?.('ai-eval', 'Évaluateur: validating flows against source code...');
   const evalFlowStartMs = Date.now();
 
-  const rawExecutor = await buildEvaluateurFlowExecutor(ctx);
+  const rawExecutor = buildEvaluateurFlowExecutor(ctx);
   const executor = onAgentEvent
     ? async (name: string, args: Record<string, unknown>) => {
         const t0 = Date.now();
         const step = await rawExecutor(name, args);
-        onAgentEvent({
-          agent: 'evaluateur',
-          toolName: name,
-          argsSummary: String(args.path ?? args.file ?? ''),
-          resultSummary: step.result.slice(0, 300),
-          durationMs: Date.now() - t0,
-        });
+        if (step.result !== ALREADY_READ) {
+          onAgentEvent({
+            agent: 'evaluateur',
+            toolName: name,
+            argsSummary: String(args.path ?? args.file ?? ''),
+            resultSummary: step.result.slice(0, 300),
+            durationMs: Date.now() - t0,
+          });
+        }
         return step;
       }
     : rawExecutor;
@@ -976,7 +1030,7 @@ For each flow, read the source files of the steps and verify the claimed connect
     );
 
     const parsed = JSON.parse(extractJSON(result.content));
-    if (!Array.isArray(parsed.issues)) return [];
+    if (!Array.isArray(parsed.issues)) return { issues: [], missing: [] };
 
     const issues: ValidationIssue[] = (parsed.issues as unknown[])
       .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
@@ -987,15 +1041,24 @@ For each flow, read the source files of the steps and verify the claimed connect
         target: i.target ? String(i.target) : undefined,
       }));
 
+    const missing: string[] = Array.isArray(parsed.missing)
+      ? (parsed.missing as unknown[]).filter((s): s is string => typeof s === 'string')
+      : [];
+
     const errors = issues.filter(i => i.severity === 'error').length;
     const warnings = issues.filter(i => i.severity === 'warning').length;
-    onLog?.('ai-eval', `Évaluateur flows: ${errors} errors, ${warnings} warnings (${result.toolSteps.length} files read)`);
+    onLog?.('ai-eval', `Évaluateur flows: ${errors} errors, ${warnings} warnings, ${missing.length} missing (${result.toolSteps.length} files read)`);
 
     onAgentEvent?.({
       agent: 'evaluateur',
       toolName: '__eval_result__',
       argsSummary: `${errors} errors, ${warnings} warnings`,
-      resultSummary: issues.length === 0 ? '✓ All flows verified' : issues.map(i => `[${i.severity}] ${i.message}`).join('\n'),
+      resultSummary: issues.length === 0 && missing.length === 0
+        ? '✓ All flows verified'
+        : [
+            ...issues.map(i => `[${i.severity}] ${i.message}`),
+            ...missing.map(m => `[missing] ${m}`),
+          ].join('\n'),
       durationMs: Date.now() - evalFlowStartMs,
     });
 
@@ -1007,11 +1070,11 @@ For each flow, read the source files of the steps and verify the claimed connect
       })),
     });
 
-    return issues;
+    return { issues, missing };
 
   } catch {
     onLog?.('ai-eval', 'Évaluateur flow validation failed (non-fatal)');
-    return [];
+    return { issues: [], missing: [] };
   }
 }
 
@@ -1049,16 +1112,19 @@ export async function orchestrateCodebaseAnalysis(
     onProgress?.('Validating clusters', 2, 3);
     issues = await evaluateClusters(ctx, clusters, llmSettings, onLog, onAgentEvent, onBlackboard);
 
-    // Round 2 if too many errors
+    // Round 2 if any errors
     const errorCount = issues.filter(i => i.severity === 'error').length;
-    if (errorCount >= 3) {
+    if (errorCount >= 1) {
       onLog?.('ai-cluster', `Analyste round 2 (${errorCount} errors to fix)...`);
       onProgress?.('Re-clustering (round 2)', 3, 3);
       const round2 = await runAnalysteAgent(ctx, llmSettings, onLog, signal, issues, onAgentEvent);
       if (round2 && round2.length > 0) {
         clusters = round2;
         ctx.semanticClusters = clusters;
-        onBlackboard?.({ clusters: clusters.map(c => ({ name: c.name, fileCount: c.files.length, files: c.files })) });
+        onBlackboard?.({
+          clusters: clusters.map(c => ({ name: c.name, fileCount: c.files.length, files: c.files })),
+          clusterIssues: [], // cleared — round 2 attempted to fix them
+        });
       }
     }
   }
@@ -1194,17 +1260,49 @@ export async function orchestrateFlowGeneration(
 
     // Évaluateur validation
     onProgress?.('Validating flows', 2, 3);
-    issues = await evaluateFlows(ctx, graph, flows, llmSettings, onLog, onAgentEvent, onBlackboard);
+    const { issues: evalIssues, missing } = await evaluateFlows(ctx, graph, flows, llmSettings, onLog, onAgentEvent, onBlackboard);
+    issues = evalIssues;
 
-    // Round 2 if any connectivity errors
+    // Round 2: surgical — only fix broken flows + add missing
     const errorCount = issues.filter(i => i.severity === 'error').length;
-    if (errorCount >= 1) {
-      onLog?.('ai-synth', `Synthétiseur round 2 (${errorCount} errors to fix)...`);
+    if (errorCount >= 1 || missing.length > 0) {
+      onLog?.('ai-synth', `Synthétiseur round 2 (${errorCount} errors to fix, ${missing.length} to add)...`);
       onProgress?.('Re-generating flows (round 2)', 3, 3);
-      const round2 = await runSyntheseurAgent(ctx, graph, llmSettings, onLog, signal, issues, onAgentEvent, scopeCluster);
+
+      // Identify which flows have errors (by target name)
+      const errorTargets = new Set(
+        issues.filter(i => i.severity === 'error' && i.target).map(i => i.target as string)
+      );
+      // Flows with no target error are considered verified; if there are untargeted errors fall back to full regen
+      const hasUntargetedErrors = issues.some(i => i.severity === 'error' && !i.target);
+      const frozenFlowNames = hasUntargetedErrors
+        ? []
+        : Object.values(flows).filter(f => !errorTargets.has(f.name)).map(f => f.name);
+
+      const round2 = await runSyntheseurAgent(
+        ctx, graph, llmSettings, onLog, signal, issues, onAgentEvent, scopeCluster,
+        frozenFlowNames.length > 0 ? frozenFlowNames : undefined,
+        missing.length > 0 ? missing : undefined,
+      );
       if (round2 && Object.keys(round2).length > 0) {
-        flows = round2;
+        if (frozenFlowNames.length > 0) {
+          // Surgical merge: keep verified flows, replace/add from round2
+          const frozenMap: Record<string, GraphFlow> = {};
+          for (const f of Object.values(flows)) {
+            if (frozenFlowNames.includes(f.name)) frozenMap[f.id] = f;
+          }
+          flows = { ...frozenMap, ...round2 };
+        } else {
+          flows = round2;
+        }
         onBlackboard?.({ flows: Object.values(flows).map(f => ({ name: f.name, stepCount: f.steps.length })) });
+        // Clear stale issues for flows that were regenerated in round 2
+        const regenNames = new Set([...errorTargets, ...missing]);
+        onBlackboard?.({
+          flowIssues: issues
+            .filter(i => i.severity !== 'error' || !i.target || !regenNames.has(i.target))
+            .map(i => ({ severity: i.severity, message: i.message, target: i.target })),
+        });
       }
     }
   }
@@ -1225,4 +1323,336 @@ export async function orchestrateFlowGeneration(
 
   onLog?.('ai-synth', `Flow generation complete: ${Object.keys(flows).length} flows`);
   return flows;
+}
+
+// ── Architect Agent ──────────────────────────────────────────────────────────
+// Generates architecture diagrams with actual code awareness.
+// Reuses the same tools as the Synthesizer (file reads, relations, clusters).
+
+export interface ArchitectureDiagramSet {
+  overview: { name: string; code: string };
+  services: { name: string; nodeId: string; code: string }[];
+}
+
+const ARCHITECT_SYSTEM = `You are a senior software architect generating Mermaid architecture diagrams from actual source code.
+
+TOOLS available (same as flow analysis):
+- find_entry_points(): entry-point files — use to identify top-level modules
+- get_cluster_files(cluster_name): all files in a semantic domain cluster
+- get_node_relations(node_id): import/dependency edges for a file
+- read_file(path): actual source code (first 200 lines) — READ KEY FILES to understand real responsibilities
+
+APPROACH — reason step by step BEFORE generating any diagram:
+STEP 1 — SURVEY: Call get_cluster_files() for every cluster. Note what files each contains.
+STEP 2 — ENUMERATE (do this in your reasoning before outputting anything): For each cluster, mentally answer:
+  - What is the single core responsibility of this cluster?
+  - Which file is the main entry point / primary export?
+  - Which other clusters does it depend on, and for what purpose?
+  Also enumerate cross-cluster dependencies: for each pair (A → B), what does A use B for?
+STEP 3 — READ: Call read_file() on the primary file of each cluster to confirm your enumeration against actual code. Correct any wrong assumptions.
+STEP 4 — OUTPUT: Generate the JSON using what you actually read, not what you assumed.
+
+The enumeration in STEP 2 is the key to accurate diagrams — skipping it leads to generic labels that don't reflect the code.
+
+OUTPUT — return ONLY this JSON (no markdown, no explanation):
+{
+  "overview": {
+    "name": "<ProjectName> — Overview",
+    "code": "graph LR\\n  classDef mod fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0\\n  ClusterA[\\"ClusterA\\\\nBrief role\\"]:::mod\\n  ClusterA -->|\\"what it uses\\"| ClusterB"
+  },
+  "services": [
+    {
+      "name": "ClusterName",
+      "nodeId": "exact-D1-nodeId-from-the-node-list",
+      "code": "graph TD\\n  classDef entry fill:#1a3a2a,stroke:#22c55e,color:#e2e8f0\\n  classDef dep fill:#1a2744,stroke:#6366f1,color:#e2e8f0\\n  fileA[\\"fileName\\\\nWhat it does\\"]:::entry\\n  fileA -->|\\"provides X\\"| fileB"
+    }
+  ]
+}
+
+MERMAID RULES:
+- Use \\\\n (escaped newline) inside node labels for line breaks
+- Escape all double quotes inside labels with \\'
+- overview: graph LR, one node per D1 cluster, edges labeled with what is used/provided
+- services: graph TD, one node per D2 file, entry points (:::entry) vs dependencies (:::dep)
+- Edge labels: short verb phrases ("handles auth", "stores messages", "sends notifications")
+- Node descriptions: 1 short sentence reflecting actual code behavior`;
+
+async function runArchitectAgent(
+  ctx: GraphBuildContext,
+  graph: CodeGraph,
+  clusters: SemanticCluster[],
+  llmSettings: LLMSettings,
+  onLog?: LogEntryFn,
+  signal?: AbortSignal,
+  onAgentEvent?: AgentEventFn,
+): Promise<ArchitectureDiagramSet | null> {
+  // Build context: D1 nodes with their D2 children
+  const d1Nodes = Object.values(graph.nodes).filter(n => n.depth === 1).sort((a, b) => a.name.localeCompare(b.name));
+
+  const d1Summary = d1Nodes.map(d1 => {
+    const files = d1.children
+      .map(id => graph.nodes[id])
+      .filter(n => n?.depth === 2)
+      .map(n => `    ${n.id}  ${n.sourceRef?.filePath ?? n.name}`)
+      .join('\n');
+    return `D1 node: ${d1.name}  (nodeId: ${d1.id})\nFiles:\n${files}`;
+  }).join('\n\n');
+
+  const clusterSummary = clusters.map(c =>
+    `  "${c.name}": ${c.files.join(', ')}`
+  ).join('\n');
+
+  const prompt = `Generate architecture diagrams for: ${graph.name}
+
+D1 MODULES (use these nodeIds in services[].nodeId):
+${d1Summary || '(none)'}
+
+SEMANTIC CLUSTERS:
+${clusterSummary || '(none)'}
+
+rootNodeId="${graph.rootNodeId}"
+
+Steps:
+1. Call get_cluster_files() for each cluster to see what's inside
+2. Call read_file() on the main file of each cluster to understand real behavior
+3. Output the JSON with overview + one service diagram per D1 module`;
+
+  onLog?.('ai-architect', 'Architect: reading codebase to build architecture diagrams...');
+
+  try {
+    const rawExecutor = buildSyntheseurExecutor(ctx, graph);
+    const executor = onAgentEvent
+      ? async (name: string, args: Record<string, unknown>) => {
+          const t0 = Date.now();
+          const step = await rawExecutor(name, args);
+          onAgentEvent({
+            agent: 'architecte' as AgentId,
+            toolName: name,
+            argsSummary: (args.path as string) || (args.cluster_name as string) || Object.values(args).join(', ') || '',
+            resultSummary: step.result.slice(0, 300),
+            durationMs: Date.now() - t0,
+          });
+          return step;
+        }
+      : rawExecutor;
+
+    const result = await llmService.runAgentLoop(
+      [{ role: 'user', content: prompt }],
+      ARCHITECT_SYSTEM,
+      buildSyntheseurTools(),
+      executor,
+      llmSettings,
+      { signal, source: 'code-agent-architecte' },
+    );
+
+    if (result.interrupted) {
+      onLog?.('ai-architect', 'Architect: reached max iterations without producing output');
+      return null;
+    }
+
+    onLog?.('ai-architect', `Architect: ${result.toolSteps.length} tool calls — parsing diagrams`);
+
+    let parsed: ArchitectureDiagramSet;
+    try {
+      const jsonStr = extractJSON(result.content);
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      onLog?.('ai-architect', 'Architect: failed to parse JSON output');
+      return null;
+    }
+
+    if (!parsed.overview?.code || !Array.isArray(parsed.services)) {
+      onLog?.('ai-architect', 'Architect: output missing overview or services');
+      return null;
+    }
+
+    onLog?.('ai-architect', `Architect: overview + ${parsed.services.length} service diagrams generated`);
+    return parsed;
+  } catch (err) {
+    if (err instanceof LLMRateLimitError || err instanceof LLMConfigError) throw err;
+    onLog?.('ai-architect', `Architect failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+// ── Évaluateur — Phase 3: architecture validation ────────────────────────────
+
+const EVALUATEUR_ARCH_SYSTEM = `You are an adversarial architecture reviewer verifying that generated Mermaid diagrams accurately represent the source code.
+
+You have one tool: read_file(path) — read source code to verify claims.
+
+PROCESS:
+1. For the overview diagram, read the main file of each cluster to verify its described role and dependencies.
+2. Check that edges between clusters (dependencies) are grounded in actual imports, HTTP calls, or event listeners.
+3. For service diagrams, verify that listed files exist and play the stated roles.
+
+Flag as ERROR:
+- A cluster or file described as doing something it clearly does not (read the file to confirm)
+- An edge (dependency) between two clusters that does not exist in the code
+- A file placed in the wrong service diagram
+
+Flag as WARNING:
+- A node description that is vague or partially inaccurate
+- A missing important dependency between clusters
+
+Do NOT flag:
+- Minor label wording differences as long as the meaning is correct
+- Transitive dependencies not shown (overview cannot show every edge)
+
+Output ONLY this JSON after your investigation:
+{
+  "issues": [
+    { "severity": "error" | "warning", "message": "...", "target": "cluster or file name" }
+  ]
+}`;
+
+async function evaluateArchitecture(
+  ctx: GraphBuildContext,
+  diagrams: ArchitectureDiagramSet,
+  clusters: SemanticCluster[],
+  llmSettings: LLMSettings,
+  onLog?: LogEntryFn,
+  onAgentEvent?: AgentEventFn,
+  onBlackboard?: AgentBlackboardFn,
+): Promise<void> {
+  const clusterSummary = clusters.map(c => ({
+    name: c.name,
+    files: c.files,
+  }));
+
+  const diagramSummary = {
+    overview: diagrams.overview.name,
+    services: diagrams.services.map(s => s.name),
+  };
+
+  const prompt = `Verify these architecture diagrams against the actual source code.
+
+DIAGRAMS GENERATED:
+${JSON.stringify(diagramSummary, null, 2)}
+
+CLUSTER → FILE MAPPING:
+${JSON.stringify(clusterSummary, null, 2)}
+
+Steps:
+1. For each cluster, read its main file (first in the files list) to verify its described role.
+2. Check if cross-cluster dependencies in the overview diagram are grounded in imports or HTTP calls.
+3. Report issues.`;
+
+  onLog?.('ai-eval', 'Évaluateur: validating architecture diagrams...');
+  const evalStartMs = Date.now();
+
+  const rawExecutor = buildEvaluateurFlowExecutor(ctx);
+  const executor = onAgentEvent
+    ? async (name: string, args: Record<string, unknown>) => {
+        const t0 = Date.now();
+        const step = await rawExecutor(name, args);
+        if (step.result !== ALREADY_READ) {
+          onAgentEvent({
+            agent: 'evaluateur',
+            toolName: name,
+            argsSummary: String(args.path ?? ''),
+            resultSummary: step.result.slice(0, 300),
+            durationMs: Date.now() - t0,
+          });
+        }
+        return step;
+      }
+    : rawExecutor;
+
+  const evalTools: AgentToolDefinition[] = [{
+    name: 'read_file',
+    description: 'Read source code of a file to verify an architecture claim',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'File path relative to project root' } },
+      required: ['path'],
+    },
+  }];
+
+  try {
+    const result = await llmService.runAgentLoop(
+      [{ role: 'user', content: prompt }],
+      EVALUATEUR_ARCH_SYSTEM,
+      evalTools,
+      executor,
+      llmSettings,
+      { source: 'code-agent-evaluateur' },
+    );
+
+    const parsed = JSON.parse(extractJSON(result.content));
+    if (!Array.isArray(parsed.issues)) return;
+
+    const issues: ValidationIssue[] = (parsed.issues as unknown[])
+      .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
+      .map(i => ({
+        type: 'invalid_flow_step' as ValidationIssue['type'],
+        severity: (i.severity as ValidationIssue['severity']) || 'warning',
+        message: String(i.message || ''),
+        target: i.target ? String(i.target) : undefined,
+      }));
+
+    const errors = issues.filter(i => i.severity === 'error').length;
+    const warnings = issues.filter(i => i.severity === 'warning').length;
+    onLog?.('ai-eval', `Évaluateur arch: ${errors} errors, ${warnings} warnings (${result.toolSteps.length} files read)`);
+
+    onAgentEvent?.({
+      agent: 'evaluateur',
+      toolName: '__eval_result__',
+      argsSummary: `${errors} errors, ${warnings} warnings`,
+      resultSummary: issues.length === 0 ? '✓ Architecture verified' : issues.map(i => `[${i.severity}] ${i.message}`).join('\n'),
+      durationMs: Date.now() - evalStartMs,
+    });
+
+    onBlackboard?.({
+      archIssues: issues.map(i => ({
+        severity: i.severity,
+        message: i.message,
+        target: i.target,
+      })),
+    });
+  } catch {
+    onLog?.('ai-eval', 'Évaluateur arch validation failed (non-fatal)');
+  }
+}
+
+/**
+ * Phase 3: architecture diagram generation.
+ * Runs the Architect agent with file-reading tools and semantic cluster context.
+ */
+export async function orchestrateArchitectureGeneration(
+  graph: CodeGraph,
+  clusters: SemanticCluster[],
+  provider: IFileSystemProvider | undefined,
+  llmSettings: LLMSettings,
+  onLog?: LogEntryFn,
+  signal?: AbortSignal,
+  onAgentEvent?: AgentEventFn,
+  onBlackboard?: AgentBlackboardFn,
+): Promise<ArchitectureDiagramSet> {
+  const ctx: GraphBuildContext = {
+    analysis: { modules: [], externalDeps: [], entryPoints: [], totalFiles: 0, totalSymbols: 0 },
+    astImportPairs: new Set(
+      Object.values(graph.relations)
+        .filter(r => r.type === 'depends_on')
+        .map(r => {
+          const src = graph.nodes[r.sourceId]?.sourceRef?.filePath;
+          const tgt = graph.nodes[r.targetId]?.sourceRef?.filePath;
+          return src && tgt ? `${src}→${tgt}` : null;
+        })
+        .filter((p): p is string => p !== null)
+    ),
+    fileByPath: new Map(),
+    provider,
+    fileCache: new Map(),
+    semanticClusters: clusters,
+  };
+
+  const result = await runArchitectAgent(ctx, graph, clusters, llmSettings, onLog, signal, onAgentEvent);
+  if (!result) {
+    return { overview: { name: `${graph.name} — Overview`, code: '' }, services: [] };
+  }
+
+  await evaluateArchitecture(ctx, result, clusters, llmSettings, onLog, onAgentEvent, onBlackboard);
+
+  return result;
 }

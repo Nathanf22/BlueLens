@@ -306,6 +306,8 @@ export const CodeGraphPanel: React.FC<CodeGraphPanelProps> = ({
           </button>
         )}
 
+
+
         <div className="flex-1" />
 
         {onReparseGraph && (
