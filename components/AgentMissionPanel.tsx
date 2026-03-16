@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AgentToolEvent, AgentId, ProgressLogEntry, AgentBlackboard } from '../types';
-import { Terminal, X, ChevronDown, ChevronUp, Download, Cpu, FlaskConical, Shield, Layers, Loader2 } from 'lucide-react';
+import { Terminal, X, ChevronDown, ChevronUp, Download, Cpu, FlaskConical, Shield, Layers, Loader2, Info } from 'lucide-react';
 
 interface Props {
   events: AgentToolEvent[];
@@ -12,11 +13,59 @@ interface Props {
   onDownload: (progressEntries: ProgressLogEntry[]) => void;
 }
 
-const AGENTS: { id: AgentId; label: string; icon: React.ReactNode; color: string; borderColor: string }[] = [
-  { id: 'analyste',   label: 'Analyst',     icon: <Cpu className="w-3.5 h-3.5" />,         color: 'text-violet-400', borderColor: 'border-violet-500/40' },
-  { id: 'syntheseur', label: 'Synthesizer',  icon: <FlaskConical className="w-3.5 h-3.5" />, color: 'text-emerald-400', borderColor: 'border-emerald-500/40' },
-  { id: 'evaluateur', label: 'Evaluator',    icon: <Shield className="w-3.5 h-3.5" />,       color: 'text-amber-400',   borderColor: 'border-amber-500/40' },
-  { id: 'architecte', label: 'Architect',    icon: <Layers className="w-3.5 h-3.5" />,       color: 'text-sky-400',     borderColor: 'border-sky-500/40' },
+interface AgentInfo {
+  role: string;
+  philosophy: string;
+  tools: string[];
+  failureModes: string[];
+}
+
+const AGENT_INFO: Record<AgentId, AgentInfo> = {
+  analyste: {
+    role: 'Semantic clustering — groups files into meaningful domain clusters based on import graphs and coupling metrics.',
+    philosophy: 'Structural inference. Reasons from import graphs and symbol counts, not business logic. Gives a stable, objective foundation — but cannot understand what a file does, only what it depends on.',
+    tools: ['list_files_by_coupling', 'get_file_info'],
+    failureModes: [
+      'Groups files by location (public/) rather than domain',
+      'Treats infrastructure files (db, config) as peer domains',
+    ],
+  },
+  syntheseur: {
+    role: 'Runtime flow generation — traces user journeys across the codebase end-to-end.',
+    philosophy: 'Synthesis under uncertainty. Fills gaps with plausible inferences. Must connect cross-process boundaries (e.g. client fetch → server route) that are not explicit in the import graph — which is where hallucination risk is highest.',
+    tools: ['find_entry_points', 'read_file', 'get_node_relations', 'get_cluster_files'],
+    failureModes: [
+      'Hallucinated method calls (e.g. db.findById() that doesn\'t exist)',
+      'Missing important flows — fixed by completeness check in Evaluator',
+      'Wrong scopeNodeId — fixed by validateAndBuildFlows',
+    ],
+  },
+  evaluateur: {
+    role: 'Adversarial verification — reads actual source code to falsify generated output. Also checks completeness of flow coverage.',
+    philosophy: 'Falsification. Does not build a model — it tests one. Its only tool is read_file, forcing every judgment to be grounded in actual source. Cannot hallucinate a connection; can only report one it found or didn\'t find.',
+    tools: ['read_file'],
+    failureModes: [
+      'Cannot catch errors of omission it never read about',
+      'Cannot detect internally consistent errors (correct code, wrong architecture)',
+      'May render a verdict without reading the relevant file (LLM shortcut)',
+    ],
+  },
+  architecte: {
+    role: 'Architecture diagram generation — produces Mermaid graphs showing module structure at cluster and file level.',
+    philosophy: 'Structural synthesis with code grounding. Reads actual code to write meaningful node descriptions and edge labels. Risk is the same as the Synthesizer: interpretation can diverge from reality, but there is no retry round because architecture errors are subjective.',
+    tools: ['find_entry_points', 'read_file', 'get_node_relations', 'get_cluster_files'],
+    failureModes: [
+      'Misattributed cluster responsibilities',
+      'Missing cross-cluster dependencies in the overview',
+    ],
+  },
+};
+
+const AGENTS: { id: AgentId; label: string; icon: React.ReactNode; color: string; borderColor: string; bgHover: string }[] = [
+  { id: 'analyste',   label: 'Analyst',     icon: <Cpu className="w-3.5 h-3.5" />,         color: 'text-violet-400', borderColor: 'border-violet-500/40', bgHover: 'hover:bg-violet-500/10' },
+  { id: 'syntheseur', label: 'Synthesizer',  icon: <FlaskConical className="w-3.5 h-3.5" />, color: 'text-emerald-400', borderColor: 'border-emerald-500/40', bgHover: 'hover:bg-emerald-500/10' },
+  { id: 'evaluateur', label: 'Evaluator',    icon: <Shield className="w-3.5 h-3.5" />,       color: 'text-amber-400',   borderColor: 'border-amber-500/40', bgHover: 'hover:bg-amber-500/10' },
+  { id: 'architecte', label: 'Architect',    icon: <Layers className="w-3.5 h-3.5" />,       color: 'text-sky-400',     borderColor: 'border-sky-500/40', bgHover: 'hover:bg-sky-500/10' },
 ];
 
 function formatArgs(argsSummary: string): string {
@@ -40,16 +89,20 @@ function AgentTerminal({
   icon,
   color,
   borderColor,
+  bgHover,
   events,
   isActive,
+  onInfoClick,
 }: {
   agentId: AgentId;
   label: string;
   icon: React.ReactNode;
   color: string;
   borderColor: string;
+  bgHover: string;
   events: AgentToolEvent[];
   isActive: boolean;
+  onInfoClick: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [userScrolled, setUserScrolled] = useState(false);
@@ -69,9 +122,14 @@ function AgentTerminal({
   return (
     <div className={`flex flex-col min-w-0 flex-1 border ${borderColor} rounded-lg overflow-hidden bg-gray-950`}>
       {/* Header */}
-      <div className={`flex items-center gap-1.5 px-2 py-1.5 border-b ${borderColor} bg-gray-900/60`}>
+      <button
+        onClick={onInfoClick}
+        className={`flex items-center gap-1.5 px-2 py-1.5 border-b ${borderColor} bg-gray-900/60 ${bgHover} transition-colors w-full text-left group`}
+        title="View agent details"
+      >
         <span className={color}>{icon}</span>
         <span className={`text-xs font-mono font-semibold ${color}`}>{label}</span>
+        <Info className="w-2.5 h-2.5 text-gray-700 group-hover:text-gray-400 transition-colors ml-0.5" />
         {isActive ? (
           <Loader2 className="w-2.5 h-2.5 text-gray-400 animate-spin ml-auto" />
         ) : events.length > 0 ? (
@@ -79,7 +137,7 @@ function AgentTerminal({
         ) : (
           <span className="ml-auto text-[10px] text-gray-600">idle</span>
         )}
-      </div>
+      </button>
 
       {/* Terminal body */}
       <div
@@ -136,8 +194,73 @@ function AgentTerminal({
   );
 }
 
+function AgentDetailModal({ agentId, onClose }: { agentId: AgentId; onClose: () => void }) {
+  const ag = AGENTS.find(a => a.id === agentId)!;
+  const info = AGENT_INFO[agentId];
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-xl border border-gray-700 shadow-2xl flex flex-col overflow-hidden"
+        style={{ background: '#0d1117', maxHeight: '80vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className={`flex items-center gap-2.5 px-5 py-3.5 border-b ${ag.borderColor}`}>
+          <span className={`${ag.color} scale-125`}>{ag.icon}</span>
+          <span className={`text-sm font-mono font-bold ${ag.color}`}>{ag.label}</span>
+          <button onClick={onClose} className="ml-auto p-1 text-gray-500 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5 font-mono">
+          <section>
+            <div className="text-gray-500 uppercase tracking-widest text-[10px] mb-2">Role</div>
+            <p className="text-gray-200 text-sm leading-relaxed">{info.role}</p>
+          </section>
+
+          <section>
+            <div className="text-gray-500 uppercase tracking-widest text-[10px] mb-2">Philosophy</div>
+            <p className="text-gray-400 text-sm leading-relaxed italic">{info.philosophy}</p>
+          </section>
+
+          <section>
+            <div className="text-gray-500 uppercase tracking-widest text-[10px] mb-2">Tools</div>
+            <div className="flex flex-wrap gap-2">
+              {info.tools.map(t => (
+                <span key={t} className={`px-2.5 py-1 rounded-md text-xs border ${ag.borderColor} ${ag.color}`} style={{ background: '#161b22' }}>
+                  {t}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <div className="text-gray-500 uppercase tracking-widest text-[10px] mb-2">Failure modes</div>
+            <ul className="space-y-1.5">
+              {info.failureModes.map((f, i) => (
+                <li key={i} className="flex gap-2 text-gray-400 text-sm">
+                  <span className="text-amber-500 shrink-0 mt-0.5">⚠</span>
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntries, blackboard, onClose, onDownload }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
 
   if (!isOpen) return null;
 
@@ -193,7 +316,10 @@ export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntrie
           </div>
         ) : (
           <>
-            {/* 3 terminals */}
+            {/* 4 terminals */}
+            {selectedAgent && (
+              <AgentDetailModal agentId={selectedAgent} onClose={() => setSelectedAgent(null)} />
+            )}
             <div className="flex gap-2 p-2" style={{ minHeight: '180px' }}>
               {AGENTS.map(ag => (
                 <AgentTerminal
@@ -203,8 +329,10 @@ export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntrie
                   icon={ag.icon}
                   color={ag.color}
                   borderColor={ag.borderColor}
+                  bgHover={ag.bgHover}
                   events={events.filter(e => e.agent === ag.id)}
                   isActive={activeAgents.has(ag.id)}
+                  onInfoClick={() => setSelectedAgent(prev => prev === ag.id ? null : ag.id)}
                 />
               ))}
             </div>
