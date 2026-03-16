@@ -44,7 +44,9 @@ import {
   detectExistingExport,
   materializePlan,
 } from './services/codeGraphExportService';
-import { generateAllArchitectureDiagrams } from './services/codeGraphArchitectureService';
+import { orchestrateArchitectureGeneration } from './services/codeGraphArchitectureService';
+import type { SemanticCluster } from './services/codeGraphOrchestrator';
+import { LocalFileSystemProvider } from './services/LocalFileSystemProvider';
 import { FlowExportModal } from './components/FlowExportModal';
 import { TokenDashboardModal } from './components/TokenDashboardModal';
 import { SyncDiffModal } from './components/SyncDiffModal';
@@ -680,20 +682,40 @@ export default function App() {
     const generateId = () => Math.random().toString(36).substr(2, 9);
     const folderName = `Architecture: ${graph.name}`;
 
-    showToast('Generating architecture diagrams…', 'info');
+    // Derive semantic clusters from D1 nodes (files grouped per module)
+    const clusters: SemanticCluster[] = Object.values(graph.nodes)
+      .filter(n => n.depth === 1)
+      .map(d1 => ({
+        name: d1.name,
+        description: '',
+        files: d1.children
+          .map(id => graph.nodes[id]?.sourceRef?.filePath)
+          .filter((p): p is string => !!p),
+      }));
 
+    const handle = await resolveHandle(graph.repoId).catch(() => null);
+    const provider = handle ? new LocalFileSystemProvider(handle) : undefined;
+
+    agentMission.start();
     let result: import('./services/codeGraphArchitectureService').ArchitectureDiagramSet;
     try {
-      result = await generateAllArchitectureDiagrams(
+      result = await orchestrateArchitectureGeneration(
         graph,
+        clusters,
+        provider,
         llmSettings,
-        (msg) => console.log('[Architecture]', msg),
+        undefined,
+        undefined,
+        agentMission.addEvent,
       );
     } catch (err: any) {
-      if (err instanceof LLMRateLimitError) { showToast(err.message, 'error'); return; }
-      if (err instanceof LLMConfigError) { showToast('AI API key required. Configure one in AI Settings.', 'error'); return; }
+      if (err instanceof LLMRateLimitError) { showToast(err.message, 'error'); agentMission.stop(); return; }
+      if (err instanceof LLMConfigError) { showToast('AI API key required. Configure one in AI Settings.', 'error'); agentMission.stop(); return; }
       showToast('Architecture generation failed.', 'error');
+      agentMission.stop();
       return;
+    } finally {
+      agentMission.stop();
     }
 
     const { overview, services } = result;

@@ -2,9 +2,10 @@
  * Agentic pipeline for CodeGraph generation.
  *
  * Three specialized agents coordinated by a deterministic orchestrator:
- *   - Analyste:     code-aware semantic clustering (replaces Agent 1 + Agent 2)
- *   - Synthétiseur: code-aware flow generation     (replaces codeGraphFlowService one-shot)
- *   - Évaluateur:   AST-ground-truth validation    (new — bounded correction rounds)
+ *   - Analyst:      code-aware semantic clustering (replaces Agent 1 + Agent 2)
+ *   - Synthesizer:  code-aware flow generation     (replaces codeGraphFlowService one-shot)
+ *   - Evaluator:    AST-ground-truth validation    (new — bounded correction rounds)
+ *   - Architect:    code-aware architecture diagram generation
  *
  * Communication: blackboard pattern via GraphBuildContext.
  * Organization:  sequential pipeline, max 2 rounds per agent before fallback.
@@ -12,11 +13,12 @@
  * Public API:
  *   orchestrateCodebaseAnalysis(analysis, provider, llmSettings, ...) → CodebaseAnalysis
  *   orchestrateFlowGeneration(graph, clusters, provider, llmSettings, ...) → Record<string, GraphFlow>
+ *   orchestrateArchitectureGeneration(graph, clusters, provider, llmSettings, ...) → ArchitectureDiagramSet
  */
 
 import {
   CodebaseAnalysis, CodebaseModule, AnalyzedFile,
-  LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep, AgentEventFn, AgentBlackboardFn,
+  LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep, AgentEventFn, AgentBlackboardFn, AgentId,
 } from '../types';
 import { llmService, LLMConfigError, LLMRateLimitError } from './llmService';
 import { groupByFunctionalHeuristics } from './codeGraphHeuristicGrouper';
@@ -1225,4 +1227,186 @@ export async function orchestrateFlowGeneration(
 
   onLog?.('ai-synth', `Flow generation complete: ${Object.keys(flows).length} flows`);
   return flows;
+}
+
+// ── Architect Agent ──────────────────────────────────────────────────────────
+// Generates architecture diagrams with actual code awareness.
+// Reuses the same tools as the Synthesizer (file reads, relations, clusters).
+
+export interface ArchitectureDiagramSet {
+  overview: { name: string; code: string };
+  services: { name: string; nodeId: string; code: string }[];
+}
+
+const ARCHITECT_SYSTEM = `You are a senior software architect generating Mermaid architecture diagrams from actual source code.
+
+TOOLS available (same as flow analysis):
+- find_entry_points(): entry-point files — use to identify top-level modules
+- get_cluster_files(cluster_name): all files in a semantic domain cluster
+- get_node_relations(node_id): import/dependency edges for a file
+- read_file(path): actual source code (first 200 lines) — READ KEY FILES to understand real responsibilities
+
+APPROACH:
+1. Call get_cluster_files() for each cluster to understand what's in each domain
+2. Call read_file() on the key file(s) of each cluster (the one that exports the main logic)
+3. Use what you read to write meaningful node descriptions and edge labels
+4. Descriptions must reflect what the code ACTUALLY does, not just the filename
+
+OUTPUT — return ONLY this JSON (no markdown, no explanation):
+{
+  "overview": {
+    "name": "<ProjectName> — Overview",
+    "code": "graph LR\\n  classDef mod fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0\\n  ClusterA[\\"ClusterA\\\\nBrief role\\"]:::mod\\n  ClusterA -->|\\"what it uses\\"| ClusterB"
+  },
+  "services": [
+    {
+      "name": "ClusterName",
+      "nodeId": "exact-D1-nodeId-from-the-node-list",
+      "code": "graph TD\\n  classDef entry fill:#1a3a2a,stroke:#22c55e,color:#e2e8f0\\n  classDef dep fill:#1a2744,stroke:#6366f1,color:#e2e8f0\\n  fileA[\\"fileName\\\\nWhat it does\\"]:::entry\\n  fileA -->|\\"provides X\\"| fileB"
+    }
+  ]
+}
+
+MERMAID RULES:
+- Use \\\\n (escaped newline) inside node labels for line breaks
+- Escape all double quotes inside labels with \\'
+- overview: graph LR, one node per D1 cluster, edges labeled with what is used/provided
+- services: graph TD, one node per D2 file, entry points (:::entry) vs dependencies (:::dep)
+- Edge labels: short verb phrases ("handles auth", "stores messages", "sends notifications")
+- Node descriptions: 1 short sentence reflecting actual code behavior`;
+
+async function runArchitectAgent(
+  ctx: GraphBuildContext,
+  graph: CodeGraph,
+  clusters: SemanticCluster[],
+  llmSettings: LLMSettings,
+  onLog?: LogEntryFn,
+  signal?: AbortSignal,
+  onAgentEvent?: AgentEventFn,
+): Promise<ArchitectureDiagramSet | null> {
+  // Build context: D1 nodes with their D2 children
+  const d1Nodes = Object.values(graph.nodes).filter(n => n.depth === 1).sort((a, b) => a.name.localeCompare(b.name));
+
+  const d1Summary = d1Nodes.map(d1 => {
+    const files = d1.children
+      .map(id => graph.nodes[id])
+      .filter(n => n?.depth === 2)
+      .map(n => `    ${n.id}  ${n.sourceRef?.filePath ?? n.name}`)
+      .join('\n');
+    return `D1 node: ${d1.name}  (nodeId: ${d1.id})\nFiles:\n${files}`;
+  }).join('\n\n');
+
+  const clusterSummary = clusters.map(c =>
+    `  "${c.name}": ${c.files.join(', ')}`
+  ).join('\n');
+
+  const prompt = `Generate architecture diagrams for: ${graph.name}
+
+D1 MODULES (use these nodeIds in services[].nodeId):
+${d1Summary || '(none)'}
+
+SEMANTIC CLUSTERS:
+${clusterSummary || '(none)'}
+
+rootNodeId="${graph.rootNodeId}"
+
+Steps:
+1. Call get_cluster_files() for each cluster to see what's inside
+2. Call read_file() on the main file of each cluster to understand real behavior
+3. Output the JSON with overview + one service diagram per D1 module`;
+
+  onLog?.('ai-architect', 'Architect: reading codebase to build architecture diagrams...');
+
+  try {
+    const rawExecutor = buildSyntheseurExecutor(ctx, graph);
+    const executor = onAgentEvent
+      ? async (name: string, args: Record<string, unknown>) => {
+          const t0 = Date.now();
+          const step = await rawExecutor(name, args);
+          onAgentEvent({
+            agent: 'architecte' as AgentId,
+            toolName: name,
+            argsSummary: (args.path as string) || (args.cluster_name as string) || Object.values(args).join(', ') || '',
+            resultSummary: step.result.slice(0, 300),
+            durationMs: Date.now() - t0,
+          });
+          return step;
+        }
+      : rawExecutor;
+
+    const result = await llmService.runAgentLoop(
+      [{ role: 'user', content: prompt }],
+      ARCHITECT_SYSTEM,
+      buildSyntheseurTools(),
+      executor,
+      llmSettings,
+      { signal, source: 'code-agent-architecte' },
+    );
+
+    if (result.interrupted) {
+      onLog?.('ai-architect', 'Architect: reached max iterations without producing output');
+      return null;
+    }
+
+    onLog?.('ai-architect', `Architect: ${result.toolSteps.length} tool calls — parsing diagrams`);
+
+    let parsed: ArchitectureDiagramSet;
+    try {
+      const jsonStr = extractJSON(result.content);
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      onLog?.('ai-architect', 'Architect: failed to parse JSON output');
+      return null;
+    }
+
+    if (!parsed.overview?.code || !Array.isArray(parsed.services)) {
+      onLog?.('ai-architect', 'Architect: output missing overview or services');
+      return null;
+    }
+
+    onLog?.('ai-architect', `Architect: overview + ${parsed.services.length} service diagrams generated`);
+    return parsed;
+  } catch (err) {
+    if (err instanceof LLMRateLimitError || err instanceof LLMConfigError) throw err;
+    onLog?.('ai-architect', `Architect failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Phase 3: architecture diagram generation.
+ * Runs the Architect agent with file-reading tools and semantic cluster context.
+ */
+export async function orchestrateArchitectureGeneration(
+  graph: CodeGraph,
+  clusters: SemanticCluster[],
+  provider: IFileSystemProvider | undefined,
+  llmSettings: LLMSettings,
+  onLog?: LogEntryFn,
+  signal?: AbortSignal,
+  onAgentEvent?: AgentEventFn,
+): Promise<ArchitectureDiagramSet> {
+  const ctx: GraphBuildContext = {
+    analysis: { modules: [], externalDeps: [], entryPoints: [], totalFiles: 0, totalSymbols: 0 },
+    astImportPairs: new Set(
+      Object.values(graph.relations)
+        .filter(r => r.type === 'depends_on')
+        .map(r => {
+          const src = graph.nodes[r.sourceId]?.sourceRef?.filePath;
+          const tgt = graph.nodes[r.targetId]?.sourceRef?.filePath;
+          return src && tgt ? `${src}→${tgt}` : null;
+        })
+        .filter((p): p is string => p !== null)
+    ),
+    fileByPath: new Map(),
+    provider,
+    fileCache: new Map(),
+    semanticClusters: clusters,
+  };
+
+  const result = await runArchitectAgent(ctx, graph, clusters, llmSettings, onLog, signal, onAgentEvent);
+  if (!result) {
+    return { overview: { name: `${graph.name} — Overview`, code: '' }, services: [] };
+  }
+  return result;
 }

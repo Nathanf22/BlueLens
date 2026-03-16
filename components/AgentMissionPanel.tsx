@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AgentToolEvent, AgentId, ProgressLogEntry, AgentBlackboard } from '../types';
-import { Terminal, X, ChevronDown, ChevronUp, Download, Cpu, FlaskConical, Shield, Loader2 } from 'lucide-react';
+import { Terminal, X, ChevronDown, ChevronUp, Download, Cpu, FlaskConical, Shield, Layers, Loader2 } from 'lucide-react';
 
 interface Props {
   events: AgentToolEvent[];
@@ -16,6 +16,7 @@ const AGENTS: { id: AgentId; label: string; icon: React.ReactNode; color: string
   { id: 'analyste',   label: 'Analyst',     icon: <Cpu className="w-3.5 h-3.5" />,         color: 'text-violet-400', borderColor: 'border-violet-500/40' },
   { id: 'syntheseur', label: 'Synthesizer',  icon: <FlaskConical className="w-3.5 h-3.5" />, color: 'text-emerald-400', borderColor: 'border-emerald-500/40' },
   { id: 'evaluateur', label: 'Evaluator',    icon: <Shield className="w-3.5 h-3.5" />,       color: 'text-amber-400',   borderColor: 'border-amber-500/40' },
+  { id: 'architecte', label: 'Architect',    icon: <Layers className="w-3.5 h-3.5" />,       color: 'text-sky-400',     borderColor: 'border-sky-500/40' },
 ];
 
 function formatArgs(argsSummary: string): string {
