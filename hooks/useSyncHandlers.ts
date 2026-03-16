@@ -65,7 +65,8 @@ export const useSyncHandlers = () => {
     diagrams: Diagram[],
     llmSettings: LLMSettings,
     updateGraph: (g: CodeGraph) => void,
-    updateDiagram: (id: string, code: string) => void
+    updateDiagram: (id: string, code: string) => void,
+    regenerateFlows?: (g: CodeGraph) => Promise<CodeGraph | undefined>,
   ): Promise<{ linkedDiagrams: number; proposalsGenerated: number; proposalsApplied: number }> => {
     if (!handle) return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0 };
     setIsSyncingGraph(true);
@@ -75,7 +76,16 @@ export const useSyncHandlers = () => {
         handle,
         repoName
       );
-      updateGraph(updatedGraph);
+
+      // Regenerate flows if there were structural changes and a generator is provided
+      const hasDiff = diff.addedNodes.length > 0 || diff.removedNodes.length > 0 || diff.modifiedNodes.length > 0;
+      let finalGraph = updatedGraph;
+      if (hasDiff && regenerateFlows) {
+        const withFlows = await regenerateFlows(updatedGraph).catch(() => null);
+        if (withFlows) finalGraph = withFlows;
+      }
+
+      updateGraph(finalGraph);
       setGraphSyncStatuses(prev => ({ ...prev, [graph.id]: 'synced' }));
       setLastSyncDiff(diff);
 

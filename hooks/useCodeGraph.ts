@@ -479,20 +479,22 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
     options?: FlowGenerationOptions,
     onAgentEvent?: AgentEventFn,
     onBlackboard?: AgentBlackboardFn,
+    graphOverride?: CodeGraph,  // used by sync to pass the freshly-synced graph
   ): Promise<CodeGraph | undefined> => {
-    if (!activeGraph) return undefined;
+    const graph = graphOverride ?? activeGraph;
+    if (!graph) return undefined;
 
     setIsGeneratingFlows(true);
     setActiveFlowId(null);
     try {
       // Derive SemanticClusters from D1 (package) nodes in the graph
-      const clusters: SemanticCluster[] = Object.values(activeGraph.nodes)
+      const clusters: SemanticCluster[] = Object.values(graph.nodes)
         .filter(n => n.kind === 'package')
         .map(pkgNode => ({
           name: pkgNode.name,
           description: pkgNode.description ?? pkgNode.name,
           files: pkgNode.children
-            .map(childId => activeGraph.nodes[childId])
+            .map(childId => graph.nodes[childId])
             .filter((n): n is import('../types').GraphNode => n?.kind === 'module' && !!n.sourceRef?.filePath)
             .map(n => n.sourceRef!.filePath),
         }))
@@ -500,22 +502,22 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
 
       // Get filesystem provider if available
       let provider: import('../services/LocalFileSystemProvider').LocalFileSystemProvider | undefined;
-      if (activeGraph.repoId) {
-        const handle = fileSystemService.getHandle(activeGraph.repoId);
+      if (graph.repoId) {
+        const handle = fileSystemService.getHandle(graph.repoId);
         if (handle) provider = new LocalFileSystemProvider(handle);
       }
 
       // Agentic pipeline is designed for root/D1 architecture flows.
       // For D2+ (file-level) scoped generation, fall back to legacy generateFlows
       // which knows how to scope flows to a specific node.
-      const scopeNode = options?.scopeNodeId ? activeGraph.nodes[options.scopeNodeId] : null;
+      const scopeNode = options?.scopeNodeId ? graph.nodes[options.scopeNodeId] : null;
       const isScopeD2Plus = scopeNode !== null && scopeNode !== undefined && scopeNode.depth > 1;
 
       // If scope is a D1 node, find its matching cluster so the Synthétiseur can focus on it
       const scopeCluster = (scopeNode?.depth === 1)
         ? clusters.find(c => c.name === scopeNode.name) ?? clusters.find(c =>
             c.files.some(f => scopeNode.children.some(childId =>
-              activeGraph.nodes[childId]?.sourceRef?.filePath === f
+              graph.nodes[childId]?.sourceRef?.filePath === f
             ))
           )
         : undefined;
@@ -525,7 +527,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       if (clusters.length > 0 && llmSettings && !isScopeD2Plus) {
         requireLLMKey(llmSettings);
         newFlows = await orchestrateFlowGeneration(
-          activeGraph,
+          graph,
           clusters,
           provider,
           llmSettings,
@@ -538,7 +540,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         );
       } else {
         const flowResult = await generateFlows(
-          activeGraph,
+          graph,
           llmSettings,
           (step, current, total) => setGraphCreationProgress({ step, current, total }),
           options,
@@ -555,25 +557,20 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
       let mergedFlows: Record<string, import('../types').GraphFlow>;
 
       if (options?.customPrompt) {
-        // Custom prompt: merge new flows into existing (additive)
-        mergedFlows = { ...activeGraph.flows, ...newFlows };
+        mergedFlows = { ...graph.flows, ...newFlows };
       } else if (options?.scopeNodeId) {
-        // Scoped regenerate: replace flows at this scope, keep other scopes
         const scopeId = options.scopeNodeId;
         const kept: Record<string, import('../types').GraphFlow> = {};
-        for (const [id, flow] of Object.entries(activeGraph.flows)) {
-          if (flow.scopeNodeId !== scopeId) {
-            kept[id] = flow;
-          }
+        for (const [id, flow] of Object.entries(graph.flows)) {
+          if (flow.scopeNodeId !== scopeId) kept[id] = flow;
         }
         mergedFlows = { ...kept, ...newFlows };
       } else {
-        // Full regenerate: replace all
         mergedFlows = newFlows;
       }
 
       const updated: CodeGraph = {
-        ...activeGraph,
+        ...graph,
         flows: mergedFlows,
         updatedAt: Date.now(),
       };

@@ -782,6 +782,7 @@ export default function App() {
     const handle = await resolveHandle(codeGraph.activeGraph.repoId);
     if (!handle) { showToast('Cannot access files — please reopen the repository folder.', 'error'); return; }
     const repoName = codeGraph.activeGraph.name;
+    agentMission.start();
     handleIncrementalSync(
       codeGraph.activeGraph,
       handle,
@@ -793,7 +794,8 @@ export default function App() {
         setDiagrams(prev => prev.map(d =>
           d.id === id ? { ...d, code, lastModified: Date.now() } : d
         ));
-      }
+      },
+      (g) => codeGraph.regenerateFlows(llmSettings, undefined, agentMission.addEvent, agentMission.updateBlackboard, g),
     ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied }) => {
       if (linkedDiagrams === 0) {
         showToast('No diagrams linked to this code graph — link diagrams via the sidebar first.', 'warning');
@@ -805,8 +807,8 @@ export default function App() {
         if (proposalsGenerated > 0) parts.push(`${proposalsGenerated} pending review — click the button in the top bar`);
         showToast(parts.join(' · '), proposalsGenerated > 0 ? 'success' : 'info');
       }
-    });
-  }, [codeGraph.activeGraph, codeGraph.updateGraph, diagrams, handleIncrementalSync, llmSettings, setDiagrams]);
+    }).finally(() => agentMission.stop());
+  }, [codeGraph.activeGraph, codeGraph.updateGraph, codeGraph.regenerateFlows, diagrams, handleIncrementalSync, llmSettings, setDiagrams, agentMission]);
 
   const handleCodeGraphViewCode = useCallback(async (nodeId: string) => {
     if (!codeGraph.activeGraph) return;
