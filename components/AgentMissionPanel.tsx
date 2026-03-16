@@ -147,14 +147,10 @@ function AgentTerminal({
     setUserScrolled(!atBottom);
   };
 
-  const borderStyle = isActive
-    ? { boxShadow: `0 0 0 1px rgba(${glowColor}, 0.5), 0 0 12px rgba(${glowColor}, 0.15)` }
-    : {};
-
   return (
     <div
-      className={`flex flex-col min-w-0 flex-1 border ${borderColor} rounded-lg overflow-hidden bg-gray-950 transition-shadow duration-500`}
-      style={borderStyle}
+      className={`flex flex-col min-w-0 flex-1 border ${borderColor} rounded-lg overflow-hidden bg-gray-950 ${isActive ? 'terminal-active' : ''}`}
+      style={{ '--glow': glowColor } as React.CSSProperties}
     >
       {/* Header — clickable for agent detail */}
       <button
@@ -298,12 +294,39 @@ const MIN_HEIGHT = 220;
 const MAX_HEIGHT = 700;
 const DEFAULT_HEIGHT = 320;
 
+const PANEL_STYLES = `
+  @keyframes agentLineFadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes terminalGlow {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(var(--glow), 0.4), 0 0 10px rgba(var(--glow), 0.1); }
+    50%       { box-shadow: 0 0 0 1px rgba(var(--glow), 0.8), 0 0 22px rgba(var(--glow), 0.35); }
+  }
+  .agent-line {
+    animation: agentLineFadeIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .terminal-active {
+    animation: terminalGlow 1.8s ease-in-out infinite;
+  }
+`;
+
 export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntries, blackboard, onClose, onDownload }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_HEIGHT);
   const dragStartY = useRef<number | null>(null);
   const dragStartHeight = useRef<number>(DEFAULT_HEIGHT);
+
+  useEffect(() => {
+    const el = document.createElement('style');
+    el.id = 'mission-control-styles';
+    el.textContent = PANEL_STYLES;
+    if (!document.getElementById('mission-control-styles')) {
+      document.head.appendChild(el);
+    }
+    return () => { document.getElementById('mission-control-styles')?.remove(); };
+  }, []);
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
     dragStartY.current = e.clientY;
@@ -344,17 +367,7 @@ export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntrie
   const terminalHeight = collapsed ? 0 : panelHeight - 80;
 
   return (
-    <>
-      {/* Keyframe animation injected once */}
-      <style>{`
-        @keyframes agentLineFadeIn {
-          from { opacity: 0; transform: translateY(4px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .agent-line { animation: agentLineFadeIn 0.18s ease-out both; }
-      `}</style>
-
-      <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-center pointer-events-none px-4 pb-0">
+    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-center pointer-events-none px-4 pb-0">
         <div
           className="pointer-events-auto w-full max-w-5xl border border-gray-700/60 rounded-t-xl bg-gray-900/95 backdrop-blur-sm shadow-2xl flex flex-col"
           style={{ fontFamily: 'monospace' }}
@@ -472,7 +485,6 @@ export function AgentMissionPanel({ events, isOpen, activeAgents, progressEntrie
             </>
           )}
         </div>
-      </div>
-    </>
+    </div>
   );
 }
