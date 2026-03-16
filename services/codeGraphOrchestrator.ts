@@ -863,6 +863,7 @@ PROCESS:
 3. Read subsequent files as needed to verify the chain.
 4. Be STRICT — if a connection is not verifiable in the code, flag it as an error.
 5. Be ACCURATE — if you read the code and the connection IS there, do NOT flag it.
+6. IMPORTANT: read_file only returns the first 200 lines. If a step is NOT visible in the snippet but the entry point file is large and the function could plausibly exist further down, do NOT reject it — instead, mark it as a warning (cannot verify) rather than an error.
 
 Flag as ERROR:
 - A claimed connection (import, HTTP call, event) that does not exist in the source
