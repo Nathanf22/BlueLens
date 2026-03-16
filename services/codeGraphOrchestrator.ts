@@ -1291,6 +1291,13 @@ export async function orchestrateFlowGeneration(
           flows = round2;
         }
         onBlackboard?.({ flows: Object.values(flows).map(f => ({ name: f.name, stepCount: f.steps.length })) });
+        // Clear stale issues for flows that were regenerated in round 2
+        const regenNames = new Set([...errorTargets, ...missing]);
+        onBlackboard?.({
+          flowIssues: issues
+            .filter(i => i.severity !== 'error' || !i.target || !regenNames.has(i.target))
+            .map(i => ({ severity: i.severity, message: i.message, target: i.target })),
+        });
       }
     }
   }
