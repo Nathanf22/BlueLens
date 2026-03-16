@@ -133,6 +133,8 @@ DOMAIN RULES:
 - A hook + its service + its component → same domain if they serve the same feature
 - Cross-directory grouping is expected
 - Every file must appear in exactly one cluster
+- Infrastructure/utility files (db adapters, config, shared in-memory stores) used by many domains → merge into the domain that uses them most. Do NOT isolate them as standalone clusters unless there are 3+ cohesive infrastructure files that belong together.
+- Client-side entry points (app.js, index.html, main.ts) that orchestrate many features → group by their primary responsibility, or create a "Client Application" cluster if they span multiple domains.
 
 When ready, output ONLY this JSON (no other text):
 {
@@ -1110,16 +1112,19 @@ export async function orchestrateCodebaseAnalysis(
     onProgress?.('Validating clusters', 2, 3);
     issues = await evaluateClusters(ctx, clusters, llmSettings, onLog, onAgentEvent, onBlackboard);
 
-    // Round 2 if too many errors
+    // Round 2 if any errors
     const errorCount = issues.filter(i => i.severity === 'error').length;
-    if (errorCount >= 3) {
+    if (errorCount >= 1) {
       onLog?.('ai-cluster', `Analyste round 2 (${errorCount} errors to fix)...`);
       onProgress?.('Re-clustering (round 2)', 3, 3);
       const round2 = await runAnalysteAgent(ctx, llmSettings, onLog, signal, issues, onAgentEvent);
       if (round2 && round2.length > 0) {
         clusters = round2;
         ctx.semanticClusters = clusters;
-        onBlackboard?.({ clusters: clusters.map(c => ({ name: c.name, fileCount: c.files.length, files: c.files })) });
+        onBlackboard?.({
+          clusters: clusters.map(c => ({ name: c.name, fileCount: c.files.length, files: c.files })),
+          clusterIssues: [], // cleared — round 2 attempted to fix them
+        });
       }
     }
   }
