@@ -62,18 +62,16 @@ export const storageService = {
             }
             
             return {
+              ...d, // preserve all fields (description, future additions, etc.)
               id: d.id || generateId(),
               name: d.name || 'Untitled',
               code: d.code || '',
               comments: Array.isArray(d.comments) ? d.comments : [],
               lastModified: d.lastModified || Date.now(),
-              folderId: d.folderId || null,
+              folderId: d.folderId ?? null,
               workspaceId: d.workspaceId || DEFAULT_WORKSPACE_ID,
               nodeLinks: nodeLinks,
               codeLinks: Array.isArray(d.codeLinks) ? d.codeLinks : [],
-              ...(d.sourceGraphId && { sourceGraphId: d.sourceGraphId }),
-              ...(d.sourceScopeNodeId && { sourceScopeNodeId: d.sourceScopeNodeId }),
-              ...(d.generatedFromGraphAt && { generatedFromGraphAt: d.generatedFromGraphAt }),
             };
           });
         }

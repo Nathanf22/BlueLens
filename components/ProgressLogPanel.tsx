@@ -8,7 +8,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
-  Search, Brain, GitBranch, Link2, Layers, Play, Info,
+  Search, Brain, GitBranch, Link2, Layers, Play, Info, Shield,
   ChevronUp, ChevronDown, X,
 } from 'lucide-react';
 import { ProgressLogEntry, ProgressLogCategory } from '../types';
@@ -30,6 +30,9 @@ const CATEGORY_ICONS: Record<ProgressLogCategory, React.ReactNode> = {
   hierarchy: <Layers className="w-3 h-3 text-orange-400" />,
   flow: <Play className="w-3 h-3 text-cyan-400" />,
   info: <Info className="w-3 h-3 text-gray-400" />,
+  'ai-cluster': <Brain className="w-3 h-3 text-violet-400" />,
+  'ai-synth': <Play className="w-3 h-3 text-emerald-400" />,
+  'ai-eval': <Shield className="w-3 h-3 text-amber-400" />,
 };
 
 function formatTimestamp(ms: number): string {

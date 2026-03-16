@@ -65,9 +65,10 @@ export const useSyncHandlers = () => {
     diagrams: Diagram[],
     llmSettings: LLMSettings,
     updateGraph: (g: CodeGraph) => void,
-    updateDiagram: (id: string, code: string) => void
-  ): Promise<{ linkedDiagrams: number; proposalsGenerated: number; proposalsApplied: number }> => {
-    if (!handle) return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0 };
+    updateDiagram: (id: string, code: string) => void,
+    regenerateFlows?: (g: CodeGraph) => Promise<CodeGraph | undefined>,
+  ): Promise<{ linkedDiagrams: number; proposalsGenerated: number; proposalsApplied: number; flowsGraph: CodeGraph | null }> => {
+    if (!handle) return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0, flowsGraph: null };
     setIsSyncingGraph(true);
     try {
       const { graph: updatedGraph, diff } = await codeGraphSyncService.incrementalResync(
@@ -75,7 +76,20 @@ export const useSyncHandlers = () => {
         handle,
         repoName
       );
-      updateGraph(updatedGraph);
+
+      // Regenerate flows if there were structural changes and a generator is provided
+      const hasDiff = diff.addedNodes.length > 0 || diff.removedNodes.length > 0 || diff.modifiedNodes.length > 0;
+      let finalGraph = updatedGraph;
+      let flowsGraph: CodeGraph | null = null;
+      if (hasDiff && regenerateFlows) {
+        const withFlows = await regenerateFlows(updatedGraph).catch(() => null);
+        if (withFlows) {
+          finalGraph = withFlows;
+          flowsGraph = withFlows;
+        }
+      }
+
+      updateGraph(finalGraph);
       setGraphSyncStatuses(prev => ({ ...prev, [graph.id]: 'synced' }));
       setLastSyncDiff(diff);
 
@@ -83,7 +97,7 @@ export const useSyncHandlers = () => {
       const linkedDiagrams = diagrams.filter(d => d.sourceGraphId === graph.id).length;
 
       if (proposal.diagramDiffs.length === 0) {
-        return { linkedDiagrams, proposalsGenerated: 0, proposalsApplied: 0 };
+        return { linkedDiagrams, proposalsGenerated: 0, proposalsApplied: 0, flowsGraph };
       }
 
       let proposalsApplied = 0;
@@ -111,10 +125,10 @@ export const useSyncHandlers = () => {
         setPendingProposals(prev => [...prev, proposal]);
       }
 
-      return { linkedDiagrams, proposalsGenerated: proposal.diagramDiffs.length - proposalsApplied, proposalsApplied };
+      return { linkedDiagrams, proposalsGenerated: proposal.diagramDiffs.length - proposalsApplied, proposalsApplied, flowsGraph };
     } catch (err) {
       console.error('[useSyncHandlers] handleIncrementalSync error:', err);
-      return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0 };
+      return { linkedDiagrams: 0, proposalsGenerated: 0, proposalsApplied: 0, flowsGraph: null };
     } finally {
       setIsSyncingGraph(false);
     }

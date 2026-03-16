@@ -35,7 +35,9 @@ import { useCodeGraphHandlers } from './hooks/useCodeGraphHandlers';
 import { useSyncHandlers } from './hooks/useSyncHandlers';
 import { useProgressLog } from './hooks/useProgressLog';
 import { useToast } from './hooks/useToast';
+import { useAgentMission } from './hooks/useAgentMission';
 import { ToastContainer } from './components/ToastContainer';
+import { AgentMissionPanel } from './components/AgentMissionPanel';
 import { codeGraphStorageService } from './services/codeGraphStorageService';
 import {
   buildExportPlan,
@@ -184,6 +186,9 @@ export default function App() {
 
   // --- Progress Log ---
   const progressLog = useProgressLog();
+
+  // --- Agent Mission Control ---
+  const agentMission = useAgentMission();
 
   // --- CodeGraph ---
   const codeGraph = useCodeGraph(activeWorkspaceId);
@@ -554,6 +559,7 @@ export default function App() {
   const [pendingFlowExport, setPendingFlowExport] = useState<{ graph: CodeGraph } | null>(null);
   const [isCreatingGraph, setIsCreatingGraph] = useState(false);
   const graphCreationCancelledRef = useRef(false);
+  const isSyncingRef = useRef(false);
 
   /** Core export logic: builds plan and inserts folders + diagrams.
    *  scopeFilter: if set, only flows with that scopeNodeId are exported/updated. */
@@ -600,6 +606,68 @@ export default function App() {
     }
   }, [folders, diagrams, setFolders, setDiagrams, activeWorkspaceId]);
 
+  /** Create diagram entries for flows that don't yet have a corresponding diagram.
+   *  Used after sync-triggered flow regeneration to materialise new flows without
+   *  touching existing flow diagrams (which are handled by the incremental diff panel). */
+  const createNewFlowDiagrams = useCallback((graph: CodeGraph) => {
+    const existingNames = new Set(
+      diagrams.filter(d => d.sourceGraphId === graph.id).map(d => d.name)
+    );
+    const newFlows = Object.values(graph.flows).filter(
+      f => f.sequenceDiagram && !existingNames.has(f.name)
+    );
+    if (newFlows.length === 0) return;
+
+    const generateId = () => Math.random().toString(36).substr(2, 9);
+    const { existingFolder } = detectExistingExport(graph, folders, diagrams);
+
+    const newFolders: import('./types').Folder[] = [];
+    const newDiagrams: import('./types').Diagram[] = [];
+
+    let parentFolderId: string;
+    if (existingFolder) {
+      parentFolderId = existingFolder.id;
+    } else {
+      const pf: import('./types').Folder = { id: generateId(), name: `Flows: ${graph.name}`, parentId: null, workspaceId: graph.workspaceId };
+      newFolders.push(pf);
+      parentFolderId = pf.id;
+    }
+
+    // Map sub-folder names to IDs (existing or newly created in this batch)
+    const subFolderIds = new Map<string, string>(
+      folders.filter(f => f.parentId === parentFolderId).map(f => [f.name, f.id])
+    );
+
+    for (const flow of newFlows) {
+      const isRoot = !flow.scopeNodeId || flow.scopeNodeId === graph.rootNodeId;
+      const subName = isRoot ? 'End-to-End Flows' : (graph.nodes[flow.scopeNodeId]?.name ?? flow.scopeNodeId);
+
+      if (!subFolderIds.has(subName)) {
+        const sf: import('./types').Folder = { id: generateId(), name: subName, parentId: parentFolderId, workspaceId: graph.workspaceId };
+        newFolders.push(sf);
+        subFolderIds.set(subName, sf.id);
+      }
+
+      newDiagrams.push({
+        id: generateId(),
+        name: flow.name,
+        description: flow.description,
+        code: flow.sequenceDiagram,
+        comments: [],
+        lastModified: Date.now(),
+        workspaceId: graph.workspaceId,
+        nodeLinks: [],
+        sourceGraphId: graph.id,
+        sourceScopeNodeId: flow.scopeNodeId,
+        folderId: subFolderIds.get(subName)!,
+      });
+    }
+
+    if (newFolders.length > 0) setFolders(prev => [...prev, ...newFolders]);
+    setDiagrams(prev => [...prev, ...newDiagrams]);
+    console.log(`[Sync] Created ${newDiagrams.length} new flow diagram(s):`, newDiagrams.map(d => d.name));
+  }, [diagrams, folders, setDiagrams, setFolders]);
+
   /** Trigger export after graph creation/regeneration.
    *  scopeFilter: if set, only ask/update for flows at that scope level. */
   const triggerFlowExport = useCallback((graph: CodeGraph, scopeFilter?: string) => {
@@ -634,6 +702,7 @@ export default function App() {
     graphCreationCancelledRef.current = false;
     setIsCreatingGraph(true);
     progressLog.startLog();
+    agentMission.start();
     try {
       let result: CodeGraph | null;
       if (repo?.githubOwner) {
@@ -645,9 +714,11 @@ export default function App() {
           llmSettings,
           progressLog.addEntry,
           (resolvedBranch) => handleUpdateGithubBranch(repoId, resolvedBranch),
+          agentMission.addEvent,
+          agentMission.updateBlackboard,
         );
       } else {
-        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha);
+        result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha, agentMission.addEvent, agentMission.updateBlackboard);
       }
       if (result) triggerFlowExport(result);
       else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
@@ -664,9 +735,10 @@ export default function App() {
       return null;
     } finally {
       progressLog.endLog();
+      agentMission.stop();
       setIsCreatingGraph(false);
     }
-  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
+  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, agentMission.start, agentMission.stop, agentMission.addEvent, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
@@ -682,8 +754,17 @@ export default function App() {
 
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
+      // Agentic pipeline (with Mission Control panel) only for root/D1 scopes
+      const scopeNode = options?.scopeNodeId ? codeGraph.activeGraph?.nodes[options.scopeNodeId] : null;
+      const isAgenticRun = !scopeNode || scopeNode.depth <= 1;
+      if (isAgenticRun) agentMission.start();
       try {
-        const updated = await codeGraph.regenerateFlows(llmSettings, options);
+        const updated = await codeGraph.regenerateFlows(
+          llmSettings,
+          options,
+          isAgenticRun ? agentMission.addEvent : undefined,
+          isAgenticRun ? agentMission.updateBlackboard : undefined,
+        );
         // Use the returned graph directly — codeGraph.activeGraph is a stale closure here
         if (updated) triggerFlowExport(updated, options?.scopeNodeId);
       } catch (err: any) {
@@ -695,9 +776,11 @@ export default function App() {
         } else {
           showToast(`Flow generation failed: ${err?.message ?? 'Unknown error'}`, 'error');
         }
+      } finally {
+        if (isAgenticRun) agentMission.stop();
       }
     },
-    [codeGraph.regenerateFlows, llmSettings, triggerFlowExport, showToast, setIsAISettingsOpen]
+    [codeGraph.regenerateFlows, llmSettings, triggerFlowExport, showToast, setIsAISettingsOpen, agentMission]
   );
 
   const handleSaveCodeGraphConfig = useCallback((config: import('./types').CodeGraphConfig) => {
@@ -759,9 +842,12 @@ export default function App() {
 
   const handleCodeGraphIncrementalSync = useCallback(async () => {
     if (!codeGraph.activeGraph) return;
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
     const handle = await resolveHandle(codeGraph.activeGraph.repoId);
-    if (!handle) { showToast('Cannot access files — please reopen the repository folder.', 'error'); return; }
+    if (!handle) { isSyncingRef.current = false; showToast('Cannot access files — please reopen the repository folder.', 'error'); return; }
     const repoName = codeGraph.activeGraph.name;
+    agentMission.start();
     handleIncrementalSync(
       codeGraph.activeGraph,
       handle,
@@ -773,8 +859,12 @@ export default function App() {
         setDiagrams(prev => prev.map(d =>
           d.id === id ? { ...d, code, lastModified: Date.now() } : d
         ));
-      }
-    ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied }) => {
+      },
+      (g) => codeGraph.regenerateFlows(llmSettings, undefined, agentMission.addEvent, agentMission.updateBlackboard, g),
+    ).then(({ linkedDiagrams, proposalsGenerated, proposalsApplied, flowsGraph }) => {
+      // Create diagrams for newly generated flows (not covered by incremental diff panel)
+      if (flowsGraph) createNewFlowDiagrams(flowsGraph);
+
       if (linkedDiagrams === 0) {
         showToast('No diagrams linked to this code graph — link diagrams via the sidebar first.', 'warning');
       } else if (proposalsGenerated === 0 && proposalsApplied === 0) {
@@ -785,8 +875,8 @@ export default function App() {
         if (proposalsGenerated > 0) parts.push(`${proposalsGenerated} pending review — click the button in the top bar`);
         showToast(parts.join(' · '), proposalsGenerated > 0 ? 'success' : 'info');
       }
-    });
-  }, [codeGraph.activeGraph, codeGraph.updateGraph, diagrams, handleIncrementalSync, llmSettings, setDiagrams]);
+    }).finally(() => { agentMission.stop(); isSyncingRef.current = false; });
+  }, [codeGraph.activeGraph, codeGraph.updateGraph, codeGraph.regenerateFlows, diagrams, handleIncrementalSync, llmSettings, setDiagrams, agentMission, createNewFlowDiagrams]);
 
   const handleCodeGraphViewCode = useCallback(async (nodeId: string) => {
     if (!codeGraph.activeGraph) return;
@@ -1073,7 +1163,8 @@ export default function App() {
             hasConfiguredAI={hasConfiguredProvider}
             onLoadDemoGraph={() => {
               progressLog.startLog();
-              codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry)
+              agentMission.start();
+              codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry, agentMission.addEvent, agentMission.updateBlackboard)
                 .then(graph => { if (graph) triggerFlowExport(graph); })
                 .catch((err: any) => {
                   if (err instanceof LLMRateLimitError) {
@@ -1083,7 +1174,7 @@ export default function App() {
                     setIsAISettingsOpen(true);
                   }
                 })
-                .finally(() => progressLog.endLog());
+                .finally(() => { progressLog.endLog(); agentMission.stop(); });
             }}
             isDemoLoading={codeGraph.isDemoLoading}
             demoError={codeGraph.demoError}
@@ -1294,6 +1385,17 @@ export default function App() {
         onClose={() => setIsTokenDashboardOpen(false)}
         records={tokenRecords}
         onClear={clearUsage}
+      />
+
+      {/* Agent Mission Control — fixed panel at bottom during CodeGraph generation */}
+      <AgentMissionPanel
+        events={agentMission.events}
+        isOpen={agentMission.isOpen}
+        activeAgents={agentMission.activeAgents}
+        progressEntries={progressLog.entries}
+        blackboard={agentMission.blackboard}
+        onClose={() => agentMission.setIsOpen(false)}
+        onDownload={agentMission.downloadLog}
       />
 
 

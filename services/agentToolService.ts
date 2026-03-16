@@ -99,6 +99,18 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
     },
   },
   {
+    name: 'get_node_relations',
+    description: 'Returns all structural relations (calls, depends_on, implements, etc.) and domain memberships for a node. Use this to follow cross-file/cross-package dependencies and understand which domains a node belongs to. PARALLEL: multiple get_node_relations calls for different node_ids can be batched together.',
+    parameters: {
+      type: 'object',
+      properties: {
+        graph_id: { type: 'string', description: 'CodeGraph id from list_code_graphs' },
+        node_id: { type: 'string', description: 'Node id from get_graph_nodes' },
+      },
+      required: ['graph_id', 'node_id'],
+    },
+  },
+  {
     name: 'get_node_source',
     description: 'Fetches the source code for a specific graph node. Works for GitHub-backed repos. Returns file path, line range, and code excerpt. PARALLEL: multiple get_node_source calls for different node_ids can be batched in the same turn. Requires node_id from get_graph_nodes.',
     parameters: {
@@ -234,6 +246,7 @@ function makeLabel(name: string, args: Record<string, unknown>): string {
       if (args.parent_id) parts.push(`parent: "${args.parent_id}"`);
       return `get_graph_nodes(${parts.join(', ')})`;
     }
+    case 'get_node_relations': return `get_node_relations(node: "${args.node_id}")`;
     case 'get_node_source': return `get_node_source(node: "${args.node_id}")`;
     case 'add_node_link': return `add_node_link(node: "${args.node_id}" → diagram: "${args.target_diagram_id}")`;
     case 'remove_node_link': return `remove_node_link(node: "${args.node_id}")`;
@@ -379,6 +392,52 @@ async function executeToolInner(
         filePath: n.sourceRef?.filePath || null,
       }));
       return JSON.stringify({ total: nodes.length, returned: result.length, nodes: result });
+    }
+
+    case 'get_node_relations': {
+      const graphId = args.graph_id as string;
+      const nodeId = args.node_id as string;
+      const graph = workspaceGraphs.find(g => g.id === graphId);
+      if (!graph) return JSON.stringify({ error: `CodeGraph not found: ${graphId}` });
+
+      const node = graph.nodes[nodeId];
+      if (!node) return JSON.stringify({ error: `Node not found: ${nodeId}` });
+
+      const allRels = Object.values(graph.relations).filter(r => r.type !== 'contains');
+      const outgoing = allRels
+        .filter(r => r.sourceId === nodeId)
+        .map(r => ({
+          type: r.type,
+          label: r.label || null,
+          targetId: r.targetId,
+          targetName: graph.nodes[r.targetId]?.name || r.targetId,
+          targetKind: graph.nodes[r.targetId]?.kind || null,
+          targetFile: graph.nodes[r.targetId]?.sourceRef?.filePath || null,
+        }));
+      const incoming = allRels
+        .filter(r => r.targetId === nodeId)
+        .map(r => ({
+          type: r.type,
+          label: r.label || null,
+          sourceId: r.sourceId,
+          sourceName: graph.nodes[r.sourceId]?.name || r.sourceId,
+          sourceKind: graph.nodes[r.sourceId]?.kind || null,
+          sourceFile: graph.nodes[r.sourceId]?.sourceRef?.filePath || null,
+        }));
+      const domains = (node.domainProjections || []).map(domainId => ({
+        id: domainId,
+        name: graph.domainNodes?.[domainId]?.name || domainId,
+        description: graph.domainNodes?.[domainId]?.description || null,
+      }));
+
+      return JSON.stringify({
+        nodeId,
+        nodeName: node.name,
+        nodeKind: node.kind,
+        outgoing,
+        incoming,
+        domains,
+      });
     }
 
     case 'get_node_source': {
