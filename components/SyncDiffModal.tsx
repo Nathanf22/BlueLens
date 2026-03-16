@@ -24,49 +24,74 @@ interface DiffHighlights {
 }
 
 function applySequenceHighlights(svgStr: string, highlights: DiffHighlights): string {
+  if (!highlights.actors.size && !highlights.edgeLabels.size) return svgStr;
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgStr, 'image/svg+xml');
-    if (doc.querySelector('parsererror')) return svgStr;
+    // Use innerHTML (HTML parser) — more robust than DOMParser('image/svg+xml')
+    // which fails on Mermaid's not-quite-valid XML output.
+    const container = document.createElement('div');
+    container.innerHTML = svgStr;
+    const svg = container.querySelector('svg');
+    if (!svg) return svgStr;
 
     const isAdded = highlights.mode === 'added';
-    const fillBg   = isAdded ? 'rgba(34,197,94,0.18)'  : 'rgba(239,68,68,0.18)';
-    const stroke   = isAdded ? '#22c55e'                : '#ef4444';
-    const textFill = isAdded ? '#4ade80'                : '#f87171';
+    const fillBg  = isAdded ? 'rgba(34,197,94,0.22)' : 'rgba(239,68,68,0.22)';
+    const stroke  = isAdded ? '#22c55e'               : '#ef4444';
+    const textCol = isAdded ? '#4ade80'               : '#f87171';
 
-    // --- Actors: <text class="actor"> whose text matches ---
-    for (const textEl of doc.querySelectorAll('text.actor')) {
-      const name = textEl.textContent?.trim() ?? '';
+    // --- Actors ---
+    for (const group of svg.querySelectorAll('g.actor, g[class~="actor"]')) {
+      // The display label is in the deepest text-like node
+      const textEl = group.querySelector('text') ?? group.querySelector('span');
+      const name = textEl?.textContent?.trim() ?? '';
       if (!highlights.actors.has(name)) continue;
-      const rect = textEl.parentElement?.querySelector('rect');
+      const rect = group.querySelector('rect');
       if (rect) {
         rect.setAttribute('fill', fillBg);
         rect.setAttribute('stroke', stroke);
         rect.setAttribute('stroke-width', '2.5');
       }
-      textEl.setAttribute('fill', textFill);
+      if (textEl) textEl.setAttribute('fill', textCol);
     }
 
-    // --- Messages: <text class="messageText"> whose text matches ---
-    for (const textEl of doc.querySelectorAll('text.messageText')) {
-      const label = textEl.textContent?.trim() ?? '';
-      if (!highlights.edgeLabels.has(label)) continue;
-      textEl.setAttribute('fill', textFill);
-      // Scan siblings (backward) for the associated line/path
-      const siblings = textEl.parentElement ? Array.from(textEl.parentElement.children) : [];
-      const idx = siblings.indexOf(textEl as Element);
-      for (let i = idx - 1; i >= 0; i--) {
-        const el = siblings[i] as Element;
-        if (el.tagName === 'line' || el.tagName === 'path') {
-          el.setAttribute('stroke', stroke);
-          el.setAttribute('stroke-width', '2.5');
-          break;
+    // --- Messages ---
+    // Collect all messageLine elements and messageText elements in DOM order.
+    // In Mermaid sequence SVGs they appear as flat siblings: line then text, interleaved.
+    const allLines = Array.from(svg.querySelectorAll('line[class*="messageLine"], path[class*="messageLine"]'));
+    const allMsgTextEls = Array.from(svg.querySelectorAll('text[class*="messageText"]'));
+
+    console.debug('[BlueLens diff] highlight labels:', [...highlights.edgeLabels]);
+    console.debug('[BlueLens diff] messageLine count:', allLines.length, '| messageText count:', allMsgTextEls.length);
+    console.debug('[BlueLens diff] messageText contents:', allMsgTextEls.map(el => JSON.stringify(el.textContent?.trim())));
+
+    allMsgTextEls.forEach((msgEl, idx) => {
+      const label = msgEl.textContent?.trim() ?? '';
+      if (!highlights.edgeLabels.has(label)) return;
+      msgEl.setAttribute('fill', textCol);
+      // Associated line: same index, or scan backwards through siblings
+      const line = allLines[idx];
+      if (line) {
+        line.setAttribute('stroke', stroke);
+        line.setAttribute('stroke-width', '3');
+      }
+      // Fallback: scan backward siblings for any line/path
+      const parent = msgEl.parentElement;
+      if (parent && !line) {
+        const children = Array.from(parent.children);
+        const i = children.indexOf(msgEl);
+        for (let k = i - 1; k >= 0; k--) {
+          const el = children[k];
+          if (el.tagName === 'line' || el.tagName === 'path') {
+            el.setAttribute('stroke', stroke);
+            el.setAttribute('stroke-width', '3');
+            break;
+          }
         }
       }
-    }
+    });
 
-    return new XMLSerializer().serializeToString(doc.documentElement);
-  } catch {
+    return container.innerHTML;
+  } catch (e) {
+    console.error('[BlueLens] SVG highlight error:', e);
     return svgStr;
   }
 }
