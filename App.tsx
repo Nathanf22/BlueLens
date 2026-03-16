@@ -671,18 +671,14 @@ export default function App() {
     console.log(`[Sync] Created ${newDiagrams.length} new flow diagram(s):`, newDiagrams.map(d => d.name));
   }, [diagrams, folders, setDiagrams, setFolders]);
 
-  /** Generate and insert LLM-powered architecture diagrams (overview + one per D1 module).
-   *  Replaces existing architecture diagrams for this graph if they exist. */
-  const handleGenerateArchitecture = useCallback(async (graph: CodeGraph) => {
-    if (!llmSettings) {
-      showToast('An AI API key is required to generate architecture diagrams. Configure one in AI Settings.', 'error');
-      return;
-    }
+  /** Generate and insert architecture diagrams automatically after graph creation.
+   *  Non-fatal: errors are swallowed. Assumes agentMission is already running. */
+  const triggerArchitectureGeneration = useCallback(async (graph: CodeGraph) => {
+    if (!llmSettings) return;
 
     const generateId = () => Math.random().toString(36).substr(2, 9);
     const folderName = `Architecture: ${graph.name}`;
 
-    // Derive semantic clusters from D1 nodes (files grouped per module)
     const clusters: SemanticCluster[] = Object.values(graph.nodes)
       .filter(n => n.depth === 1)
       .map(d1 => ({
@@ -696,48 +692,31 @@ export default function App() {
     const handle = await resolveHandle(graph.repoId).catch(() => null);
     const provider = handle ? new LocalFileSystemProvider(handle) : undefined;
 
-    agentMission.start();
     let result: import('./services/codeGraphArchitectureService').ArchitectureDiagramSet;
     try {
       result = await orchestrateArchitectureGeneration(
-        graph,
-        clusters,
-        provider,
-        llmSettings,
-        undefined,
-        undefined,
-        agentMission.addEvent,
+        graph, clusters, provider, llmSettings,
+        undefined, undefined, agentMission.addEvent,
       );
-    } catch (err: any) {
-      if (err instanceof LLMRateLimitError) { showToast(err.message, 'error'); agentMission.stop(); return; }
-      if (err instanceof LLMConfigError) { showToast('AI API key required. Configure one in AI Settings.', 'error'); agentMission.stop(); return; }
-      showToast('Architecture generation failed.', 'error');
-      agentMission.stop();
+    } catch {
       return;
-    } finally {
-      agentMission.stop();
     }
 
     const { overview, services } = result;
-    if (!overview.code && services.length === 0) {
-      showToast('No architecture data found in this graph.', 'warning');
-      return;
-    }
+    if (!overview.code && services.length === 0) return;
 
-    // Remove previous architecture diagrams + folder for this graph
     const existingFolder = folders.find(
       f => f.name === folderName && f.workspaceId === graph.workspaceId && f.parentId === null
     );
     if (existingFolder) {
       const oldSubIds = new Set(folders.filter(f => f.parentId === existingFolder.id).map(f => f.id));
-      const oldDiagramIds = new Set(diagrams.filter(d => d.folderId === existingFolder.id || oldSubIds.has(d.folderId ?? '')).map(d => d.id));
+      const oldIds = new Set(diagrams.filter(d => d.folderId === existingFolder.id || oldSubIds.has(d.folderId ?? '')).map(d => d.id));
       setFolders(prev => prev.filter(f => f.id !== existingFolder.id && !oldSubIds.has(f.id)));
-      setDiagrams(prev => prev.filter(d => !oldDiagramIds.has(d.id)));
+      setDiagrams(prev => prev.filter(d => !oldIds.has(d.id)));
     }
 
     const newFolders: import('./types').Folder[] = [];
     const newDiagrams: import('./types').Diagram[] = [];
-
     const parentId = generateId();
     newFolders.push({ id: parentId, name: folderName, parentId: null, workspaceId: graph.workspaceId });
 
@@ -745,29 +724,26 @@ export default function App() {
       newDiagrams.push({
         id: generateId(), name: overview.name, description: 'Auto-generated architecture overview',
         code: overview.code, comments: [], lastModified: Date.now(),
-        workspaceId: graph.workspaceId, nodeLinks: [], sourceGraphId: graph.id,
-        folderId: parentId,
+        workspaceId: graph.workspaceId, nodeLinks: [], sourceGraphId: graph.id, folderId: parentId,
       });
     }
-
     if (services.length > 0) {
-      const servicesFolderId = generateId();
-      newFolders.push({ id: servicesFolderId, name: 'Services', parentId, workspaceId: graph.workspaceId });
+      const sfId = generateId();
+      newFolders.push({ id: sfId, name: 'Services', parentId, workspaceId: graph.workspaceId });
       for (const svc of services) {
         newDiagrams.push({
           id: generateId(), name: svc.name,
           description: `Auto-generated architecture diagram for the ${svc.name} module`,
           code: svc.code, comments: [], lastModified: Date.now(),
-          workspaceId: graph.workspaceId, nodeLinks: [], sourceGraphId: graph.id,
-          folderId: servicesFolderId,
+          workspaceId: graph.workspaceId, nodeLinks: [], sourceGraphId: graph.id, folderId: sfId,
         });
       }
     }
 
     setFolders(prev => [...prev, ...newFolders]);
     setDiagrams(prev => [...prev, ...newDiagrams]);
-    showToast(`Architecture generated: 1 overview + ${services.length} service diagram${services.length !== 1 ? 's' : ''}.`, 'success');
-  }, [diagrams, folders, llmSettings, setDiagrams, setFolders, showToast]);
+    showToast(`Architecture: 1 overview + ${services.length} service diagram${services.length !== 1 ? 's' : ''} generated.`, 'success');
+  }, [diagrams, folders, llmSettings, agentMission.addEvent, setDiagrams, setFolders, showToast]);
 
   /** Trigger export after graph creation/regeneration.
    *  scopeFilter: if set, only ask/update for flows at that scope level. */
@@ -823,8 +799,10 @@ export default function App() {
       } else {
         result = await codeGraph.createGraph(repoId, llmSettings, progressLog.addEntry, commitSha, agentMission.addEvent, agentMission.updateBlackboard);
       }
-      if (result) triggerFlowExport(result);
-      else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
+      if (result) {
+        triggerFlowExport(result);
+        await triggerArchitectureGeneration(result);
+      } else if (graphCreationCancelledRef.current) showToast('Graph creation cancelled', 'info');
       return result;
     } catch (err: any) {
       if (err instanceof LLMRateLimitError) {
@@ -841,7 +819,7 @@ export default function App() {
       agentMission.stop();
       setIsCreatingGraph(false);
     }
-  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, agentMission.start, agentMission.stop, agentMission.addEvent, triggerFlowExport, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
+  }, [codeGraph.codeGraphs, codeGraph.selectGraph, codeGraph.createGraph, codeGraph.createGithubGraph, workspaceRepos, llmSettings, progressLog.startLog, progressLog.addEntry, progressLog.endLog, agentMission.start, agentMission.stop, agentMission.addEvent, triggerFlowExport, triggerArchitectureGeneration, showToast, setIsAISettingsOpen, handleUpdateGithubBranch]);
 
   const handleCancelCreateGraph = useCallback(() => {
     graphCreationCancelledRef.current = true;
@@ -1268,7 +1246,7 @@ export default function App() {
               progressLog.startLog();
               agentMission.start();
               codeGraph.loadDemoGraph(llmSettings, progressLog.addEntry, agentMission.addEvent, agentMission.updateBlackboard)
-                .then(graph => { if (graph) triggerFlowExport(graph); })
+                .then(async graph => { if (graph) { triggerFlowExport(graph); await triggerArchitectureGeneration(graph); } })
                 .catch((err: any) => {
                   if (err instanceof LLMRateLimitError) {
                     showToast(err.message, 'error');
@@ -1362,7 +1340,6 @@ export default function App() {
           onCodeGraphOpenFlowInEditor={handleOpenFlowInEditor}
           codeGraphIsGeneratingFlows={codeGraph.isGeneratingFlows}
           onCodeGraphRegenerateFlows={handleRegenerateFlows}
-          onCodeGraphGenerateArchitecture={codeGraph.activeGraph ? () => handleGenerateArchitecture(codeGraph.activeGraph!) : undefined}
           codeGraphIsReparsing={isCreatingGraph}
           onCodeGraphReparse={handleReparseGraph}
           codeGraphSyncStatus={graphSyncStatuses[codeGraph.activeGraph?.id ?? ''] ?? 'unknown'}
