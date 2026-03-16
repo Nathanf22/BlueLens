@@ -505,9 +505,15 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         if (handle) provider = new LocalFileSystemProvider(handle);
       }
 
-      // Use agentic pipeline if we have clusters + LLM settings; fall back to legacy
+      // Agentic pipeline is designed for root/D1 architecture flows.
+      // For D2+ (file-level) scoped generation, fall back to legacy generateFlows
+      // which knows how to scope flows to a specific node.
+      const scopeNode = options?.scopeNodeId ? activeGraph.nodes[options.scopeNodeId] : null;
+      const isScopeD2Plus = scopeNode !== null && scopeNode !== undefined && scopeNode.depth > 1;
+
+      // Use agentic pipeline if we have clusters + LLM settings + not a deep-scope request
       let newFlows: Record<string, import('../types').GraphFlow>;
-      if (clusters.length > 0 && llmSettings) {
+      if (clusters.length > 0 && llmSettings && !isScopeD2Plus) {
         requireLLMKey(llmSettings);
         newFlows = await orchestrateFlowGeneration(
           activeGraph,

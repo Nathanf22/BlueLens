@@ -691,13 +691,16 @@ export default function App() {
 
   const handleRegenerateFlows = useCallback(
     async (options?: { scopeNodeId?: string; customPrompt?: string }) => {
-      agentMission.start();
+      // Agentic pipeline (with Mission Control panel) only for root/D1 scopes
+      const scopeNode = options?.scopeNodeId ? codeGraph.activeGraph?.nodes[options.scopeNodeId] : null;
+      const isAgenticRun = !scopeNode || scopeNode.depth <= 1;
+      if (isAgenticRun) agentMission.start();
       try {
         const updated = await codeGraph.regenerateFlows(
           llmSettings,
           options,
-          agentMission.addEvent,
-          agentMission.updateBlackboard,
+          isAgenticRun ? agentMission.addEvent : undefined,
+          isAgenticRun ? agentMission.updateBlackboard : undefined,
         );
         // Use the returned graph directly — codeGraph.activeGraph is a stale closure here
         if (updated) triggerFlowExport(updated, options?.scopeNodeId);
@@ -711,7 +714,7 @@ export default function App() {
           showToast(`Flow generation failed: ${err?.message ?? 'Unknown error'}`, 'error');
         }
       } finally {
-        agentMission.stop();
+        if (isAgenticRun) agentMission.stop();
       }
     },
     [codeGraph.regenerateFlows, llmSettings, triggerFlowExport, showToast, setIsAISettingsOpen, agentMission]
