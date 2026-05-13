@@ -102,11 +102,29 @@ This scopes flow generation to that node's files only, producing more precise di
 
 ## Step 4 — Assess impact before touching code
 
-Before modifying anything, understand the blast radius:
+Two complementary tools:
 
 ```
-detect_codegraph_anomalies(graph_id)
+detect_codegraph_anomalies(graph_id)          # structural anomalies: god nodes, orphans, cycles
+analyze_node_impact(graph_id, file_path: "services/llmService.ts")   # blast radius for a specific file
 ```
+
+`analyze_node_impact` returns:
+- **directDependents** — nodes that directly import this file (fan-in)
+- **directDependencies** — nodes this file imports (fan-out)
+- **blastRadius** — transitive set of all nodes that will be affected (BFS up to `max_depth`, default 3)
+- **riskScore** — 0–10 composite metric
+
+**`find_nodes` is the prerequisite for all other analysis tools** — it resolves a name or partial file path to a node ID without loading the full graph.
+
+```
+find_nodes(graph_id, query: "llmService")     # → node ID + all exported symbols (classes, functions)
+find_nodes(graph_id, kind: "package")         # → the 7 domains with IDs (dynamic alternative to the table above)
+find_nodes(graph_id, query: "storageService") # → 14 matches across 2 files, with IDs
+```
+
+Without it: `get_codegraph_nodes(depth:2)` dumps all 112 modules (~11 000 tokens) and you parse manually.
+With it: a targeted query returns ~1 300 tokens — **8x cheaper** — and also surfaces exported symbols so you know what the file exposes before reading it.
 
 **Known high-risk areas in bluelens:**
 - `types.ts` — 297 dependents. Any change propagates everywhere.
@@ -117,18 +135,42 @@ detect_codegraph_anomalies(graph_id)
 
 ---
 
+## Step 5 — Trace coupling between two modules
+
+```
+find_dependency_path(graph_id, from_node_id, to_node_id)
+```
+
+Finds the **shortest dependency path** between two nodes via BFS. Useful for answering "why does A depend on B?" or "is there an indirect coupling I should break?".
+
+---
+
+## Step 6 — Detect structural drift (graph diff)
+
+After a refactor, compare a fresh scan against the previous graph:
+
+```
+diff_codegraphs(base_graph_id, target_graph_id)
+```
+
+Reports: added/removed modules, new/dropped `depends_on` edges, domain changes. Works without an LLM — purely structural.
+
+---
+
 ## Typical task workflow
 
 ```
-1. list_codegraphs()                           → find the existing graph
-2. get_codegraph_summary(graph_id)             → orient yourself
-3. get_codegraph_nodes(graph_id, depth:1)      → identify the right domain
-4. get_codegraph_nodes(graph_id, parent_id)    → files in that domain
-5. search_diagrams(query)                      → find relevant sequence diagrams
-6. Read ONLY the identified files              → targeted reading
-7. Make changes, test
-8. [optional] generate_domain_diagrams()       → update diagrams if the flow changed
-9. export_for_bluelens()                       → export for the web interface
+1. list_codegraphs()                                      → find the existing graph
+2. get_codegraph_summary(graph_id)                        → orient yourself
+3. get_codegraph_nodes(graph_id, depth:1)                 → identify the right domain
+4. get_codegraph_nodes(graph_id, parent_id)               → files in that domain
+5. search_diagrams(query)                                 → find relevant sequence diagrams
+6. find_nodes(graph_id, query: "<file>")                  → resolve node ID
+7. analyze_node_impact(graph_id, node_id)                 → blast radius before editing
+8. Read ONLY the identified files                         → targeted reading
+9. Make changes, test
+10. [optional] generate_domain_diagrams()                 → update diagrams if the flow changed
+11. export_for_bluelens()                                 → export for the web interface
 ```
 
 ---

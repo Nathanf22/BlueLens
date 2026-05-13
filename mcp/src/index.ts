@@ -7,6 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { registerWorkspaceTools } from './tools/workspaces.js';
 import { registerDiagramTools } from './tools/diagrams.js';
 import { registerCodeGraphTools } from './tools/codegraph.js';
+import { registerAnalysisTools } from './tools/analysis.js';
 
 // Load .env from the bluelens project root (two levels up from mcp/dist/)
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -30,6 +31,7 @@ const server = new McpServer({
 registerWorkspaceTools(server);
 registerDiagramTools(server);
 registerCodeGraphTools(server);
+registerAnalysisTools(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
