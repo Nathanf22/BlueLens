@@ -12,7 +12,6 @@ import { codebaseAnalyzerService } from '../services/codebaseAnalyzerService';
 import { codeToGraphParserService } from '../services/codeToGraphParserService';
 import { codeGraphDomainService } from '../services/codeGraphDomainService';
 import { type LogEntryFn } from '../services/codeGraphAgentService';
-import { groupByFunctionalHeuristics } from '../services/codeGraphHeuristicGrouper';
 import { generateFlows, type FlowGenerationResult, type FlowGenerationOptions } from '../services/codeGraphFlowService';
 import { orchestrateCodebaseAnalysis, orchestrateFlowGeneration, type SemanticCluster } from '../services/codeGraphOrchestrator';
 import { fetchGithubAnalysis, DEMO_REPO_ID, DEMO_OWNER, DEMO_REPO, DEMO_BRANCH } from '../services/githubDemoService';
@@ -156,8 +155,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         clusters = orchestrated.clusters;
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;
-        onLogEntry?.('info', `Agentic analysis failed (${err.message}), using heuristic grouping`);
-        analysis = groupByFunctionalHeuristics(analysis);
+        throw err;
       }
 
       setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
@@ -277,8 +275,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         clusters = orchestrated.clusters;
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;
-        onLogEntry?.('info', `Agentic analysis failed (${err.message}), using heuristic grouping`);
-        analysis = groupByFunctionalHeuristics(analysis);
+        throw err;
       }
 
       setGraphCreationProgress({ step: 'Building graph', current: 0, total: 1 });
@@ -397,8 +394,7 @@ export const useCodeGraph = (activeWorkspaceId: string) => {
         demoClusters = orchestrated.clusters;
       } catch (err: any) {
         if (err.name === 'AbortError') throw err;
-        onLogEntry?.('info', `Agentic analysis failed (${err.message}), using heuristic grouping`);
-        analysis = groupByFunctionalHeuristics(analysis);
+        throw err;
       }
 
       // Step 3: parse to graph

@@ -129,6 +129,7 @@ export interface BlueprintExport {
   workspaces: Workspace[];
   folders: Folder[];
   diagrams: Diagram[];
+  codeGraphs?: CodeGraph[];
 }
 
 // --- Phase 3: Intelligence Layer ---

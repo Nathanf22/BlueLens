@@ -106,7 +106,7 @@ async function sendGemini(
   } catch (err: unknown) {
     if (err instanceof LLMConfigError || err instanceof LLMRateLimitError) throw err;
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
+    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('503') || msg.includes('UNAVAILABLE')) {
       throw new LLMRateLimitError('Gemini');
     }
     if (msg.includes('401') || msg.includes('403') || msg.includes('API_KEY_INVALID') || msg.includes('permission')) {

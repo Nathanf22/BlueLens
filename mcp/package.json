@@ -1,0 +1,28 @@
+{
+  "name": "@bluelens/mcp",
+  "version": "0.1.0",
+  "description": "Claude Code MCP server for Bluelens — manage diagrams and analyze codebases",
+  "type": "module",
+  "bin": {
+    "bluelens-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "~5.8.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
