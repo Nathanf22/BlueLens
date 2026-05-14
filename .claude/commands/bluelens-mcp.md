@@ -247,6 +247,24 @@ export_for_bluelens(workspace_id)
 
 ---
 
+## Pushing a CodeGraph to the cloud
+
+Once you have a CodeGraph locally, you can make it accessible to any AI agent anywhere by pushing it to the BlueLens Cloud MCP server.
+
+```
+push_to_cloud(
+  graph_id: "kcju8x6ha",
+  cloud_url: "http://localhost:3003",   # or https://mcp.bluelens.dev in production
+  api_key: "your-bluelens-api-key"
+)
+```
+
+The cloud server stores the graph under your API key namespace. AI agents connect to the cloud MCP (`POST /mcp` with `Authorization: Bearer <key>`) and call the same analysis tools against the stored graph — without needing access to your local filesystem.
+
+**Tools available on the cloud MCP:** all workspace/diagram/codegraph/analysis tools except `scan_codebase` and `generate_domain_diagrams` (which require local filesystem access).
+
+---
+
 ## Key reminders
 
 - **API keys are never passed as parameters** — read automatically from `.env`.

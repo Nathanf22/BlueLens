@@ -357,4 +357,67 @@ export function registerCodeGraphTools(server: McpServer): void {
       return { content: [{ type: 'text', text: `CodeGraph "${graph_id}" ("${graph.name}") deleted` }] };
     },
   );
+
+  server.tool(
+    'push_to_cloud',
+    'Upload a local CodeGraph to the BlueLens Cloud MCP server so AI agents can access it remotely. The cloud server stores it under your API key namespace.',
+    {
+      graph_id: z.string().describe('Local CodeGraph ID to push'),
+      cloud_url: z.string().describe('BlueLens Cloud MCP server base URL (e.g. https://mcp.bluelens.dev or http://localhost:3003)'),
+      api_key: z.string().describe('Your BlueLens Cloud API key'),
+    },
+    async ({ graph_id, cloud_url, api_key }) => {
+      const graph = await storage.getCodeGraph(graph_id);
+      if (!graph) {
+        return { content: [{ type: 'text', text: `CodeGraph "${graph_id}" not found` }], isError: true };
+      }
+
+      const endpoint = `${cloud_url.replace(/\/$/, '')}/api/graphs`;
+
+      let response: Response;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${api_key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(graph),
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: 'text', text: `Network error reaching "${endpoint}": ${msg}` }], isError: true };
+      }
+
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        body = { rawStatus: response.status };
+      }
+
+      if (!response.ok) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Upload failed (HTTP ${response.status}): ${JSON.stringify(body)}`,
+          }],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            message: `CodeGraph "${graph.name}" pushed to cloud successfully`,
+            endpoint,
+            graphId: graph.id,
+            nodeCount: Object.keys(graph.nodes).length,
+            server_response: body,
+          }, null, 2),
+        }],
+      };
+    },
+  );
 }
