@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { NodeLink } from '../../../types.js';
 import { z } from 'zod';
 import { writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -143,6 +144,64 @@ export function registerDiagramTools(server: McpServer): void {
         return { content: [{ type: 'text', text: `No diagrams found matching "${query}"` }] };
       }
       return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'add_node_link',
+    'Link a Mermaid node in a diagram to another diagram (enables drill-down navigation in the Bluelens UI). node_id must match the exact node identifier used in the Mermaid code (e.g. "UserService", "A", "DB").',
+    {
+      diagram_id: z.string().describe('Diagram containing the node'),
+      node_id: z.string().describe('Mermaid node identifier as written in the diagram code (case-sensitive)'),
+      target_diagram_id: z.string().describe('Diagram to navigate to when the node is clicked'),
+      label: z.string().optional().describe('Optional label for the link'),
+    },
+    async ({ diagram_id, node_id, target_diagram_id, label }) => {
+      const diagram = await storage.getDiagram(diagram_id);
+      if (!diagram) return { content: [{ type: 'text', text: `Diagram "${diagram_id}" not found` }], isError: true };
+
+      const target = await storage.getDiagram(target_diagram_id);
+      if (!target) return { content: [{ type: 'text', text: `Target diagram "${target_diagram_id}" not found` }], isError: true };
+
+      const existing = diagram.nodeLinks.findIndex(l => l.nodeId === node_id);
+      const updatedLinks: NodeLink[] = existing !== -1
+        ? diagram.nodeLinks.map((l, i) => i === existing ? { nodeId: node_id, targetDiagramId: target_diagram_id, label } : l)
+        : [...diagram.nodeLinks, { nodeId: node_id, targetDiagramId: target_diagram_id, label }];
+
+      const updated = await storage.updateDiagram(diagram_id, { nodeLinks: updatedLinks });
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            message: existing !== -1 ? `Node link updated` : `Node link added`,
+            nodeId: node_id,
+            targetDiagram: { id: target.id, name: target.name },
+            totalLinks: updated!.nodeLinks.length,
+          }, null, 2),
+        }],
+      };
+    },
+  );
+
+  server.tool(
+    'remove_node_link',
+    'Remove the drill-down link from a Mermaid node in a diagram.',
+    {
+      diagram_id: z.string().describe('Diagram containing the node'),
+      node_id: z.string().describe('Mermaid node identifier whose link should be removed'),
+    },
+    async ({ diagram_id, node_id }) => {
+      const diagram = await storage.getDiagram(diagram_id);
+      if (!diagram) return { content: [{ type: 'text', text: `Diagram "${diagram_id}" not found` }], isError: true };
+
+      const before = diagram.nodeLinks.length;
+      const updatedLinks = diagram.nodeLinks.filter(l => l.nodeId !== node_id);
+      if (updatedLinks.length === before) {
+        return { content: [{ type: 'text', text: `No link found for node "${node_id}" in diagram "${diagram_id}"` }], isError: true };
+      }
+
+      await storage.updateDiagram(diagram_id, { nodeLinks: updatedLinks });
+      return { content: [{ type: 'text', text: `Link removed from node "${node_id}"` }] };
     },
   );
 

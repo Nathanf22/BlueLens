@@ -130,7 +130,7 @@ export const storage = {
 
   async updateDiagram(
     id: string,
-    updates: Partial<Pick<Diagram, 'name' | 'code' | 'description' | 'folderId'>>,
+    updates: Partial<Pick<Diagram, 'name' | 'code' | 'description' | 'folderId' | 'nodeLinks'>>,
   ): Promise<Diagram | null> {
     const db = await readDB();
     const idx = db.diagrams.findIndex(d => d.id === id);
