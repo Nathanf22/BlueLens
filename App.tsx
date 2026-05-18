@@ -1123,6 +1123,9 @@ export default function App() {
     setWorkspaces(prev => [...prev, ...data.workspaces]);
     setFolders(prev => [...prev, ...data.folders]);
     setDiagrams(prev => [...prev, ...data.diagrams]);
+    for (const graph of data.codeGraphs ?? []) {
+      codeGraph.updateGraph(graph);
+    }
     if (data.workspaces.length > 0) {
       setActiveWorkspaceId(data.workspaces[0].id);
     }

@@ -21,7 +21,6 @@ import {
   LLMSettings, GraphFlow, GraphFlowStep, CodeGraph, AgentToolStep, AgentEventFn, AgentPendingFn, AgentBlackboardFn, AgentId,
 } from '../types';
 import { llmService, LLMConfigError, LLMRateLimitError } from './llmService';
-import { groupByFunctionalHeuristics } from './codeGraphHeuristicGrouper';
 import type { LogEntryFn } from './codeGraphAgentService';
 import type { AgentToolDefinition } from './agentToolService';
 import type { IFileSystemProvider } from './IFileSystemProvider';
@@ -293,16 +292,14 @@ async function runAnalysteAgent(
     );
 
     if (result.interrupted) {
-      onLog?.('ai-cluster', `Analyste: agent reached max iterations without producing output — falling back to heuristic`);
-      return null;
+      throw new Error('Analyste: agent reached max iterations without producing output. Try again or switch to a more capable model.');
     }
     onLog?.('ai-cluster', `Analyste: ${result.toolSteps.length} tool calls — parsing clusters`);
 
     const jsonStr = extractJSON(result.content);
     const parsed = JSON.parse(jsonStr);
     if (!Array.isArray(parsed.clusters)) {
-      onLog?.('ai-cluster', 'Analyste: response missing "clusters" array — falling back to heuristic');
-      return null;
+      throw new Error('Analyste: response did not include a valid clusters array. Try again or switch model.');
     }
 
     const assigned = new Set<string>();
@@ -335,9 +332,8 @@ async function runAnalysteAgent(
     return clusters;
 
   } catch (err) {
-    if (err instanceof LLMRateLimitError || err instanceof LLMConfigError) throw err;
     onLog?.('ai-cluster', `Analyste failed: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
+    throw err;
   }
 }
 
@@ -1142,9 +1138,7 @@ export async function orchestrateCodebaseAnalysis(
   onProgress?.('Building modules', 3, 3);
 
   if (!clusters || clusters.length === 0) {
-    onLog?.('ai-cluster', 'Analyste failed — falling back to heuristic grouping');
-    const fallback = groupByFunctionalHeuristics(analysis);
-    return { analysis: fallback, clusters: [] };
+    throw new Error('Analyste produced no clusters. The model may be overloaded — try again or switch to a different model in AI Settings.');
   }
 
   // Convert clusters to CodebaseAnalysis modules

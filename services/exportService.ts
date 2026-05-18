@@ -1,4 +1,4 @@
-import { BlueprintExport, Diagram, Folder, Workspace } from '../types';
+import { BlueprintExport, CodeGraph, Diagram, Folder, Workspace } from '../types';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -50,6 +50,7 @@ export interface BlueprintImportResult {
   workspaces: Workspace[];
   folders: Folder[];
   diagrams: Diagram[];
+  codeGraphs: CodeGraph[];
 }
 
 export function importBlueprint(jsonString: string): BlueprintImportResult {
@@ -101,7 +102,13 @@ export function importBlueprint(jsonString: string): BlueprintImportResult {
     comments: d.comments || [],
   }));
 
-  return { workspaces, folders, diagrams };
+  // Remap workspace IDs in CodeGraphs; keep graph IDs stable so storage keys are consistent
+  const codeGraphs: CodeGraph[] = (data.codeGraphs ?? []).map(g => ({
+    ...g,
+    workspaceId: remap(g.workspaceId) ?? g.workspaceId,
+  }));
+
+  return { workspaces, folders, diagrams, codeGraphs };
 }
 
 export function downloadJson(content: string, filename: string): void {

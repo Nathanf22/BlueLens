@@ -5,8 +5,7 @@
 <h1 align="center">BlueLens</h1>
 
 <p align="center">
-  <strong>Living architecture diagrams — navigable, AI-aware, 
-  and in sync with your code.</strong>
+  <strong>The living architecture layer for your codebase —<br>readable by humans, navigable by AI agents.</strong>
 </p>
 
 <p align="center">
@@ -26,26 +25,31 @@
 
 ---
 
-Most architecture tools give you a flat diagram you look at once 
-and never update.
+Most architecture tools give you a flat diagram you update once
+and forget. Your code moves on; the diagram lies.
 
-BlueLens is different in three ways:
+BlueLens is different in four ways:
 
-**1. Drill-down navigation** — every node can link to a 
-sub-diagram. Click to go deeper, breadcrumb to come back. 
-Your architecture lives at every level of abstraction, not 
+**1. Diagrams that stay in sync** — point it at any local repo,
+get a semantic architecture map in seconds. When your code
+changes, BlueLens detects the drift and lets you resync in one
+click — no manual diagram maintenance.
+
+**2. Drill-down navigation** — every node can link to a
+sub-diagram. Click to go deeper, breadcrumb to come back.
+Your architecture lives at every level of abstraction, not
 just one flat view.
 
-**2. An AI agent that actually traverses your workspace** — 
-ask "explain the auth flow" and the agent navigates your 
-diagrams and code graph autonomously before answering. 
-It calls real tools (list_diagrams, get_node_source...), 
-not static context injection.
+**3. Architecture drift detection** — BlueLens enforces domain
+boundaries, tracks fan-in growth on critical nodes, and reviews
+structural changes against your documented philosophy using the
+git commit history as the source of truth for intent.
 
-**3. CodeGraph + drift detection** — point it at any local 
-repo, get an interactive architecture map in seconds. 
-When your code changes, BlueLens detects the drift and 
-lets you resync in one click.
+**4. An MCP server for AI agents** — AI agents (Claude Code,
+Cursor, etc.) operate blind on raw file context. BlueLens
+exposes a CodeGraph via the Model Context Protocol: an agent
+navigates 200k tokens of code for 20k tokens of graph.
+10x cheaper, architecturally aware.
 
 <p align="center">
   <img src="public/demo_pro.gif" alt="BlueLens demo" width="100%" />
@@ -80,11 +84,26 @@ lets you resync in one click.
 
 ### CodeGraph
 - Automatic graph generation from a codebase — no manual diagramming needed
-- Hierarchical model: System (D0) > Module (D1) > File (D2) > Symbol (D3)
+- Hierarchical model: System (D0) > Domain (D1) > File (D2) > Symbol (D3)
+- LLM-powered semantic clustering into meaningful domains (not just directory structure)
 - ViewLens system: switch between Component, Flow, and Domain perspectives
 - Contextual flow detection with AI-generated sequence diagrams
-- Smart functional grouping via LLM agent pipeline (with heuristic fallback)
 - SHA-256 hash-based sync detection for code drift
+
+### Architecture Drift Detection
+- Structural diff between two graph snapshots — added/removed modules and dependencies
+- Deterministic domain-boundary enforcement (forbidden cross-domain imports, fan-in thresholds)
+- LLM review grounded in git commit history: distinguishes intentional changes from unexplained drift
+- Flags structural changes not explained by a commit message
+
+### MCP Server (`@bluelens/mcp`)
+- Exposes the full BlueLens capability set to AI agents via the Model Context Protocol
+- `scan_codebase` — semantic graph generation with LLM clustering
+- `analyze_node_impact` — blast-radius analysis before touching a file (fan-in, fan-out, risk score)
+- `find_dependency_path` — shortest dependency path between two modules
+- `check_architectural_rules` / `review_architectural_drift` — automated architecture governance
+- `add_node_link` / `remove_node_link` — wire drill-down navigation from the agent
+- Works with Claude Code, Cursor, and any MCP-compatible agent
 
 ### Intelligence Layer
 - Multi-provider LLM support: **Gemini**, **OpenAI**, **Anthropic**
@@ -133,7 +152,9 @@ AI-powered features (chat, code scanning, flow generation, smart grouping) requi
 
 ## Architecture
 
-This is a client-side-only React app. No backend, no router, no external state library. All data persists to `localStorage` and `IndexedDB`.
+The web app is client-side only — no backend, no router, no external state library. All data persists to `localStorage` and `IndexedDB`.
+
+The MCP server (`mcp/`) is a standalone Node.js companion process. It imports bluelens services directly, stores data in `~/.bluelens/`, and communicates with AI agents over stdio. Data flows between the two via `.bluelens` export files.
 
 ### Tech Stack
 
@@ -225,4 +246,4 @@ See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy.
 
 ---
 
-**BlueLens** — Architecture diagrams that actually stay up to date.
+**BlueLens** — The living architecture layer for your codebase.

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bluelens": {
+      "command": "node",
+      "args": ["./mcp/dist/index.js"]
+    }
+  }
+}
